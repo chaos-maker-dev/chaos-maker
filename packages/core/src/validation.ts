@@ -563,8 +563,21 @@ export function prepareChaosConfig(
     if (msg.includes('is not registered')) code = 'unknown_profile';
     else if (msg.includes('already registered')) code = 'profile_collision';
     else if (msg.includes('may not contain')) code = 'profile_chain';
+    // Registration collisions originate from ProfileRegistry.registerAll over
+    // customProfiles, so the error path is the offending customProfiles entry.
+    // applyProfile-origin errors (unknown_profile / profile_chain) stay
+    // attributed to the field that triggered resolution.
+    let path: string;
+    if (code === 'profile_collision') {
+      const match = msg.match(/profile '([^']+)' already registered/);
+      path = match ? `customProfiles.${match[1]}` : 'customProfiles';
+    } else if (validated.profile !== undefined) {
+      path = 'profile';
+    } else {
+      path = 'profileOverrides';
+    }
     throw new ChaosConfigError([{
-      path: validated.profile !== undefined ? 'profile' : 'profileOverrides',
+      path,
       code,
       ruleType: 'profile',
       message: msg,

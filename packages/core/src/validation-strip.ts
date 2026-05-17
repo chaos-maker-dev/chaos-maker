@@ -145,7 +145,9 @@ function projectPresetSlice(input: unknown): Record<string, unknown> {
 /** ProfileConfigSlice differs from PresetConfigSlice by carrying `presets`,
  *  `seed`, and `debug` on top of the four rule categories + `groups`. Mirrors
  *  `projectPresetSlice` plus those three extras; same strict-key projection
- *  semantics. */
+ *  semantics. `debug` is reduced to the schema's known shape
+ *  (`boolean | { enabled: boolean }`) so unknown nested keys never bypass the
+ *  strict pass-2 reject under `unknownFields: 'warn' | 'ignore'`. */
 function projectProfileSlice(input: unknown): Record<string, unknown> {
   const out = projectPresetSlice(input);
   if (!input || typeof input !== 'object') return out;
@@ -154,7 +156,15 @@ function projectProfileSlice(input: unknown): Record<string, unknown> {
     out.presets = (src.presets as unknown[]).filter((s) => typeof s === 'string');
   }
   if (typeof src.seed === 'number') out.seed = src.seed;
-  if (src.debug !== undefined) out.debug = src.debug;
+  if (src.debug !== undefined) {
+    const debugSrc = src.debug;
+    if (typeof debugSrc === 'boolean') {
+      out.debug = debugSrc;
+    } else if (debugSrc && typeof debugSrc === 'object') {
+      const enabled = (debugSrc as Record<string, unknown>).enabled;
+      if (typeof enabled === 'boolean') out.debug = { enabled };
+    }
+  }
   return out;
 }
 

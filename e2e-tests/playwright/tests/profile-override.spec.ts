@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { injectChaos, getChaosLog } from '@chaos-maker/playwright';
+import { injectChaos, getChaosLog, getChaosSeed } from '@chaos-maker/playwright';
 
 const BASE_URL = 'http://127.0.0.1:8080';
 
@@ -35,9 +35,10 @@ test.describe('profileOverrides at inject site', () => {
     await page.click('#fetch-data');
     await expect(page.locator('#status')).toHaveText('Success!', { timeout: 10000 });
 
-    // We cannot inspect the resolved seed from the adapter, but the lack of
-    // throw plus a successful latency event proves the override scalar layered
-    // through validation without rejection.
+    // Resolved seed is the override scalar (999), proving profileOverrides.seed
+    // wins over the top-level seed (111). The latency event additionally
+    // confirms the override-scalar layered through validation without rejection.
+    expect(await getChaosSeed(page)).toBe(999);
     const log = await getChaosLog(page);
     expect(log.some((e) => e.type === 'network:latency' && e.applied)).toBe(true);
   });

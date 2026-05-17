@@ -41,10 +41,15 @@ function mergeProfileSliceInPlace(target: ProfileOverrideSlice, slice: ProfileOv
   for (const cat of ['network', 'ui', 'websocket', 'sse'] as const) {
     const src = slice[cat] as Record<string, unknown> | undefined;
     if (!src) continue;
-    const dst = (target[cat] ??= {}) as Record<string, unknown[]>;
+    const dst = ((target[cat] ??= {}) as unknown) as Record<string, unknown>;
     for (const [k, arr] of Object.entries(src)) {
-      if (!Array.isArray(arr)) continue;
-      (dst[k] ??= []).push(...arr);
+      if (!Array.isArray(arr)) {
+        // Preserve malformed (non-array) value so downstream Zod validation
+        // surfaces a useful error path instead of a silent drop here.
+        dst[k] = arr;
+        continue;
+      }
+      ((dst[k] ??= []) as unknown[]).push(...arr);
     }
   }
   if (slice.groups?.length) {
