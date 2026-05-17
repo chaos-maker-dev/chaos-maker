@@ -301,6 +301,9 @@ export type {
   ChaosDebugStage,
   ChaosLifecyclePhase,
   DebugOptions,
+  Profile,
+  ProfileConfigSlice,
+  ProfileOverrideSlice,
 } from '@chaos-maker/core';
 
 // Runtime export so adapter consumers can construct a Logger

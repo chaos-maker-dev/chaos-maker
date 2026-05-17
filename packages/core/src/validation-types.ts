@@ -19,6 +19,7 @@ export type RuleType =
   | 'sse.close'
   | 'group'
   | 'preset'
+  | 'profile'
   | 'top-level';
 
 export type ValidationIssueCode =
@@ -35,6 +36,9 @@ export type ValidationIssueCode =
   | 'unknown_preset'
   | 'preset_chain'
   | 'preset_collision'
+  | 'unknown_profile'
+  | 'profile_chain'
+  | 'profile_collision'
   | 'unknown_schema_version'
   | 'deprecated'
   | 'custom'

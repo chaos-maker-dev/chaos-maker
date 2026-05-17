@@ -290,6 +290,9 @@ export type {
   ChaosDebugStage,
   ChaosLifecyclePhase,
   DebugOptions,
+  Profile,
+  ProfileConfigSlice,
+  ProfileOverrideSlice,
 } from '@chaos-maker/core';
 
 export type { TraceReporterOptions, ChaosTraceAttachment } from './trace';

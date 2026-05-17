@@ -1,5 +1,6 @@
 import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, RequestCountingOptions, SSECorruptionStrategy, WebSocketDirection, WebSocketCorruptionStrategy } from './config';
 import type { RuleGroupConfig } from './groups';
+import type { ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 import { cloneValue } from './utils';
 
 function cloneConfig(config: ChaosConfig): ChaosConfig {
@@ -20,6 +21,45 @@ function normalizePresetNameForBuilder(name: string): string {
     throw new Error('[chaos-maker] preset name cannot be empty');
   }
   return trimmed;
+}
+
+function normalizeProfileNameForBuilder(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error('[chaos-maker] profile name cannot be empty');
+  }
+  return trimmed;
+}
+
+/** Append-merge a profile slice into a target accumulator. Rule-bearing
+ *  categories concatenate (matching `applyProfile`'s append semantics); the
+ *  `presets[]`, `seed`, `debug`, and `groups` fields layer with the slice's
+ *  values winning over what the accumulator already holds, so a later
+ *  `.overrideProfile(...)` call always wins over an earlier one (matching
+ *  the "last-write-wins" scalar precedence at resolution time). */
+function mergeProfileSliceInPlace(target: ProfileOverrideSlice, slice: ProfileOverrideSlice): void {
+  for (const cat of ['network', 'ui', 'websocket', 'sse'] as const) {
+    const src = slice[cat] as Record<string, unknown> | undefined;
+    if (!src) continue;
+    const dst = ((target[cat] ??= {}) as unknown) as Record<string, unknown>;
+    for (const [k, arr] of Object.entries(src)) {
+      if (!Array.isArray(arr)) {
+        // Preserve malformed (non-array) value so downstream Zod validation
+        // surfaces a useful error path instead of a silent drop here.
+        dst[k] = arr;
+        continue;
+      }
+      ((dst[k] ??= []) as unknown[]).push(...arr);
+    }
+  }
+  if (slice.groups?.length) {
+    (target.groups ??= []).push(...slice.groups);
+  }
+  if (slice.presets) {
+    target.presets = [...(target.presets ?? []), ...slice.presets];
+  }
+  if (slice.seed !== undefined) target.seed = slice.seed;
+  if (slice.debug !== undefined) target.debug = slice.debug;
 }
 
 export class ChaosConfigBuilder {
@@ -265,6 +305,39 @@ export class ChaosConfigBuilder {
   usePreset(name: string): this {
     const norm = normalizePresetNameForBuilder(name);
     if (!this.pendingPresets.includes(norm)) this.pendingPresets.push(norm);
+    return this;
+  }
+
+  /** Set the scenario profile to resolve at engine init.
+   *  Singular by design — calling again replaces the previously set profile.
+   *  Empty / whitespace-only names throw. The profile is resolved by the
+   *  per-instance `ProfileRegistry` during `prepareChaosConfig`. */
+  useProfile(name: string): this {
+    this.config.profile = normalizeProfileNameForBuilder(name);
+    return this;
+  }
+
+  /** Register an inline scenario profile alongside the built-in demo entry.
+   *  Equivalent to setting one key on `ChaosConfig.customProfiles`. Names
+   *  collide fail-fast against the built-in `mobileCheckout` entry and
+   *  against each other at engine init. */
+  defineProfile(name: string, slice: ProfileConfigSlice): this {
+    const norm = normalizeProfileNameForBuilder(name);
+    if (!this.config.customProfiles) this.config.customProfiles = {};
+    if (Object.prototype.hasOwnProperty.call(this.config.customProfiles, norm)) {
+      throw new Error(`[chaos-maker] profile '${norm}' already defined on this builder`);
+    }
+    this.config.customProfiles[norm] = cloneValue(slice);
+    return this;
+  }
+
+  /** Accumulate a runtime override slice. Rule arrays append across calls; the
+   *  `seed`, `debug`, `groups`, and `presets[]` fields layer with the later
+   *  call winning (matching the "last-write-wins" scalar precedence applied at
+   *  resolution time). Multiple `.overrideProfile(...)` calls compose. */
+  overrideProfile(slice: ProfileOverrideSlice): this {
+    if (!this.config.profileOverrides) this.config.profileOverrides = {};
+    mergeProfileSliceInPlace(this.config.profileOverrides, cloneValue(slice));
     return this;
   }
 

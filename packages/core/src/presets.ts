@@ -3,9 +3,21 @@ import { cloneValue } from './utils';
 
 /** ChaosConfig slice a preset is allowed to carry. Auto-includes any new
  *  rule category added to ChaosConfig — the `Omit` is bounded to fields that
- *  are explicitly forbidden inside a preset (`presets`, `customPresets`,
- *  `seed`, `debug`). */
-export type PresetConfigSlice = Omit<ChaosConfig, 'presets' | 'customPresets' | 'seed' | 'debug' | 'schemaVersion'>;
+ *  are explicitly forbidden inside a preset: `presets`, `customPresets`,
+ *  `seed`, `debug`, `schemaVersion`, plus the v0.7.0 profile coordination
+ *  fields (`profile`, `profileOverrides`, `customProfiles`). Profile-related
+ *  fields are top-level only; preset slices may not chain them. */
+export type PresetConfigSlice = Omit<
+  ChaosConfig,
+  | 'presets'
+  | 'customPresets'
+  | 'seed'
+  | 'debug'
+  | 'schemaVersion'
+  | 'profile'
+  | 'profileOverrides'
+  | 'customProfiles'
+>;
 
 /** A named preset packaged for registry registration. */
 export interface Preset {

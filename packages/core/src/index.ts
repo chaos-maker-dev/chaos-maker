@@ -5,6 +5,7 @@ import { validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAN
 import { ChaosEvent, ChaosEventType, ChaosEventListener, ChaosEventEmitter } from './events';
 import { ChaosConfigBuilder } from './builder';
 import { presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets } from './presets';
+import { ProfileRegistry, BUILT_IN_PROFILES, applyProfile } from './profiles';
 import { createPrng, generateSeed } from './prng';
 import { deserializeForTransport } from './transport';
 import { formatStepTitle, shouldEmitStep } from './format-event';
@@ -22,7 +23,7 @@ import { formatSeedReproduction } from './seed-reporting';
  *
  *  `validateConfig` is the schema-only primitive — does NOT expand presets.
  *  Use only for unit-test structural assertions. */
-export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction };
+export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction };
 /** Internal: prebuilt Zod schema variants. Exported so the JSON-schema build
  *  script can serialize the canonical strict variant. Application code should
  *  call `validateChaosConfig` instead — the schemas are not the public
@@ -31,6 +32,7 @@ export { chaosConfigSchemaStrict, chaosConfigSchemaPassthrough } from './validat
 export type { ValidateChaosConfigOptions, PrepareChaosConfigOptions };
 export type { ValidationIssue, ValidationIssueCode, RuleType, CustomRuleValidator, CustomValidatorMap, DeprecationEntry } from './validation-types';
 export type { Preset, PresetConfigSlice } from './presets';
+export type { Profile, ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 export { SW_BRIDGE_SOURCE } from './sw-bridge-source';
 export { isSessionTeardownError, SESSION_TEARDOWN_PATTERNS } from './session-errors';
 export { extractGraphQLOperation, parseOperationFromQueryString, operationNameMatches } from './graphql';

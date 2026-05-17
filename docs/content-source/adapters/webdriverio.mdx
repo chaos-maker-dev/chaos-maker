@@ -41,6 +41,22 @@ For first-load interception, use Playwright or Cypress.
 
 SSE chaos and GraphQL operation matching work when the EventSource or request is created after injection. For Service Worker chaos, call `browser.url()`, wait for `navigator.serviceWorker.controller`, then call `browser.injectSWChaos(config)`.
 
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the adapter forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+await browser.injectChaos({
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
 ## Debug Mode
 
 Pass `debug: true` to `injectChaos()` (or `browser.injectChaos()`) to enable [Debug Mode](/api/debug/). It does not affect WDIO's `logLevel` config or `DEBUG=wdio:*` - Chaos Maker never reads them. WDIO has no first-class console-message stream, so capture mirrors by installing a `console.debug` tap inside `browser.execute()` before the action under test. Structured debug events ride into `browser.getChaosLog()`.

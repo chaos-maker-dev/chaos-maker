@@ -17,6 +17,9 @@ interface ChaosConfig {
   customPresets?: Record<string, PresetConfigSlice>;
   seed?: number;
   debug?: boolean | { enabled: boolean };
+  profile?: string;
+  profileOverrides?: ProfileOverrideSlice;
+  customProfiles?: Record<string, ProfileConfigSlice>;
 }
 ```
 
@@ -25,6 +28,24 @@ interface ChaosConfig {
 `seed` controls probability-driven chaos decisions. The same seed plus the same interaction sequence produces the same normalized event sequence.
 
 `debug` toggles [Debug Mode](/api/debug/) - every rule decision emits a `type: 'debug'` event and mirrors a `[Chaos] ...` line to `console.debug`. Off by default; framework-agnostic, so it does not interact with Playwright's `PWDEBUG`, Cypress's `--browser` debugger, Puppeteer's `devtools: true`, or WDIO's `logLevel`.
+
+`profile`, `profileOverrides`, and `customProfiles` drive scenario profile resolution. The full surface lives on [Scenario profiles](/concepts/profiles/); the field shapes are:
+
+```typescript
+type ProfileConfigSlice = Omit<
+  ChaosConfig,
+  'customPresets' | 'customProfiles' | 'profile' | 'profileOverrides' | 'schemaVersion'
+>;
+
+type ProfileOverrideSlice = ProfileConfigSlice;
+
+interface Profile {
+  readonly name: string;
+  readonly config: ProfileConfigSlice;
+}
+```
+
+Scalar precedence (highest wins): `profileOverrides.{seed,debug}` > top-level `{seed,debug}` > the profile's own `{seed,debug}`. Rule arrays append in the order: profile rules, top-level rules, override rules.
 
 ## NetworkConfig
 

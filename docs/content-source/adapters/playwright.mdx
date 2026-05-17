@@ -48,6 +48,22 @@ For Service Worker chaos, navigate to the app, wait for `navigator.serviceWorker
 
 SSE chaos and GraphQL operation matching need no extra adapter API. Pass `sse` rules or `graphqlOperation` network matchers to `injectChaos()`.
 
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the adapter forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
 ## Debug Mode
 
 Set `debug: true` on the config passed to `injectChaos()` to enable [Debug Mode](/api/debug/). It is independent of Playwright's own `--debug` mode and `PWDEBUG` env var - Chaos Maker never reads them. Console mirrors land on `page.on('console', …)` with `msg.type() === 'debug'` and a `[Chaos] ...` body. Debug events ride into the `chaos-log.json` attachment but never as inline `test.step` entries.

@@ -18,13 +18,19 @@ export {
   ChaosEventEmitter,
   ChaosConfigBuilder,
   presets,
+  PresetRegistry,
+  BUILT_IN_PRESETS,
+  expandPresets,
+  ProfileRegistry,
+  BUILT_IN_PROFILES,
+  applyProfile,
   createPrng,
   generateSeed,
   SW_BRIDGE_SOURCE,
 };
 ```
 
-`validateChaosConfig(input, opts?)` is the canonical structured validation entry - see [Rule Validation](/concepts/validation/) for the full pipeline. `validateConfig` (schema-only, no preset expansion) and `prepareChaosConfig` (Zod pass 1 + preset expansion + Zod pass 2, no brand or custom validators) remain available for advanced use.
+`validateChaosConfig(input, opts?)` is the canonical structured validation entry - see [Rule Validation](/concepts/validation/) for the full pipeline. `validateConfig` (schema-only, no preset or profile resolution) and `prepareChaosConfig` (Zod pass 1 + profile resolution + preset expansion + Zod pass 2, no brand or custom validators) remain available for advanced use.
 
 ## ChaosMaker
 
@@ -63,6 +69,40 @@ const config = new ChaosConfigBuilder()
 ```
 
 `withDebug(enabled = true)` flips `ChaosConfig.debug`. See [Debug Mode](/api/debug/) for the event taxonomy and console output format.
+
+## Scenario profiles
+
+```typescript
+class ProfileRegistry {
+  constructor(initial?: Iterable<Profile>);
+  register(profile: Profile): void;
+  registerAll(entries: Record<string, ProfileConfigSlice> | undefined): void;
+  has(name: string): boolean;
+  get(name: string): ProfileConfigSlice;
+  list(): string[];
+}
+
+function applyProfile(config: ChaosConfig, registry: ProfileRegistry): ChaosConfig;
+
+const BUILT_IN_PROFILES: ReadonlyArray<Profile>;  // length 2: mobileCheckout + mobile-checkout alias
+```
+
+The registry is seeded by default with the single built-in `mobileCheckout` demo profile (plus its kebab alias `mobile-checkout`). `applyProfile()` is pure functional - same `(config, registry)` produces the same flattened output. `prepareChaosConfig` runs it between Zod pass 1 and preset expansion; the returned config has `profile`, `profileOverrides`, and `customProfiles` stripped.
+
+Builder chain methods:
+
+```typescript
+const config = new ChaosConfigBuilder()
+  .defineProfile('team-saturday-deploy', {
+    presets: ['flaky-api'],
+    network: { failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }] },
+  })
+  .useProfile('team-saturday-deploy')
+  .overrideProfile({ seed: 42 })
+  .build();
+```
+
+`.useProfile(name)` is singular - a second call replaces the previously set name. `.defineProfile(name, slice)` rejects duplicate names within the builder. `.overrideProfile(slice)` accumulates across calls: rule arrays append, scalars (`seed`, `debug`) use last-write-wins. See [Scenario profiles](/concepts/profiles/) for the precedence table and the full surface.
 
 ## Service Worker subpath
 

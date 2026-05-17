@@ -1,5 +1,6 @@
 import type { RuleGroupConfig } from './groups';
 import type { PresetConfigSlice } from './presets';
+import type { ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 
 /** Counting options shared by all network chaos config types.
  *  At most one of `onNth`, `everyNth`, or `afterN` may be set on a single rule.
@@ -259,6 +260,46 @@ export interface ChaosConfig {
    * runtime.
    */
   customPresets?: Record<string, PresetConfigSlice>;
+  /**
+   * Name of a scenario profile to resolve against the per-instance
+   * `ProfileRegistry` (seeded with the built-in `mobileCheckout` demo plus any
+   * entries supplied via `customProfiles`).
+   *
+   * Singular by design — a profile IS the named scenario. Multi-profile
+   * composition belongs inside the profile's own `presets: []` field. Unknown
+   * profile names throw `ChaosConfigError` at construction with
+   * `code: 'unknown_profile'`.
+   *
+   * Resolution order inside `prepareChaosConfig` is: Zod pass 1 -> profile
+   * resolution -> preset expansion -> Zod pass 2. The post-resolution config
+   * has `profile`, `profileOverrides`, and `customProfiles` stripped.
+   */
+  profile?: string;
+  /**
+   * Runtime override slice applied AFTER profile resolution. Use this to tune
+   * a single parameter of a shared profile from a CI run or one test without
+   * forking the profile definition.
+   *
+   * Precedence for the `seed` and `debug` scalars (highest wins):
+   *   `profileOverrides` > top-level `seed`/`debug` > profile's own values.
+   *
+   * Rule arrays append (never replace) — overrides extend the merged rule
+   * list rather than substituting it. Carries the same shape constraints as
+   * a profile slice: no nested `profile`, `profileOverrides`, `customProfiles`,
+   * `customPresets`, or `schemaVersion`.
+   */
+  profileOverrides?: ProfileOverrideSlice;
+  /**
+   * Per-instance custom scenario profiles registered alongside the built-in
+   * demo. Each value is a `ProfileConfigSlice` (a `ChaosConfig` minus
+   * `customPresets`, `customProfiles`, `profile`, `profileOverrides`, and
+   * `schemaVersion`). Names collide fail-fast against the built-in entries
+   * and against each other.
+   *
+   * Custom profile literals stay mutable on input; resolution deep-clones at
+   * apply time so post-construction tweaks are not observed by the runtime.
+   */
+  customProfiles?: Record<string, ProfileConfigSlice>;
   /**
    * Reserved for forward-compatibility with future shape changes.
    * Defaults to `1`. Unknown values are rejected at validation time with

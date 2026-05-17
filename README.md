@@ -40,6 +40,22 @@ test('checkout works under degraded mobile network', async ({ page }) => {
 
 See the full catalog in the [Presets docs](https://chaos-maker-dev.github.io/chaos-maker/concepts/presets/). When a failure only appears under a generated seed, follow the [replay recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/reproduce-flaky-failure/).
 
+## Scenario profiles
+
+When several tests should share the same named scenario, wrap it into a profile. Chaos Maker ships exactly one built-in `mobileCheckout` demo profile (a wiring proof, not an open catalog) - define your own scenarios via `customProfiles`. Pass `profileOverrides` alongside `profile` to tune one parameter at the call site without forking the profile.
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See the [Scenario profiles concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/profiles/) for the resolution rules and runtime override precedence.
+
 ## 30-second Playwright quickstart
 
 When a preset is too coarse, drop down to explicit rules:

@@ -1,0 +1,146 @@
+---
+title: Scenario profiles
+description: Reusable named bundles that compose presets, seed, and rule slices, plus runtime overrides at the inject site.
+---
+
+A **scenario profile** is one named entry that composes presets, a seed pin, debug toggle, and rule slices into a single identifier. Multiple tests reach for the same profile name; one place owns the definition. Runtime overrides layer on top of the resolved profile so a CI run, a single test, or a parameterized matrix can tune one parameter without forking the profile.
+
+```typescript
+import { injectChaos } from '@chaos-maker/playwright';
+
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  seed: 1234,
+});
+```
+
+## When to reach for a profile vs a preset
+
+- A **preset** is a primitive bundle of rules for one resilience situation (`mobile-3g`, `checkout-degraded`, `offline-mode`).
+- A **profile** is the named scenario tests check against ("mobileCheckout", "team-saturday-deploy"). It can carry one or more preset names plus its own rule slices, seed, debug, and groups.
+
+Reach for presets when the test cares about the primitive (a slow API, a flaky stream). Reach for a profile when several tests should share the same named scenario, or when the scenario combines presets with seed pinning and rule slices that belong together.
+
+## The single built-in profile
+
+Chaos Maker ships **one** built-in profile, `mobileCheckout`, as a wiring demo. It composes the two presets that the canonical "mobile user under checkout instability" scenario already covers:
+
+```typescript
+// Equivalent to:
+//   { presets: ['mobile-3g', 'checkout-degraded'] }
+await injectChaos(page, { profile: 'mobile-checkout' });
+```
+
+| camelCase name   | Kebab alias        | Composes                              | Intent                                                                       |
+| ---------------- | ------------------ | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `mobileCheckout` | `mobile-checkout`  | `mobile-3g`, `checkout-degraded`      | Wiring demo. Mobile network plus checkout-route instability.                 |
+
+That's the entire built-in list. Profiles are intentionally user-owned beyond this single demo - this is not an open catalog. Define the scenarios that match your product via `customProfiles` (or `defineProfile()` on the builder).
+
+The kebab alias shares object identity with its camelCase entry inside `ProfileRegistry`, mirroring the preset alias contract. `mobile-checkout` and `mobileCheckout` resolve to the exact same slice.
+
+## Custom profiles
+
+Register your own scenarios inline:
+
+```typescript
+await injectChaos(page, {
+  customProfiles: {
+    'team-saturday-deploy': {
+      presets: ['flaky-api'],
+      network: {
+        failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+      },
+      seed: 42,
+    },
+  },
+  profile: 'team-saturday-deploy',
+});
+```
+
+A profile slice may carry: `presets`, `seed`, `debug`, `groups`, plus the four rule categories (`network`, `ui`, `websocket`, `sse`). It may NOT carry `customPresets`, `customProfiles`, `profile`, `profileOverrides`, or `schemaVersion` - profile inheritance chains are out of scope. The validator rejects them with `code: 'profile_chain'` (or `unknown_field` from the strict schema, whichever fires first).
+
+Names fail-fast against the built-in `mobileCheckout` entry and against other custom profiles.
+
+## Runtime overrides
+
+`profileOverrides` is a slice applied at inject-time on top of a resolved profile. Rule arrays append; scalars (`seed`, `debug`) use last-write-wins precedence with the override layer on top:
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: {
+      latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }],
+    },
+    seed: 9999,           // wins over any top-level or profile seed
+  },
+});
+```
+
+Use overrides to:
+- Pin a seed for one test without editing the profile definition.
+- Append an extra rule on a specific endpoint for a single test.
+- Force a clean run by switching debug on at the call site.
+
+`profileOverrides` may be passed without a `profile`. In that case it just appends extra rules onto the top-level config.
+
+## Precedence at a glance
+
+| Layer                                        | Rule arrays              | Scalars (`seed`, `debug`)        |
+| -------------------------------------------- | ------------------------ | -------------------------------- |
+| Profile slice (resolved from the registry)   | Appended first           | Lowest priority                  |
+| Top-level config fields                      | Appended second          | Beats profile, loses to overrides |
+| `profileOverrides`                           | Appended last            | Highest priority                 |
+
+`presets[]` from each layer merge in the same order and deduplicate by trimmed name, first-occurrence preserved.
+
+The full resolution pipeline inside `prepareChaosConfig` is:
+
+1. Zod pass 1 (strict, or passthrough + strip when `unknownFields: 'warn' | 'ignore'`).
+2. Build a per-instance `ProfileRegistry` seeded with the built-in `mobileCheckout` entry and any `customProfiles`; resolve `profile` + `profileOverrides` into a flat config via `applyProfile()`.
+3. Build a per-instance `PresetRegistry` and run `expandPresets()` against the resolved presets.
+4. Zod pass 2 (strict, on the fully expanded config).
+
+After step 2 the output has `profile`, `profileOverrides`, and `customProfiles` stripped. Steps 3 and 4 do not see profile fields at all - existing preset and validation semantics are unchanged.
+
+## Builder helper
+
+```typescript
+import { ChaosConfigBuilder } from '@chaos-maker/core';
+
+const config = new ChaosConfigBuilder()
+  .defineProfile('team-saturday-deploy', {
+    presets: ['flaky-api'],
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  })
+  .useProfile('team-saturday-deploy')
+  .overrideProfile({
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  })
+  .withSeed(42)
+  .build();
+```
+
+`.useProfile()` is singular - calling it again replaces the previously set name. `.defineProfile()` rejects duplicate names within the builder. `.overrideProfile()` accumulates across calls: rule arrays append, scalars (`seed`, `debug`) use last-write-wins.
+
+## Determinism
+
+`applyProfile()` is pure functional. Same input, same registry, same output. Same resolved config plus the same seed produces an identical `ChaosEvent` sequence under PRNG - replay continues to work exactly as it does with presets.
+
+The brand cache short-circuits a re-validation only when validator options are empty (no `customValidators`, no `onDeprecation`, no `unknownFields`). Two distinct inputs whose `applyProfile` results match still get their own brand stamp - the cache key is the input object identity, not the resolved-shape equivalence.
+
+## Validation errors
+
+Every failure surfaces as a `ChaosConfigError` at construction:
+
+- `unknown_profile` - the name in `profile` is not registered.
+- `profile_collision` - a `customProfiles` name shadows the built-in `mobileCheckout` (or another custom profile).
+- `profile_chain` - a profile or override slice carries one of the forbidden coordination fields (`profile`, `profileOverrides`, `customProfiles`, `customPresets`, `schemaVersion`). The strict schema rejects most of these as `unknown_field` first; the dedicated code fires when slices reach `applyProfile` via the `warn` or `ignore` paths.
+- Empty or whitespace-only profile name in `profile`, `customProfiles` keys, or `defineProfile()`.
+
+## Mutability
+
+The built-in `mobileCheckout` slice is deep-frozen. `customProfiles` values are not frozen - your literals stay mutable. `applyProfile()` deep-clones before any append, so post-construction tweaks to your custom slices never leak into a running engine.
