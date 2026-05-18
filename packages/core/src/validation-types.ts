@@ -20,6 +20,7 @@ export type RuleType =
   | 'group'
   | 'preset'
   | 'profile'
+  | 'matcher'
   | 'top-level';
 
 export type ValidationIssueCode =
@@ -39,6 +40,10 @@ export type ValidationIssueCode =
   | 'unknown_profile'
   | 'profile_chain'
   | 'profile_collision'
+  | 'matcher_not_found'
+  | 'matcher_collision'
+  | 'matcher_inline_conflict'
+  | 'matcher_cycle'
   | 'unknown_schema_version'
   | 'deprecated'
   | 'custom'

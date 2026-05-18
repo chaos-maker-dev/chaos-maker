@@ -7,6 +7,16 @@ import {
   GraphQLExtractResult,
   GraphQLRuleOutcome,
 } from '../graphql';
+import {
+  createHeaderView,
+  matchHeaders,
+  matchHostname,
+  matchQueryParams,
+  matchResourceType,
+  parseRequestUrl,
+  RequestHeaderView,
+  ParsedRequestUrl,
+} from '../matchers';
 import { ChaosEvent, ChaosEventEmitter, ChaosEventType } from '../events';
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -146,26 +156,86 @@ function emitGraphQLDiagnostic(
   });
 }
 
-/**
- * Run the shared per-rule gate: urlPattern + methods + GraphQL operation.
- * Counting remains in the branch so group gating stays after the counter
- * update and before probability.
- */
-function gateRule(
-  rule: NetworkRuleMatchers,
-  url: string,
-  method: string,
-  gqlExtract: GraphQLExtractResult,
-): { proceed: boolean; outcome: GraphQLRuleOutcome | null } {
-  if (!matchUrl(url, rule.urlPattern)) return { proceed: false, outcome: null };
-  if (rule.methods && !rule.methods.includes(method)) return { proceed: false, outcome: null };
+interface MatcherContext {
+  url: string;
+  method: string;
+  resourceType: 'fetch';
+  gqlExtract: GraphQLExtractResult;
+  getParsedUrl(): ParsedRequestUrl | null;
+  getHeaderView(): RequestHeaderView;
+}
 
-  const outcome = evaluateGraphQLRule(rule.graphqlOperation, gqlExtract);
-  if (outcome.kind === 'no-match') {
-    return { proceed: false, outcome };
+interface GateResult {
+  proceed: boolean;
+  outcome: GraphQLRuleOutcome | null;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
+/**
+ * Run the shared per-rule gate covering every matcher field. Order:
+ * urlPattern -> methods -> resourceTypes -> hostname -> queryParams ->
+ * requestHeaders -> graphqlOperation. Returns the list of non-URL matcher
+ * fields that fired in `matchedBy`, or the first field that failed in
+ * `skippedAt`, for downstream debug events.
+ */
+function gateRule(rule: NetworkRuleMatchers, ctx: MatcherContext): GateResult {
+  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
+  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
+  const matchedBy: string[] = [];
+  if (rule.resourceTypes) {
+    if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+      return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+    }
+    matchedBy.push('resourceTypes');
+  }
+  if (rule.hostname !== undefined) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
+      return { proceed: false, outcome: null, skippedAt: 'hostname' };
+    }
+    matchedBy.push('hostname');
+  }
+  if (rule.queryParams) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
+      return { proceed: false, outcome: null, skippedAt: 'queryParams' };
+    }
+    matchedBy.push('queryParams');
+  }
+  if (rule.requestHeaders) {
+    if (!matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
+      return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+    }
+    matchedBy.push('requestHeaders');
   }
 
-  return { proceed: true, outcome };
+  const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
+  if (outcome.kind === 'no-match') {
+    return { proceed: false, outcome, skippedAt: 'graphqlOperation' };
+  }
+  if (rule.graphqlOperation !== undefined) matchedBy.push('graphqlOperation');
+
+  return { proceed: true, outcome, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
+}
+
+function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
+  return rule.hostname !== undefined || rule.queryParams !== undefined;
+}
+
+function ruleNeedsHeaderView(rule: NetworkRuleMatchers): boolean {
+  return rule.requestHeaders !== undefined;
+}
+
+function extractFetchHeaders(input: RequestInfo | URL, init?: RequestInit): RequestHeaderView {
+  const initHeaders = init?.headers;
+  if (initHeaders !== undefined) {
+    return createHeaderView(initHeaders);
+  }
+  if (isRequest(input)) {
+    return createHeaderView(input.headers);
+  }
+  return createHeaderView(undefined);
 }
 
 function operationDetail(outcome: GraphQLRuleOutcome | null): { operationName?: string } {
@@ -221,15 +291,19 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
     const method = getFetchMethod(input, init);
     const existingSignal = getFetchSignal(input, init);
 
-    // Body extraction: only when at least one rule wants GraphQL matching to
-    // avoid paying the .clone()/.text() cost on every request.
-    const needsGqlExtract = (() => {
-      const groups = [config.failures, config.latencies, config.aborts, config.corruptions, config.cors];
-      for (const group of groups) {
-        if (group?.some(ruleHasGraphQLConstraint)) return true;
+    const ruleGroups = [config.failures, config.latencies, config.aborts, config.corruptions, config.cors];
+    const anyRulePasses = (predicate: (r: NetworkRuleMatchers) => boolean): boolean => {
+      for (const group of ruleGroups) {
+        if (group?.some(predicate)) return true;
       }
       return false;
-    })();
+    };
+
+    // Body extraction: only when at least one rule wants GraphQL matching to
+    // avoid paying the .clone()/.text() cost on every request.
+    const needsGqlExtract = anyRulePasses(ruleHasGraphQLConstraint);
+    const needsParsedUrl = anyRulePasses(ruleNeedsParsedUrl);
+    const needsHeaderView = anyRulePasses(ruleNeedsHeaderView);
 
     let gqlExtract: GraphQLExtractResult = { kind: 'not-graphql' };
     if (needsGqlExtract) {
@@ -237,16 +311,39 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
       gqlExtract = extractGraphQLOperation(method, url, body.text, body.unparseable);
     }
 
+    let parsedUrlCache: ParsedRequestUrl | null | undefined;
+    let headerViewCache: RequestHeaderView | undefined;
+    const ctx: MatcherContext = {
+      url,
+      method,
+      resourceType: 'fetch',
+      gqlExtract,
+      getParsedUrl: () => {
+        if (parsedUrlCache === undefined) {
+          parsedUrlCache = needsParsedUrl ? parseRequestUrl(url) : null;
+        }
+        return parsedUrlCache;
+      },
+      getHeaderView: () => {
+        if (headerViewCache === undefined) {
+          headerViewCache = needsHeaderView
+            ? extractFetchHeaders(input, init)
+            : createHeaderView(undefined);
+        }
+        return headerViewCache;
+      },
+    };
+
     // 1. Check for CORS
     if (config.cors) {
       for (const cors of config.cors) {
         emitter?.debug('rule-evaluating', { url, method }, cors);
-        const gate = gateRule(cors, url, method, gqlExtract);
+        const gate = gateRule(cors, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: gate.skippedAt }, cors);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method }, cors);
+        emitter?.debug('rule-matched', { url, method, matchedBy: gate.matchedBy }, cors);
         const count = incrementCounter(cors, counters);
         if (!checkCountingCondition(cors, count)) {
           emitter?.debug('rule-skip-counting', { url, method }, cors);
@@ -307,12 +404,12 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
     if (config.aborts) {
       for (const abort of config.aborts) {
         emitter?.debug('rule-evaluating', { url, method, timeoutMs: abort.timeout }, abort);
-        const gate = gateRule(abort, url, method, gqlExtract);
+        const gate = gateRule(abort, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout }, abort);
+          emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout, skippedAt: gate.skippedAt }, abort);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout }, abort);
+        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout, matchedBy: gate.matchedBy }, abort);
         const count = incrementCounter(abort, counters);
         if (!checkCountingCondition(abort, count)) {
           emitter?.debug('rule-skip-counting', { url, method, timeoutMs: abort.timeout }, abort);
@@ -372,12 +469,12 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
     if (config.failures) {
       for (const failure of config.failures) {
         emitter?.debug('rule-evaluating', { url, method, statusCode: failure.statusCode }, failure);
-        const gate = gateRule(failure, url, method, gqlExtract);
+        const gate = gateRule(failure, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode }, failure);
+          emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode, skippedAt: gate.skippedAt }, failure);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode }, failure);
+        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode, matchedBy: gate.matchedBy }, failure);
         const count = incrementCounter(failure, counters);
         if (!checkCountingCondition(failure, count)) {
           emitter?.debug('rule-skip-counting', { url, method, statusCode: failure.statusCode }, failure);
@@ -417,12 +514,12 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
     if (config.latencies) {
       for (const latency of config.latencies) {
         emitter?.debug('rule-evaluating', { url, method, delayMs: latency.delayMs }, latency);
-        const gate = gateRule(latency, url, method, gqlExtract);
+        const gate = gateRule(latency, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs }, latency);
+          emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs, skippedAt: gate.skippedAt }, latency);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs }, latency);
+        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs, matchedBy: gate.matchedBy }, latency);
         const count = incrementCounter(latency, counters);
         if (!checkCountingCondition(latency, count)) {
           emitter?.debug('rule-skip-counting', { url, method, delayMs: latency.delayMs }, latency);
@@ -458,12 +555,12 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
     if (config.corruptions) {
       for (const corruption of config.corruptions) {
         emitter?.debug('rule-evaluating', { url, method, strategy: corruption.strategy }, corruption);
-        const gate = gateRule(corruption, url, method, gqlExtract);
+        const gate = gateRule(corruption, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy }, corruption);
+          emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy, skippedAt: gate.skippedAt }, corruption);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy }, corruption);
+        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy, matchedBy: gate.matchedBy }, corruption);
         const count = incrementCounter(corruption, counters);
         if (!checkCountingCondition(corruption, count)) {
           emitter?.debug('rule-skip-counting', { url, method, strategy: corruption.strategy }, corruption);

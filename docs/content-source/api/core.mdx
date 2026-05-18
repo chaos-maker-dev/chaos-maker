@@ -24,6 +24,8 @@ export {
   ProfileRegistry,
   BUILT_IN_PROFILES,
   applyProfile,
+  MatcherRegistry,
+  resolveNamedMatchers,
   createPrng,
   generateSeed,
   SW_BRIDGE_SOURCE,
@@ -103,6 +105,40 @@ const config = new ChaosConfigBuilder()
 ```
 
 `.useProfile(name)` is singular - a second call replaces the previously set name. `.defineProfile(name, slice)` rejects duplicate names within the builder. `.overrideProfile(slice)` accumulates across calls: rule arrays append, scalars (`seed`, `debug`) use last-write-wins. See [Scenario profiles](/concepts/profiles/) for the precedence table and the full surface.
+
+## Named matchers
+
+```typescript
+interface MatcherEntry {
+  readonly name: string;
+  readonly config: NamedMatcher;
+}
+
+class MatcherRegistry {
+  constructor(initial?: Iterable<MatcherEntry>);
+  register(entry: MatcherEntry): void;
+  registerAll(entries: Record<string, NamedMatcher> | undefined): void;
+  has(name: string): boolean;
+  get(name: string): NamedMatcher;
+  list(): string[];
+}
+
+function resolveNamedMatchers(config: ChaosConfig, registry: MatcherRegistry): ChaosConfig;
+```
+
+`MatcherEntry` is the seed shape for `MatcherRegistry`: `name` normalizes via `trim()`, `config` is a `NamedMatcher`. The same shape is what `register(entry)` accepts. `registerAll(record)` is a convenience over a `Record<string, NamedMatcher>` (used by `prepareChaosConfig` to seed from `ChaosConfig.matchers`). `ChaosConfigBuilder.defineMatcher(name, matcher)` lands on the same registry path.
+
+The registry seeds from `ChaosConfig.matchers` (no built-ins). `resolveNamedMatchers()` walks every network rule, inlines the registered fields into rules with a `matcher` reference, deletes the reference, and stamps the matcher name onto an internal `WeakMap` so `buildRuleIdMap` can surface `matcherName` on debug events. `prepareChaosConfig` runs the resolver last, after Zod pass 2.
+
+Builder chain method:
+
+```typescript
+const config = new ChaosConfigBuilder()
+  .defineMatcher('customers', { urlPattern: '/api/customers', methods: ['GET'] })
+  .build();
+```
+
+`.defineMatcher(name, matcher)` rejects duplicate names within the builder. Collisions against entries registered through `ChaosConfig.matchers` surface as `matcher_collision` at engine init. See [Advanced matchers](/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`) and the matcher attribution carried on debug events.
 
 ## Service Worker subpath
 

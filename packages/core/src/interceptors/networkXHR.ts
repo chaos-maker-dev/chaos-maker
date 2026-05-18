@@ -7,7 +7,26 @@ import {
   GraphQLExtractResult,
   GraphQLRuleOutcome,
 } from '../graphql';
+import {
+  createHeaderView,
+  matchHeaders,
+  matchHostname,
+  matchQueryParams,
+  matchResourceType,
+  parseRequestUrl,
+  ParsedRequestUrl,
+  RequestHeaderView,
+} from '../matchers';
 import { ChaosEvent, ChaosEventEmitter, ChaosEventType } from '../events';
+
+/** Per-instance metadata attached to each XHR after `open()` / `send()` /
+ *  `setRequestHeader()` patches run. Lives on the XHR object as
+ *  non-enumerable properties to avoid polluting the public XHR surface. */
+interface XhrChaosMeta {
+  _chaos_url: string;
+  _chaos_method: string;
+  _chaos_headers?: Map<string, string>;
+}
 
 interface XhrBodyView {
   text: string | null;
@@ -30,10 +49,21 @@ function ruleHasGraphQLConstraint(rule: NetworkRuleMatchers): boolean {
   return rule.graphqlOperation !== undefined;
 }
 
-function configHasGraphQLRule(config: NetworkConfig): boolean {
+function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
+  return rule.hostname !== undefined || rule.queryParams !== undefined;
+}
+
+function ruleNeedsHeaderView(rule: NetworkRuleMatchers): boolean {
+  return rule.requestHeaders !== undefined;
+}
+
+function anyRuleMatches(
+  config: NetworkConfig,
+  predicate: (rule: NetworkRuleMatchers) => boolean,
+): boolean {
   const groups = [config.failures, config.latencies, config.aborts, config.corruptions, config.cors];
   for (const group of groups) {
-    if (group?.some(ruleHasGraphQLConstraint)) return true;
+    if (group?.some(predicate)) return true;
   }
   return false;
 }
@@ -53,22 +83,73 @@ function emitGraphQLDiagnostic(
   });
 }
 
+interface MatcherContext {
+  url: string;
+  method: string;
+  resourceType: 'xhr';
+  gqlExtract: GraphQLExtractResult;
+  getParsedUrl(): ParsedRequestUrl | null;
+  getHeaderView(): RequestHeaderView;
+}
+
+interface GateResult {
+  proceed: boolean;
+  outcome: GraphQLRuleOutcome | null;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
+/**
+ * Shared per-rule gate covering every matcher field. Counting runs at the
+ * end so it advances only when the rule has fully matched (mirrors the
+ * pre-matcher behavior). Returns `matchedBy` listing extra matcher fields
+ * that fired or `skippedAt` naming the first one that failed.
+ */
 function gateRule(
   rule: NetworkRuleMatchers & { onNth?: number; everyNth?: number; afterN?: number },
-  url: string,
-  method: string,
-  gqlExtract: GraphQLExtractResult,
+  ctx: MatcherContext,
   counters: Map<object, number>,
-): { proceed: boolean; outcome: GraphQLRuleOutcome | null } {
-  if (!matchUrl(url, rule.urlPattern)) return { proceed: false, outcome: null };
-  if (rule.methods && !rule.methods.includes(method)) return { proceed: false, outcome: null };
-  const outcome = evaluateGraphQLRule(rule.graphqlOperation, gqlExtract);
-  if (outcome.kind === 'no-match' || outcome.kind === 'unparseable') {
-    return { proceed: false, outcome };
+): GateResult {
+  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
+  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
+  const matchedBy: string[] = [];
+  if (rule.resourceTypes) {
+    if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+      return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+    }
+    matchedBy.push('resourceTypes');
   }
+  if (rule.hostname !== undefined) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
+      return { proceed: false, outcome: null, skippedAt: 'hostname' };
+    }
+    matchedBy.push('hostname');
+  }
+  if (rule.queryParams) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
+      return { proceed: false, outcome: null, skippedAt: 'queryParams' };
+    }
+    matchedBy.push('queryParams');
+  }
+  if (rule.requestHeaders) {
+    if (!matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
+      return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+    }
+    matchedBy.push('requestHeaders');
+  }
+  const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
+  // XHR's gateRule short-circuits on `unparseable` as proceed:false (caller
+  // emits the GraphQL diagnostic) - intentional divergence from fetch's
+  // probabilistic-emit path because XHR has no per-request body re-read.
+  if (outcome.kind === 'no-match' || outcome.kind === 'unparseable') {
+    return { proceed: false, outcome, skippedAt: 'graphqlOperation' };
+  }
+  if (rule.graphqlOperation !== undefined) matchedBy.push('graphqlOperation');
   const count = incrementCounter(rule, counters);
   if (!checkCountingCondition(rule, count)) return { proceed: false, outcome };
-  return { proceed: true, outcome };
+  return { proceed: true, outcome, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
 }
 
 function operationDetail(outcome: GraphQLRuleOutcome | null): { operationName?: string } {
@@ -112,11 +193,13 @@ function emitCorruptionEvent(
 }
 
 export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyInit) => void, config: NetworkConfig, random: () => number, emitter?: ChaosEventEmitter, counters: Map<object, number> = new Map(), groups?: RuleGroupRegistry) {
-  const needsGqlExtract = configHasGraphQLRule(config);
+  const needsGqlExtract = anyRuleMatches(config, ruleHasGraphQLConstraint);
+  const needsParsedUrl = anyRuleMatches(config, ruleNeedsParsedUrl);
+  const needsHeaderView = anyRuleMatches(config, ruleNeedsHeaderView);
 
   return function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit) {
-    const url = (this as any)._chaos_url;
-    const method = (this as any)._chaos_method;
+    const url = (this as unknown as XhrChaosMeta)._chaos_url;
+    const method = (this as unknown as XhrChaosMeta)._chaos_method;
 
     let gqlExtract: GraphQLExtractResult = { kind: 'not-graphql' };
     if (needsGqlExtract) {
@@ -124,28 +207,86 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
       gqlExtract = extractGraphQLOperation(method, url, view.text, view.unparseable);
     }
 
+    let parsedUrlCache: ParsedRequestUrl | null | undefined;
+    let headerViewCache: RequestHeaderView | undefined;
+    const ctx: MatcherContext = {
+      url,
+      method,
+      resourceType: 'xhr',
+      gqlExtract,
+      getParsedUrl: () => {
+        if (parsedUrlCache === undefined) {
+          parsedUrlCache = needsParsedUrl ? parseRequestUrl(url) : null;
+        }
+        return parsedUrlCache;
+      },
+      getHeaderView: () => {
+        if (headerViewCache === undefined) {
+          const tracked = (this as unknown as XhrChaosMeta)._chaos_headers;
+          headerViewCache = needsHeaderView
+            ? createHeaderView(tracked)
+            : createHeaderView(undefined);
+        }
+        return headerViewCache;
+      },
+    };
+
     // 1. Check for CORS
+    // CORS uses inline matcher checks (not gateRule) on purpose: CORS rules
+    // emit a `graphql-body-unparseable` diagnostic without first incrementing
+    // the per-rule counter, whereas gateRule increments before evaluating
+    // graphqlOperation. Sharing gateRule would either double-count or skip the
+    // diagnostic. The matcher checks below stay deliberately parallel to
+    // gateRule's order so behavior remains consistent across both paths.
     if (config.cors) {
       for (const cors of config.cors) {
         emitter?.debug('rule-evaluating', { url, method }, cors);
         if (!matchUrl(url, cors.urlPattern)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'urlPattern' }, cors);
           continue;
         }
         if (cors.methods && !cors.methods.includes(method)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'methods' }, cors);
           continue;
         }
+        if (cors.resourceTypes && !matchResourceType('xhr', cors.resourceTypes)) {
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'resourceTypes' }, cors);
+          continue;
+        }
+        const corsMatchedBy: string[] = [];
+        if (cors.hostname !== undefined) {
+          const parsed = ctx.getParsedUrl();
+          if (!parsed || !matchHostname(parsed.hostname, cors.hostname)) {
+            emitter?.debug('rule-skip-match', { url, method, skippedAt: 'hostname' }, cors);
+            continue;
+          }
+          corsMatchedBy.push('hostname');
+        }
+        if (cors.queryParams) {
+          const parsed = ctx.getParsedUrl();
+          if (!parsed || !matchQueryParams(parsed.searchParams, cors.queryParams)) {
+            emitter?.debug('rule-skip-match', { url, method, skippedAt: 'queryParams' }, cors);
+            continue;
+          }
+          corsMatchedBy.push('queryParams');
+        }
+        if (cors.requestHeaders && !matchHeaders(ctx.getHeaderView(), cors.requestHeaders)) {
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'requestHeaders' }, cors);
+          continue;
+        }
+        if (cors.requestHeaders) corsMatchedBy.push('requestHeaders');
+        if (cors.resourceTypes) corsMatchedBy.push('resourceTypes');
         const outcome = evaluateGraphQLRule(cors.graphqlOperation, gqlExtract);
         if (outcome.kind === 'no-match') {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'graphqlOperation' }, cors);
           continue;
         }
         if (outcome.kind === 'unparseable') {
           emitGraphQLDiagnostic(emitter, 'network:cors', url, method, {});
           continue;
         }
-        emitter?.debug('rule-matched', { url, method }, cors);
+        if (cors.graphqlOperation !== undefined) corsMatchedBy.push('graphqlOperation');
+        emitter?.debug('rule-matched', { url, method, matchedBy: corsMatchedBy.length > 0 ? corsMatchedBy : undefined }, cors);
         const count = incrementCounter(cors, counters);
         if (!checkCountingCondition(cors, count)) {
           emitter?.debug('rule-skip-counting', { url, method }, cors);
@@ -178,16 +319,16 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.aborts) {
       for (const abort of config.aborts) {
         emitter?.debug('rule-evaluating', { url, method, timeoutMs: abort.timeout }, abort);
-        const gate = gateRule(abort, url, method, gqlExtract, counters);
+        const gate = gateRule(abort, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:abort', url, method, { timeoutMs: abort.timeout });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout }, abort);
+            emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout, skippedAt: gate.skippedAt }, abort);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout }, abort);
+        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout, matchedBy: gate.matchedBy }, abort);
         if (!gateGroup(abort, groups, emitter, { url, method, timeoutMs: abort.timeout })) continue;
         const applied = shouldApplyChaos(abort.probability, random);
         if (!applied) {
@@ -261,16 +402,16 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.failures) {
       for (const failure of config.failures) {
         emitter?.debug('rule-evaluating', { url, method, statusCode: failure.statusCode }, failure);
-        const gate = gateRule(failure, url, method, gqlExtract, counters);
+        const gate = gateRule(failure, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:failure', url, method, { statusCode: failure.statusCode });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode }, failure);
+            emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode, skippedAt: gate.skippedAt }, failure);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode }, failure);
+        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode, matchedBy: gate.matchedBy }, failure);
         if (!gateGroup(failure, groups, emitter, { url, method, statusCode: failure.statusCode })) continue;
         const applied = shouldApplyChaos(failure.probability, random);
         emitter?.emit({
@@ -327,16 +468,16 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.corruptions) {
       for (const corruption of config.corruptions) {
         emitter?.debug('rule-evaluating', { url, method, strategy: corruption.strategy }, corruption);
-        const gate = gateRule(corruption, url, method, gqlExtract, counters);
+        const gate = gateRule(corruption, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:corruption', url, method, { strategy: corruption.strategy });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy }, corruption);
+            emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy, skippedAt: gate.skippedAt }, corruption);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy }, corruption);
+        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy, matchedBy: gate.matchedBy }, corruption);
         if (!gateGroup(corruption, groups, emitter, { url, method, strategy: corruption.strategy })) continue;
         const applied = shouldApplyChaos(corruption.probability, random);
         if (!applied) {
@@ -425,16 +566,16 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.latencies) {
       for (const latency of config.latencies) {
         emitter?.debug('rule-evaluating', { url, method, delayMs: latency.delayMs }, latency);
-        const gate = gateRule(latency, url, method, gqlExtract, counters);
+        const gate = gateRule(latency, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:latency', url, method, { delayMs: latency.delayMs });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs }, latency);
+            emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs, skippedAt: gate.skippedAt }, latency);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs }, latency);
+        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs, matchedBy: gate.matchedBy }, latency);
         if (!gateGroup(latency, groups, emitter, { url, method, delayMs: latency.delayMs })) continue;
         const applied = shouldApplyChaos(latency.probability, random);
         emitter?.emit({
@@ -463,8 +604,28 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
 
 export function patchXHROpen(originalXhrOpen: (method: string, url: string | URL) => void) {
   return function (this: XMLHttpRequest, method: string, url: string | URL) {
-    (this as any)._chaos_url = url.toString();
-    (this as any)._chaos_method = method.toUpperCase();
+    const meta = this as unknown as XhrChaosMeta;
+    meta._chaos_url = url.toString();
+    meta._chaos_method = method.toUpperCase();
+    // Reset per-request header tracker so a re-used XHR instance starts clean.
+    meta._chaos_headers = new Map();
     originalXhrOpen.call(this, method, url);
+  };
+}
+
+/** Patch `XMLHttpRequest.prototype.setRequestHeader` so the chaos engine can
+ *  evaluate header matchers in `patchXHR` (send-time). Headers are stored in
+ *  a per-instance `Map` keyed by lowercased name. Repeated calls for the same
+ *  header name append per the spec (comma-joined). */
+export function patchXHRSetRequestHeader(
+  originalSetRequestHeader: (name: string, value: string) => void,
+) {
+  return function (this: XMLHttpRequest, name: string, value: string) {
+    const meta = this as unknown as XhrChaosMeta;
+    const headers = meta._chaos_headers ?? (meta._chaos_headers = new Map());
+    const key = String(name).toLowerCase();
+    const existing = headers.get(key);
+    headers.set(key, existing === undefined ? String(value) : `${existing}, ${value}`);
+    originalSetRequestHeader.call(this, name, value);
   };
 }

@@ -20,6 +20,7 @@ interface ChaosConfig {
   profile?: string;
   profileOverrides?: ProfileOverrideSlice;
   customProfiles?: Record<string, ProfileConfigSlice>;
+  matchers?: Record<string, NamedMatcher>;
 }
 ```
 
@@ -59,7 +60,7 @@ interface NetworkConfig {
 }
 ```
 
-Each network rule supports `urlPattern`, optional `methods`, `probability`, optional request counting, and optional GraphQL operation matching.
+Each network rule supports `urlPattern`, optional `methods`, `probability`, optional request counting, optional GraphQL operation matching, plus the [advanced matcher](/chaos-maker/concepts/matchers/) fields.
 
 ```typescript
 interface RequestCountingOptions {
@@ -68,14 +69,45 @@ interface RequestCountingOptions {
   afterN?: number;
 }
 
+type HostnameMatcher = string | RegExp;
+type RequestKvMatcher = string | RegExp | boolean;
+type RequestResourceType = 'fetch' | 'xhr';
+
 interface NetworkRuleMatchers {
-  urlPattern: string;
+  urlPattern?: string;
   methods?: string[];
   graphqlOperation?: string | RegExp;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+  matcher?: string;
 }
 ```
 
+A rule MUST use either a `matcher` reference (with no inline matcher fields) OR one or more inline matcher fields - never both. Mixing surfaces `matcher_inline_conflict` at validation time.
+
 `graphqlOperation` is an additional matcher. It matches an `operationName` field, a named `query` / `mutation` / `subscription`, or a persisted-query GET parameter. Anonymous operations do not match a non-null matcher. If a request body cannot be parsed for GraphQL operation detection (for example multipart, streaming, or XHR `Blob` bodies), Chaos Maker emits a diagnostic event with `reason: 'graphql-body-unparseable'` and `applied: false`.
+
+`requestHeaders` matches against the request's headers (key comparison case-insensitive). The field is named `requestHeaders` (not `headers`) so it does not collide with the response-synthesis `headers` field on `NetworkFailureConfig`. `string`, `RegExp`, `true`, and `false` value matchers carry the same semantics as `queryParams`.
+
+`resourceTypes` is a non-empty subset of `'fetch' | 'xhr'`. WebSocket and SSE rules already live in their own categories and are not addressable here.
+
+## Named matchers
+
+```typescript
+interface NamedMatcher {
+  urlPattern?: string;
+  methods?: string[];
+  graphqlOperation?: string | RegExp;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+}
+```
+
+The top-level `matchers` registry holds reusable `NamedMatcher` entries. Rules reference one via `matcher: 'name'`. The resolver runs after preset and profile expansion, inlines the registered fields, and strips both the `matcher` reference and the `matchers` registry from the resolved config. See [Advanced matchers](/chaos-maker/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`).
 
 ## UI
 

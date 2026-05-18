@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { patchXHR, patchXHROpen } from '../src/interceptors/networkXHR';
+import { patchXHR, patchXHROpen, patchXHRSetRequestHeader } from '../src/interceptors/networkXHR';
 import { NetworkConfig } from '../src/config';
 import { ChaosEventEmitter } from '../src/events';
 import { RuleGroupRegistry } from '../src/groups';
@@ -375,5 +375,169 @@ describe('patchXHR (send)', () => {
         }),
       }),
     ]);
+  });
+});
+
+describe('patchXHRSetRequestHeader', () => {
+  type XhrProto = { setRequestHeader?: (n: string, v: string) => void };
+
+  let priorSetRequestHeader: ((n: string, v: string) => void) | undefined;
+  beforeEach(() => {
+    priorSetRequestHeader = (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader;
+  });
+  afterEach(() => {
+    // Restore the mock prototype's setRequestHeader so a stray patch from one
+    // test does not leak into the next test in this file.
+    if (priorSetRequestHeader === undefined) {
+      delete (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader;
+    } else {
+      (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader = priorSetRequestHeader;
+    }
+  });
+
+  it('records headers per XHR instance with lowercased keys', () => {
+    const patchedOpen = patchXHROpen(originalXhrOpen);
+    const originalSetRequestHeader = vi.fn();
+    const patchedSetRequestHeader = patchXHRSetRequestHeader(originalSetRequestHeader);
+    global.XMLHttpRequest.prototype.open = patchedOpen;
+    (global.XMLHttpRequest.prototype as unknown as { setRequestHeader: typeof patchedSetRequestHeader }).setRequestHeader =
+      patchedSetRequestHeader;
+
+    const xhr = new global.XMLHttpRequest();
+    xhr.open('GET', '/api/test');
+    (xhr as unknown as { setRequestHeader: (n: string, v: string) => void }).setRequestHeader(
+      'Authorization',
+      'Bearer abc',
+    );
+    (xhr as unknown as { setRequestHeader: (n: string, v: string) => void }).setRequestHeader(
+      'X-Trace-Id',
+      't-1',
+    );
+
+    const headers = (xhr as unknown as { _chaos_headers: Map<string, string> })._chaos_headers;
+    expect(headers.get('authorization')).toBe('Bearer abc');
+    expect(headers.get('x-trace-id')).toBe('t-1');
+    expect(originalSetRequestHeader).toHaveBeenCalledTimes(2);
+  });
+
+  it('appends comma-joined when a header is set twice', () => {
+    const originalSetRequestHeader = vi.fn();
+    const patchedSetRequestHeader = patchXHRSetRequestHeader(originalSetRequestHeader);
+    const xhr = new global.XMLHttpRequest();
+    (xhr as unknown as { _chaos_headers: Map<string, string> })._chaos_headers = new Map();
+    patchedSetRequestHeader.call(xhr, 'Accept', 'application/json');
+    patchedSetRequestHeader.call(xhr, 'accept', 'text/plain');
+    const headers = (xhr as unknown as { _chaos_headers: Map<string, string> })._chaos_headers;
+    expect(headers.get('accept')).toBe('application/json, text/plain');
+  });
+});
+
+describe('patchXHR advanced matchers', () => {
+  function setupXhrWithHeaders(headers?: Record<string, string>) {
+    const xhr = new global.XMLHttpRequest();
+    const meta = xhr as unknown as { _chaos_headers: Map<string, string> };
+    meta._chaos_headers = new Map();
+    if (headers) {
+      for (const [k, v] of Object.entries(headers)) {
+        meta._chaos_headers.set(k.toLowerCase(), v);
+      }
+    }
+    return xhr;
+  }
+
+  it('hostname matcher fires only when hostname matches', () => {
+    const config: NetworkConfig = {
+      failures: [
+        { urlPattern: '*', hostname: 'api.example.com', statusCode: 503, probability: 1 },
+      ],
+    };
+    const patchedSend = patchXHR(originalXhrSend, config, deterministicRandom);
+    global.XMLHttpRequest.prototype.send = patchedSend;
+
+    const xhrMatch = setupXhrWithHeaders();
+    (xhrMatch as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url =
+      'https://api.example.com/users';
+    (xhrMatch as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMatch.send();
+    expect(xhrMatch.status).toBe(503);
+
+    const xhrMiss = setupXhrWithHeaders();
+    (xhrMiss as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url =
+      'https://other.test/users';
+    (xhrMiss as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMiss.send();
+    expect(xhrMiss.status).toBe(200);
+  });
+
+  it('requestHeaders matcher reads from _chaos_headers map', () => {
+    const config: NetworkConfig = {
+      failures: [
+        {
+          urlPattern: '/api',
+          requestHeaders: { authorization: /^Bearer / },
+          statusCode: 503,
+          probability: 1,
+        },
+      ],
+    };
+    const patchedSend = patchXHR(originalXhrSend, config, deterministicRandom);
+    global.XMLHttpRequest.prototype.send = patchedSend;
+
+    const xhrMatch = setupXhrWithHeaders({ Authorization: 'Bearer abc' });
+    (xhrMatch as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url = '/api/users';
+    (xhrMatch as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMatch.send();
+    expect(xhrMatch.status).toBe(503);
+
+    const xhrMiss = setupXhrWithHeaders({ Authorization: 'Basic xyz' });
+    (xhrMiss as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url = '/api/users';
+    (xhrMiss as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMiss.send();
+    expect(xhrMiss.status).toBe(200);
+  });
+
+  it('resourceTypes restricted to fetch does not fire on xhr', () => {
+    const config: NetworkConfig = {
+      failures: [
+        { urlPattern: '/api', resourceTypes: ['fetch'], statusCode: 503, probability: 1 },
+      ],
+    };
+    const patchedSend = patchXHR(originalXhrSend, config, deterministicRandom);
+    global.XMLHttpRequest.prototype.send = patchedSend;
+
+    const xhr = setupXhrWithHeaders();
+    (xhr as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url = '/api/users';
+    (xhr as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhr.send();
+    expect(xhr.status).toBe(200);
+  });
+
+  it('queryParams matcher fires only when every entry passes', () => {
+    const config: NetworkConfig = {
+      failures: [
+        {
+          urlPattern: '/api',
+          queryParams: { role: 'admin' },
+          statusCode: 503,
+          probability: 1,
+        },
+      ],
+    };
+    const patchedSend = patchXHR(originalXhrSend, config, deterministicRandom);
+    global.XMLHttpRequest.prototype.send = patchedSend;
+
+    const xhrMatch = setupXhrWithHeaders();
+    (xhrMatch as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url =
+      '/api/users?role=admin';
+    (xhrMatch as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMatch.send();
+    expect(xhrMatch.status).toBe(503);
+
+    const xhrMiss = setupXhrWithHeaders();
+    (xhrMiss as unknown as { _chaos_url: string; _chaos_method: string })._chaos_url =
+      '/api/users?role=user';
+    (xhrMiss as unknown as { _chaos_method: string })._chaos_method = 'GET';
+    xhrMiss.send();
+    expect(xhrMiss.status).toBe(200);
   });
 });

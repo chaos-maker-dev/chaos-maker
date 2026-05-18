@@ -105,6 +105,18 @@ export interface ChaosEvent {
      *  Reserved so the event shape doesn't churn when the builder later
      *  gains `.failRequests({..., name: 'slow-api'})`. */
     ruleName?: string;
+    /** Name of the registered `NamedMatcher` whose fields were inlined into
+     *  this rule by `resolveNamedMatchers`. Set on every event emitted for a
+     *  matcher-resolved rule (including `rule-matched` debug events). */
+    matcherName?: string;
+    /** Sorted list of matcher fields beyond `urlPattern`/`methods` that fired
+     *  for a `rule-matched` debug event. Useful for explaining WHY a rule
+     *  fired in dashboards. Possible values: `'hostname' | 'queryParams' |
+     *  'requestHeaders' | 'resourceTypes' | 'graphqlOperation'`. */
+    matchedBy?: string[];
+    /** Name of the first matcher field that failed for a `rule-skip-match`
+     *  debug event. One of the matcher field names. */
+    skippedAt?: string;
   };
 }
 
@@ -159,7 +171,13 @@ export class ChaosEventEmitter {
   debug(stage: ChaosDebugStage, detail: ChaosEvent['detail'], rule?: object): void {
     if (!this.logger) return;
     const id = rule ? this.ruleIds?.get(rule) : undefined;
-    const finalDetail = id ? { ...detail, ruleType: id.ruleType, ruleId: id.ruleId } : detail;
+    let finalDetail: ChaosEvent['detail'] = detail;
+    if (id) {
+      finalDetail = { ...finalDetail, ruleType: id.ruleType, ruleId: id.ruleId };
+      if (id.matcherName !== undefined) {
+        finalDetail = { ...finalDetail, matcherName: id.matcherName };
+      }
+    }
     const evt = this.logger.log(stage, finalDetail);
     // Logger.log() returns null when constructed with enabled:false. The
     // fast-path above already skips the call when no logger is attached, but

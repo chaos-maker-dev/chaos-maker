@@ -57,6 +57,11 @@ export type {
   Profile,
   ProfileConfigSlice,
   ProfileOverrideSlice,
+  HostnameMatcher,
+  RequestKvMatcher,
+  RequestResourceType,
+  NamedMatcher,
+  MatcherEntry,
 } from '@chaos-maker/core';
 
 // Augment Cypress's Chainable interface so `cy.injectChaos(...)` etc. get

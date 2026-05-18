@@ -48,6 +48,17 @@ try {
 
 `error.messages` returns the v0.4.x string array (`path: message`) for callers that grep stack traces.
 
+### Matcher issue codes
+
+The advanced matchers surface contributes four issue codes alongside the existing set:
+
+- `matcher_not_found` - rule references a `matcher` name not in the `matchers` registry.
+- `matcher_collision` - two `matchers` keys collide after `trim()`.
+- `matcher_inline_conflict` - rule mixes `matcher` with inline matcher fields.
+- `matcher_cycle` - registry entry carries its own `matcher` field. Reserved for future composition; observable today via untyped configs.
+
+A new `RuleType` value `matcher` carries these on the issue. See [Advanced matchers](./matchers) for the full surface.
+
 ## Custom validators
 
 Run additional checks per `RuleType`. Validators receive each rule as `Readonly<unknown>`; narrow with a type guard. Mutating the rule arg is undefined behavior - Chaos Maker's engine deep-clones the canonical config at expansion time, so your mutations may not propagate.

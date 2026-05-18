@@ -56,6 +56,29 @@ await injectChaos(page, {
 
 See the [Scenario profiles concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/profiles/) for the resolution rules and runtime override precedence.
 
+## Advanced matchers
+
+Every network rule now accepts hostname, query parameter, request header, and resource-type matchers alongside `urlPattern` and `methods`. A separate `matchers` registry holds reusable named matchers so several rules can share one targeting definition.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    customers: {
+      hostname: 'api.example.com',
+      urlPattern: '/api/customers',
+      methods: ['GET'],
+      requestHeaders: { authorization: /^Bearer / },
+    },
+  },
+  network: {
+    failures: [{ matcher: 'customers', statusCode: 503, probability: 1 }],
+    latencies: [{ matcher: 'customers', delayMs: 500, probability: 1 }],
+  },
+});
+```
+
+See the [Advanced matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/) for the full surface, the four validation issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`), and the matcher attribution on debug events.
+
 ## 30-second Playwright quickstart
 
 When a preset is too coarse, drop down to explicit rules:

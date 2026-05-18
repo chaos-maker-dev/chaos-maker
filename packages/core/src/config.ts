@@ -42,11 +42,72 @@ export interface RuleGroupAssignment {
  */
 export type GraphQLOperationMatcher = string | RegExp;
 
-/** Common matcher fields shared by every network chaos rule type. */
-export interface NetworkRuleMatchers {
-  urlPattern: string;
+/** Match against the hostname portion of a request URL.
+ *  - `string` — case-insensitive exact match against `new URL(url).hostname`.
+ *  - `RegExp` — `.test(hostname)`; `g`/`y` flags rejected at validation time.
+ */
+export type HostnameMatcher = string | RegExp;
+
+/** Per-key matcher for query parameters and request headers.
+ *  - `true` — key must be present (value ignored).
+ *  - `false` — key must be absent.
+ *  - `string` — exact value match (decoded for query params; raw for headers).
+ *  - `RegExp` — `.test(value)`; `g`/`y` flags rejected at validation time.
+ */
+export type RequestKvMatcher = string | RegExp | boolean;
+
+/** Resource type bucket for network rules. Distinguishes between the two
+ *  network interceptors (`fetch` vs `xhr`). WebSocket and SSE live in their
+ *  own rule categories and are NOT addressable here. */
+export type RequestResourceType = 'fetch' | 'xhr';
+
+/** Reusable named matcher carried in `ChaosConfig.matchers`. A rule references
+ *  one via `matcher: 'name'` instead of inlining matcher fields. Composition
+ *  (a matcher referencing another matcher) is out of scope for this release.
+ *
+ *  Request header matchers live under `requestHeaders` (not `headers`) so the
+ *  name does not collide with the response-synthesis `headers` field on
+ *  `NetworkFailureConfig`. */
+export interface NamedMatcher {
+  urlPattern?: string;
   methods?: string[];
   graphqlOperation?: GraphQLOperationMatcher;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+}
+
+/** Common matcher fields shared by every network chaos rule type.
+ *
+ *  A rule MUST use EITHER `matcher: 'name'` (referencing a registered
+ *  `NamedMatcher`) OR at least one inline matcher field. Mixing the two
+ *  surfaces a `matcher_inline_conflict` validation error.
+ *
+ *  Inline matcher semantics:
+ *  - `urlPattern` — substring match (or `'*'` for any URL).
+ *  - `methods` — HTTP method whitelist (case-sensitive after `.toUpperCase()`
+ *    at the interceptor).
+ *  - `hostname` — case-insensitive exact match or RegExp test against the
+ *    request URL's hostname.
+ *  - `queryParams` — per-key matcher map; every entry must pass.
+ *  - `requestHeaders` — per-key matcher map for REQUEST headers (key
+ *    comparison is case-insensitive); every entry must pass. The name is
+ *    `requestHeaders` (not `headers`) so it does not collide with the
+ *    response-synthesis `headers` field on `NetworkFailureConfig`.
+ *  - `resourceTypes` — non-empty subset of `{'fetch','xhr'}`; rule fires only
+ *    when the originating interceptor is in the list.
+ *  - `graphqlOperation` — applied AFTER all other matchers.
+ */
+export interface NetworkRuleMatchers {
+  urlPattern?: string;
+  methods?: string[];
+  graphqlOperation?: GraphQLOperationMatcher;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+  matcher?: string;
 }
 
 export interface NetworkFailureConfig extends RequestCountingOptions, NetworkRuleMatchers, RuleGroupAssignment {
@@ -300,6 +361,27 @@ export interface ChaosConfig {
    * apply time so post-construction tweaks are not observed by the runtime.
    */
   customProfiles?: Record<string, ProfileConfigSlice>;
+  /**
+   * Per-instance registry of reusable named matchers. Each entry is a
+   * `NamedMatcher` bundle of matcher fields (`urlPattern`, `hostname`,
+   * `methods`, `queryParams`, `headers`, `resourceTypes`, `graphqlOperation`)
+   * shared across multiple rules via `matcher: 'name'`.
+   *
+   * Names normalize via `String.prototype.trim()`; collisions throw
+   * `ChaosConfigError` with `code: 'matcher_collision'` at construction.
+   * Unknown references throw `code: 'matcher_not_found'`. A rule that mixes
+   * `matcher` with inline matcher fields throws `code: 'matcher_inline_conflict'`.
+   *
+   * Resolution slot inside `prepareChaosConfig` is AFTER profile resolution
+   * and preset expansion and BEFORE the post-merge Zod pass, so rules brought
+   * in by presets or profiles can also reference top-level matchers.
+   *
+   * Matchers are a top-level registry only — presets and profile slices may
+   * not declare their own `matchers` field. Recursive composition (a
+   * `NamedMatcher` carrying its own `matcher` reference) is out of scope and
+   * surfaces as `matcher_cycle` if encountered.
+   */
+  matchers?: Record<string, NamedMatcher>;
   /**
    * Reserved for forward-compatibility with future shape changes.
    * Defaults to `1`. Unknown values are rejected at validation time with

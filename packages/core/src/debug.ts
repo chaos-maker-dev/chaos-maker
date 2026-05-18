@@ -15,6 +15,7 @@
 
 import type { ChaosConfig } from './config';
 import type { ChaosDebugStage, ChaosEvent } from './events';
+import { ruleMatcherOrigin } from './matchers';
 
 export type { ChaosDebugStage } from './events';
 
@@ -32,6 +33,11 @@ export function normalizeDebugOption(input: boolean | DebugOptions | undefined):
 export interface RuleIdEntry {
   ruleType: string;
   ruleId: string;
+  /** Name of the registered `NamedMatcher` that produced this rule's matcher
+   *  fields via `resolveNamedMatchers`. Present only when the rule was
+   *  matcher-resolved; the `ChaosEventEmitter.debug()` path uses this to
+   *  enrich every debug event with `detail.matcherName`. */
+  matcherName?: string;
 }
 
 const RULE_TYPE_BY_ARRAY: ReadonlyArray<{
@@ -66,7 +72,10 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
     const arr = pick(config);
     if (!arr) continue;
     arr.forEach((rule, index) => {
-      map.set(rule as object, { ruleType, ruleId: `${ruleType}#${index}` });
+      const entry: RuleIdEntry = { ruleType, ruleId: `${ruleType}#${index}` };
+      const matcherName = ruleMatcherOrigin.get(rule as object);
+      if (matcherName !== undefined) entry.matcherName = matcherName;
+      map.set(rule as object, entry);
     });
   }
   return map;
@@ -80,6 +89,7 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
 export function formatDebugMessage(stage: ChaosDebugStage, detail: ChaosEvent['detail']): string {
   const parts: string[] = [];
   if (detail.ruleId) parts.push(`rule=${detail.ruleId}`);
+  if (detail.matcherName) parts.push(`matcher=${detail.matcherName}`);
   if (detail.phase) parts.push(detail.phase);
   if (detail.method) parts.push(detail.method);
   if (detail.url) parts.push(detail.url);
@@ -92,6 +102,8 @@ export function formatDebugMessage(stage: ChaosDebugStage, detail: ChaosEvent['d
   if (detail.strategy) parts.push(`strategy=${detail.strategy}`);
   if (detail.groupName) parts.push(`group=${detail.groupName}`);
   if (detail.reason) parts.push(`reason=${detail.reason}`);
+  if (detail.matchedBy && detail.matchedBy.length > 0) parts.push(`matched=${detail.matchedBy.join(',')}`);
+  if (detail.skippedAt) parts.push(`skippedAt=${detail.skippedAt}`);
   return parts.length === 0 ? stage : `${stage}: ${parts.join(' ')}`;
 }
 

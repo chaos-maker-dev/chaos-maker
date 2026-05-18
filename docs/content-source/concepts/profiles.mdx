@@ -144,3 +144,7 @@ Every failure surfaces as a `ChaosConfigError` at construction:
 ## Mutability
 
 The built-in `mobileCheckout` slice is deep-frozen. `customProfiles` values are not frozen - your literals stay mutable. `applyProfile()` deep-clones before any append, so post-construction tweaks to your custom slices never leak into a running engine.
+
+## Sharing matcher targeting across rules
+
+When a profile ships several rules that should target the same surface, register the shared targeting on [`matchers`](./matchers) and reference it from each rule via `matcher: 'name'`. Named matcher resolution runs after profile expansion, so rules inside a profile slice can reference top-level matchers without re-declaring fields.

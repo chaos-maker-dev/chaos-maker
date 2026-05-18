@@ -304,6 +304,11 @@ export type {
   Profile,
   ProfileConfigSlice,
   ProfileOverrideSlice,
+  HostnameMatcher,
+  RequestKvMatcher,
+  RequestResourceType,
+  NamedMatcher,
+  MatcherEntry,
 } from '@chaos-maker/core';
 
 // Runtime export so adapter consumers can construct a Logger

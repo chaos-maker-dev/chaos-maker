@@ -3,7 +3,7 @@ import { validateChaosConfig, type ValidateChaosConfigOptions } from './validati
 import { createPrng } from './prng';
 import { ChaosEventEmitter, ChaosEvent, ChaosEventType, ChaosEventListener } from './events';
 import { patchFetch } from './interceptors/networkFetch';
-import { patchXHR, patchXHROpen } from './interceptors/networkXHR';
+import { patchXHR, patchXHROpen, patchXHRSetRequestHeader } from './interceptors/networkXHR';
 import { attachDomAssailant } from './interceptors/domAssailant';
 import { patchWebSocket, WebSocketPatchHandle } from './interceptors/websocket';
 import { patchEventSource, EventSourceLikeStatic, EventSourcePatchHandle } from './interceptors/eventSource';
@@ -69,6 +69,7 @@ export class ChaosMaker {
   private originalFetch?: typeof globalThis.fetch;
   private originalXhrSend?: (body?: Document | XMLHttpRequestBodyInit) => void;
   private originalXhrOpen?: (method: string, url: string | URL) => void;
+  private originalXhrSetRequestHeader?: (name: string, value: string) => void;
   private domObserver?: MutationObserver;
   private originalWebSocket?: typeof WebSocket;
   private webSocketHandle?: WebSocketPatchHandle;
@@ -343,6 +344,12 @@ export class ChaosMaker {
             'xhr-open',
           );
 
+          if (typeof target.XMLHttpRequest.prototype.setRequestHeader === 'function') {
+            this.originalXhrSetRequestHeader = target.XMLHttpRequest.prototype.setRequestHeader;
+            target.XMLHttpRequest.prototype.setRequestHeader =
+              patchXHRSetRequestHeader(this.originalXhrSetRequestHeader);
+          }
+
           this.originalXhrSend = target.XMLHttpRequest.prototype.send;
           target.XMLHttpRequest.prototype.send = markRuntimePatch(
             patchXHR(this.originalXhrSend, this.config.network, this.random, this.emitter, this.requestCounters, this.groups),
@@ -407,6 +414,7 @@ export class ChaosMaker {
     const originalFetch = this.originalFetch;
     const originalXhrOpen = this.originalXhrOpen;
     const originalXhrSend = this.originalXhrSend;
+    const originalXhrSetRequestHeader = this.originalXhrSetRequestHeader;
     const domObserver = this.domObserver;
     const originalWebSocket = this.originalWebSocket;
     const webSocketHandle = this.webSocketHandle;
@@ -416,6 +424,7 @@ export class ChaosMaker {
     this.originalFetch = undefined;
     this.originalXhrOpen = undefined;
     this.originalXhrSend = undefined;
+    this.originalXhrSetRequestHeader = undefined;
     this.domObserver = undefined;
     this.originalWebSocket = undefined;
     this.webSocketHandle = undefined;
@@ -430,6 +439,11 @@ export class ChaosMaker {
     if (originalXhrSend && typeof target.XMLHttpRequest === 'function') {
       this.runCleanupStep('restore-xhr-send', () => {
         target.XMLHttpRequest.prototype.send = originalXhrSend;
+      });
+    }
+    if (originalXhrSetRequestHeader && typeof target.XMLHttpRequest === 'function') {
+      this.runCleanupStep('restore-xhr-set-request-header', () => {
+        target.XMLHttpRequest.prototype.setRequestHeader = originalXhrSetRequestHeader;
       });
     }
     if (originalXhrOpen && typeof target.XMLHttpRequest === 'function') {

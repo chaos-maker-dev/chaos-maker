@@ -616,4 +616,123 @@ describe('patchFetch', () => {
       ]);
     });
   });
+
+  describe('advanced matchers', () => {
+    it('hostname matcher fires only when hostname matches', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          { urlPattern: '*', hostname: 'api.example.com', statusCode: 503, probability: 1 },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const a = await patched('https://api.example.com/users');
+      const b = await patched('https://other.example.com/users');
+      expect(a.status).toBe(503);
+      expect(b.status).toBe(200);
+    });
+
+    it('hostname RegExp matcher tests against the hostname', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          { urlPattern: '*', hostname: /\.example\.com$/, statusCode: 503, probability: 1 },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const a = await patched('https://payments.example.com/charges');
+      const b = await patched('https://other.test/charges');
+      expect(a.status).toBe(503);
+      expect(b.status).toBe(200);
+    });
+
+    it('queryParams matcher requires every entry to pass', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          {
+            urlPattern: '/api',
+            queryParams: { role: 'admin', debug: true },
+            statusCode: 503,
+            probability: 1,
+          },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const match = await patched('/api/users?role=admin&debug=1');
+      const missingDebug = await patched('/api/users?role=admin');
+      const wrongRole = await patched('/api/users?role=user&debug=1');
+      expect(match.status).toBe(503);
+      expect(missingDebug.status).toBe(200);
+      expect(wrongRole.status).toBe(200);
+    });
+
+    it('requestHeaders matcher is case-insensitive on the key', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          {
+            urlPattern: '/api',
+            requestHeaders: { authorization: /^Bearer / },
+            statusCode: 503,
+            probability: 1,
+          },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const match = await patched('/api/users', { headers: { Authorization: 'Bearer abc' } });
+      const miss = await patched('/api/users', { headers: { Authorization: 'Basic xyz' } });
+      expect(match.status).toBe(503);
+      expect(miss.status).toBe(200);
+    });
+
+    it('resourceTypes restricted to xhr does not fire on fetch', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          { urlPattern: '/api', resourceTypes: ['xhr'], statusCode: 503, probability: 1 },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const res = await patched('/api/users');
+      expect(res.status).toBe(200);
+    });
+
+    it('resourceTypes including fetch allows the rule to fire', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          { urlPattern: '/api', resourceTypes: ['fetch'], statusCode: 503, probability: 1 },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const res = await patched('/api/users');
+      expect(res.status).toBe(503);
+    });
+
+    it('combined matchers must all pass to fire', async () => {
+      const config: NetworkConfig = {
+        failures: [
+          {
+            urlPattern: '*',
+            hostname: 'api.example.com',
+            methods: ['POST'],
+            queryParams: { tenant: 'acme' },
+            requestHeaders: { 'x-trace-id': true },
+            statusCode: 503,
+            probability: 1,
+          },
+        ],
+      };
+      const patched = patchFetch(originalFetch, config, deterministicRandom);
+      const allMatch = await patched('https://api.example.com/charge?tenant=acme', {
+        method: 'POST',
+        headers: { 'X-Trace-Id': 'abc' },
+      });
+      const wrongHost = await patched('https://other.test/charge?tenant=acme', {
+        method: 'POST',
+        headers: { 'X-Trace-Id': 'abc' },
+      });
+      const missingHeader = await patched('https://api.example.com/charge?tenant=acme', {
+        method: 'POST',
+      });
+      expect(allMatch.status).toBe(503);
+      expect(wrongHost.status).toBe(200);
+      expect(missingHeader.status).toBe(200);
+    });
+  });
 });

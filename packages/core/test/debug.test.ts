@@ -197,3 +197,46 @@ describe('buildRuleIdMap', () => {
     expect(seen.size).toBe(expectedTypes.length);
   });
 });
+
+describe('matcher attribution in debug events', () => {
+  it('buildRuleIdMap surfaces matcherName for matcher-resolved rules', async () => {
+    const { prepareChaosConfig } = await import('../src/validation');
+    const resolved = prepareChaosConfig({
+      network: {
+        failures: [
+          { matcher: 'customers', statusCode: 503, probability: 1 },
+        ],
+      },
+      matchers: { customers: { urlPattern: '/api/customers' } },
+    });
+    const map = buildRuleIdMap(resolved);
+    const failure = resolved.network!.failures![0] as object;
+    const entry = map.get(failure);
+    expect(entry?.matcherName).toBe('customers');
+    expect(entry?.ruleId).toBe('failure#0');
+  });
+
+  it('formatDebugMessage renders matcher, matchedBy, and skippedAt', () => {
+    expect(
+      formatDebugMessage('rule-matched', {
+        ruleId: 'failure#0',
+        matcherName: 'customers',
+        matchedBy: ['hostname', 'queryParams'],
+        url: '/api/customers',
+        method: 'GET',
+      }),
+    ).toContain('matcher=customers');
+    expect(
+      formatDebugMessage('rule-matched', {
+        ruleId: 'failure#0',
+        matchedBy: ['hostname', 'queryParams'],
+      }),
+    ).toContain('matched=hostname,queryParams');
+    expect(
+      formatDebugMessage('rule-skip-match', {
+        ruleId: 'failure#0',
+        skippedAt: 'queryParams',
+      }),
+    ).toContain('skippedAt=queryParams');
+  });
+});

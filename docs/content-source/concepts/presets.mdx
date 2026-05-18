@@ -118,3 +118,7 @@ await injectChaos(page, {
 ```
 
 Still supported for migration. The seed belongs at the root config level, so it can be added to any preset before injection. Prefer the declarative `presets:` field for new code.
+
+## Sharing targeting across preset rules
+
+When a preset's rules all hit the same API surface, register the shared targeting on the top-level [`matchers`](./matchers) registry and reference it from each rule with `matcher: 'name'`. Named matcher resolution runs after preset expansion, so rules brought in by a preset can reference top-level matchers without duplicating matcher fields.

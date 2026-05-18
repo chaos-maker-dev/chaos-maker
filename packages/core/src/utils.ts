@@ -48,8 +48,8 @@ export function checkCountingCondition(rule: RequestCountingOptions, count: numb
   return true;
 }
 
-export function matchUrl(url: string, pattern: string): boolean {
-  if (pattern === '*') return true;
+export function matchUrl(url: string, pattern: string | undefined): boolean {
+  if (pattern === undefined || pattern === '*') return true;
   return url.includes(pattern);
 }
 
