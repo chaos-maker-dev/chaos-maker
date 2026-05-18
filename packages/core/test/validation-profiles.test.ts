@@ -41,16 +41,37 @@ describe('prepareChaosConfig with scenario profiles', () => {
     expect(err.issues[0].ruleType).toBe('profile');
   });
 
-  it('throws an actionable error when customProfiles slice tries to nest profile', () => {
+  it('throws profile_chain when a customProfiles slice nests a profile field', () => {
     const err = captureThrow(() => prepareChaosConfig({
       customProfiles: { evil: { profile: 'mobileCheckout' } as never },
       profile: 'evil',
     }));
-    // Zod strict pass 1 catches this as unknown_field before applyProfile gets
-    // the chance to fire profile_chain. Either path produces an actionable
-    // error - assert the strict rejection lists a useful code.
-    expect(['unknown_field', 'profile_chain']).toContain(err.issues[0].code);
-    expect(err.issues.length).toBeGreaterThan(0);
+    const chain = err.issues.find((i) => i.code === 'profile_chain');
+    expect(chain).toBeDefined();
+    expect(chain!.ruleType).toBe('profile');
+    expect(chain!.path).toBe('customProfiles.evil.profile');
+  });
+
+  it('throws profile_chain when profileOverrides nests profileOverrides', () => {
+    const err = captureThrow(() => prepareChaosConfig({
+      profile: 'mobile-checkout',
+      profileOverrides: { profileOverrides: { seed: 1 } } as never,
+    }));
+    const chain = err.issues.find((i) => i.code === 'profile_chain');
+    expect(chain).toBeDefined();
+    expect(chain!.ruleType).toBe('profile');
+    expect(chain!.path).toBe('profileOverrides.profileOverrides');
+  });
+
+  it('throws profile_chain when profileOverrides nests customPresets', () => {
+    const err = captureThrow(() => prepareChaosConfig({
+      profile: 'mobile-checkout',
+      profileOverrides: { customPresets: { foo: {} } } as never,
+    }));
+    const chain = err.issues.find((i) => i.code === 'profile_chain');
+    expect(chain).toBeDefined();
+    expect(chain!.ruleType).toBe('profile');
+    expect(chain!.path).toBe('profileOverrides.customPresets');
   });
 
   it('profileOverrides applies on top of resolved profile rules', () => {
