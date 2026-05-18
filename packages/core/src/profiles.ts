@@ -12,7 +12,7 @@ import { cloneValue } from './utils';
  *  out-of-scope. */
 export type ProfileConfigSlice = Omit<
   ChaosConfig,
-  'customPresets' | 'customProfiles' | 'profile' | 'profileOverrides' | 'schemaVersion'
+  'customPresets' | 'customProfiles' | 'profile' | 'profileOverrides' | 'schemaVersion' | 'matchers'
 >;
 
 /** Runtime override slice applied at inject-time. Identical shape to a profile

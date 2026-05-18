@@ -17,6 +17,7 @@ export type PresetConfigSlice = Omit<
   | 'profile'
   | 'profileOverrides'
   | 'customProfiles'
+  | 'matchers'
 >;
 
 /** A named preset packaged for registry registration. */
