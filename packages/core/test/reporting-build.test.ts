@@ -140,6 +140,29 @@ describe('buildChaosReport.ruleHits', () => {
     expect(report.ruleHits[0].types).toEqual(['abort', 'failure', 'latency']);
   });
 
+  it('counts debug rule-applied stage toward ruleHits.applied (real engine attribution path)', () => {
+    const events: ChaosEvent[] = [
+      // Outcome event with no ruleId (matches today's engine behavior)
+      outcome('network:failure', true, { statusCode: 503, url: '/api/x' }, 1000),
+      // Debug rule-applied stage carries the rule attribution via the WeakMap
+      { type: 'debug', timestamp: 1001, applied: false, detail: { stage: 'rule-applied', ruleId: 'failure#0', ruleType: 'failure' } },
+      { type: 'debug', timestamp: 1100, applied: false, detail: { stage: 'rule-applied', ruleId: 'failure#0', ruleType: 'failure' } },
+      // Same rule, one skip
+      skipDebug('rule-skip-probability', { ruleId: 'failure#0', ruleType: 'failure' }),
+    ];
+    const report = buildChaosReport(events, { now: FIXED_NOW });
+    expect(report.ruleHits).toEqual([
+      {
+        ruleId: 'failure#0',
+        ruleName: null,
+        applied: 2,
+        skipped: 1,
+        total: 3,
+        types: ['failure'],
+      },
+    ]);
+  });
+
   it('captures first seen ruleName for a rule', () => {
     const events: ChaosEvent[] = [
       outcome('network:failure', true, { ruleId: 'r1', ruleName: 'slow-api' }),

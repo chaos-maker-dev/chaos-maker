@@ -83,6 +83,12 @@ export function buildChaosReport(
       ? events[events.length - 1].timestamp - events[0].timestamp
       : null;
 
+  // Rule attribution is sourced from the debug stream, since today only
+  // `emitter.debug(...)` decorates events with `detail.ruleId`/`detail.ruleType`
+  // via the engine's rule-id WeakMap. Outcome events (`network:*` etc.) carry
+  // url/method/statusCode but not ruleId, so a run without `debug: true`
+  // produces empty `ruleHits`. Top-level `meta.appliedCount` / `transports` /
+  // `failures` / `timeline` aggregate fine without debug mode.
   type RuleAggregate = {
     applied: number;
     skipped: number;
@@ -102,10 +108,15 @@ export function buildChaosReport(
     if (event.detail?.ruleName && !agg.ruleName) {
       agg.ruleName = event.detail.ruleName;
     }
-    if (isOutcomeEvent(event) && event.applied) {
+    if (event.type === 'debug' && event.detail?.stage === 'rule-applied') {
       agg.applied++;
     } else if (isSkipDebugEvent(event)) {
       agg.skipped++;
+    } else if (isOutcomeEvent(event) && event.applied) {
+      // Outcome events that DO carry a ruleId (future engine work) count here
+      // too. Today this branch is unreachable but kept so the semantics stay
+      // future-proof when ruleId is added to the outcome emit sites.
+      agg.applied++;
     }
   }
   const ruleHits: RuleHitSummary[] = Array.from(ruleMap.entries())
