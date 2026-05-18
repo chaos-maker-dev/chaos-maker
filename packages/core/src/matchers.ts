@@ -1,4 +1,5 @@
-import type { HostnameMatcher, RequestKvMatcher, RequestResourceType } from './config';
+import type { ChaosConfig, HostnameMatcher, NamedMatcher, RequestKvMatcher, RequestResourceType } from './config';
+import { cloneValue } from './utils';
 
 /** Extracted view of a request URL relevant to advanced matchers. Computed
  *  once per request inside the interceptor so hostname + query-param checks
@@ -119,3 +120,114 @@ export function matchResourceType(
   if (!allowed || allowed.length === 0) return true;
   return allowed.includes(actual);
 }
+
+/** A named matcher entry packaged for registry registration. */
+export interface MatcherEntry {
+  readonly name: string;
+  readonly config: NamedMatcher;
+}
+
+function normalizeMatcherName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('[chaos-maker] matcher name cannot be empty');
+  return trimmed;
+}
+
+/** Per-instance registry of named matchers. Constructor takes no built-ins.
+ *  Mirrors the surface of `ProfileRegistry` so the public ergonomics line up. */
+export class MatcherRegistry {
+  private map = new Map<string, NamedMatcher>();
+
+  constructor(initial: Iterable<MatcherEntry> = []) {
+    for (const entry of initial) this.register(entry);
+  }
+
+  register(entry: MatcherEntry): void {
+    const name = normalizeMatcherName(entry.name);
+    if (this.map.has(name)) {
+      throw new Error(`[chaos-maker] matcher '${name}' already registered`);
+    }
+    this.map.set(name, entry.config);
+  }
+
+  registerAll(entries: Record<string, NamedMatcher> | undefined): void {
+    if (!entries) return;
+    for (const [name, config] of Object.entries(entries)) {
+      this.register({ name, config });
+    }
+  }
+
+  has(name: string): boolean {
+    return this.map.has(normalizeMatcherName(name));
+  }
+
+  get(name: string): NamedMatcher {
+    const norm = normalizeMatcherName(name);
+    const cfg = this.map.get(norm);
+    if (!cfg) {
+      throw new Error(
+        `[chaos-maker] matcher '${norm}' is not registered. Known: ${this.list().join(', ')}`,
+      );
+    }
+    return cfg;
+  }
+
+  list(): string[] {
+    return [...this.map.keys()];
+  }
+}
+
+/** Side-channel WeakMap keyed by rule object reference. After
+ *  `resolveNamedMatchers` inlines a registered matcher's fields into a rule,
+ *  the matcher's name is recorded here so debug events and `buildRuleIdMap`
+ *  can surface `matcherName` without bloating the public rule type. Entries
+ *  are GC'd with the rule object. */
+export const ruleMatcherOrigin = new WeakMap<object, string>();
+
+const NETWORK_RULE_CATEGORIES = ['failures', 'latencies', 'aborts', 'corruptions', 'cors'] as const;
+
+/** Resolve every rule with `matcher: 'name'` against `registry`. Inlines the
+ *  registered `NamedMatcher` fields into the rule, deletes the `matcher` key,
+ *  and stamps the matcher name on `ruleMatcherOrigin` for debug attribution.
+ *  Returns a fresh `ChaosConfig` (deep-cloned) with the top-level `matchers`
+ *  field stripped, identical immutability contract to `applyProfile`.
+ *
+ *  Throws plain `Error`s that `prepareChaosConfig` maps to structured codes:
+ *  - `matcher_not_found` - rule references a missing name.
+ *  - `matcher_cycle` - registry entry carries its own `matcher` field
+ *    (structurally impossible via the typed surface; defensive). */
+export function resolveNamedMatchers(
+  config: ChaosConfig,
+  registry: MatcherRegistry,
+): ChaosConfig {
+  const out = cloneValue(config);
+  delete out.matchers;
+  const network = out.network;
+  if (!network) return out;
+  for (const cat of NETWORK_RULE_CATEGORIES) {
+    const arr = (network as Record<string, unknown>)[cat] as
+      | Array<Record<string, unknown>>
+      | undefined;
+    if (!arr) continue;
+    for (const rule of arr) {
+      const ref = rule.matcher;
+      if (typeof ref !== 'string') continue;
+      if (!registry.has(ref)) {
+        throw new Error(`[chaos-maker] matcher '${ref}' is not registered`);
+      }
+      const cfg = cloneValue(registry.get(ref)) as Record<string, unknown>;
+      if (cfg.matcher !== undefined) {
+        throw new Error(
+          `[chaos-maker] matcher '${ref}' references another matcher (matcher composition is out of scope)`,
+        );
+      }
+      for (const [key, value] of Object.entries(cfg)) {
+        rule[key] = value;
+      }
+      delete rule.matcher;
+      ruleMatcherOrigin.set(rule, ref);
+    }
+  }
+  return out;
+}
+
