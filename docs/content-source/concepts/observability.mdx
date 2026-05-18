@@ -135,6 +135,10 @@ Debug Mode is independent of your test runner's debug flags. It does not read `P
 
 `console.debug` is filtered out by default in Playwright, Cypress, Puppeteer, and Vitest reporters. Even so, prefer to omit `debug` in CI configs unless you are deliberately collecting decision logs. Debug events also ride through `getChaosLog()` and inflate the log buffer.
 
+### Matcher attribution
+
+Every `type: 'debug'` event emitted for a rule that came from a named matcher (see [Advanced matchers](./matchers)) carries `detail.matcherName: '<name>'`. The `rule-matched` stage additionally carries `detail.matchedBy: string[]` listing which non-URL matchers fired - one of `'hostname'`, `'queryParams'`, `'requestHeaders'`, `'resourceTypes'`, `'graphqlOperation'`. The `rule-skip-match` stage carries `detail.skippedAt: string` naming the first matcher field that failed. These three fields make "why did this rule fire?" and "why did this rule skip?" trivially readable from the structured log.
+
 ## Playwright traces
 
 The Playwright adapter can add chaos events to the trace viewer and attach `chaos-log.json` at test end. `type: 'debug'` events land in the JSON attachment but never render as inline `test.step` entries, so the action timeline stays focused on real chaos decisions.

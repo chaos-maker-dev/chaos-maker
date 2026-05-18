@@ -1,0 +1,143 @@
+---
+title: Advanced matchers
+description: Hostname, query parameter, header, and resource-type matchers plus a reusable named matcher registry for fine-grained rule targeting.
+---
+
+Chaos Maker rules historically matched on `urlPattern` plus optional `methods` and `graphqlOperation`. Advanced matchers extend the targeting surface so a single rule can express "the customers API on the production host, GET only, when the bearer token is set, fetch traffic only" without hand-crafting URL substrings. A separate named matcher registry lets multiple rules share one definition.
+
+## New matcher fields
+
+Every network rule (`failures`, `latencies`, `aborts`, `corruptions`, `cors`) accepts these optional fields alongside the existing ones:
+
+- **`hostname`** - `string | RegExp`. String compares case-insensitively against `new URL(url).hostname`. RegExp uses `.test()`. The `g` and `y` flags are rejected at validation time, matching `graphqlOperation`.
+- **`queryParams`** - `Record<string, string | RegExp | boolean>`. Every entry must pass. `true` requires the key to be present (any value). `false` requires absence. A string matches the decoded value exactly. A RegExp tests the value.
+- **`requestHeaders`** - `Record<string, string | RegExp | boolean>`. Same value semantics as `queryParams`. Key comparison is case-insensitive. The field is named `requestHeaders` (not `headers`) so it does not collide with the response-synthesis `headers` field on failure rules.
+- **`resourceTypes`** - `Array<'fetch' | 'xhr'>`. Non-empty. Rule fires only when the originating interceptor is in the list. WebSocket and SSE rules already live in their own categories and are not addressable here.
+
+The matchers are evaluated in order: `urlPattern` → `methods` → `resourceTypes` → `hostname` → `queryParams` → `requestHeaders` → `graphqlOperation`. The first one that fails skips the rule.
+
+```typescript
+await injectChaos(page, {
+  network: {
+    failures: [
+      {
+        urlPattern: '/api',
+        hostname: 'api.example.com',
+        methods: ['POST'],
+        queryParams: { tenant: 'acme', debug: false },
+        requestHeaders: { authorization: /^Bearer / },
+        resourceTypes: ['fetch'],
+        statusCode: 503,
+        probability: 1,
+      },
+    ],
+  },
+});
+```
+
+## Named matcher registry
+
+Repeating the same matcher block across multiple rules bloats the config and obscures intent. A named matcher is a reusable bundle stored on the top-level `matchers` field. Rules reference one by name via the `matcher` field instead of inlining the matcher fields.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    customers: {
+      urlPattern: '/api/customers',
+      hostname: 'api.example.com',
+      methods: ['GET'],
+    },
+  },
+  network: {
+    failures: [
+      { matcher: 'customers', statusCode: 503, probability: 1 },
+    ],
+    latencies: [
+      { matcher: 'customers', delayMs: 500, probability: 1 },
+    ],
+  },
+});
+```
+
+At engine init, the resolver inlines the registered fields into every referencing rule and strips the `matchers` field from the resolved config. The `matcher` reference disappears too; downstream interceptors see flat rules identical to the inline form.
+
+### Mutual exclusion
+
+A rule MUST use either `matcher: 'name'` alone OR one or more inline matcher fields, never both. Mixing the two surfaces a `matcher_inline_conflict` validation issue:
+
+```typescript
+// Throws ChaosConfigError with code: 'matcher_inline_conflict'
+{
+  matcher: 'customers',
+  urlPattern: '/api/anything', // forbidden alongside `matcher`
+  statusCode: 503,
+  probability: 1,
+}
+```
+
+This keeps the mental model simple: a rule is either a named-matcher reference or a self-contained inline rule. There is no "merge with overrides" precedence to reason about.
+
+### Resolution order
+
+Resolution runs as the last step inside `prepareChaosConfig`:
+
+1. Zod pass 1 (schema validation).
+2. `applyProfile` resolves `profile` and `profileOverrides`.
+3. `expandPresets` expands the `presets[]` array.
+4. Zod pass 2 (post-merge re-validation).
+5. **`resolveNamedMatchers`** inlines `matcher` references against the per-instance `MatcherRegistry`.
+
+Running last means rules brought in by presets or profiles can reference matchers defined at the top level. Named matchers themselves cannot reference other matchers; carrying a `matcher` field inside a registry entry surfaces a `matcher_cycle` validation issue. This code path is reserved now and will catch real cycles when matcher composition is added in a future release.
+
+### Builder method
+
+The `ChaosConfigBuilder` exposes `.defineMatcher(name, matcher)` to register entries fluently:
+
+```typescript
+import { ChaosConfigBuilder } from '@chaos-maker/core';
+
+const config = new ChaosConfigBuilder()
+  .defineMatcher('customers', { urlPattern: '/api/customers', methods: ['GET'] })
+  .build();
+```
+
+Rules that reference the matcher set the `matcher` field on the literal rule object; the builder rule helpers stay positional and unchanged in this release.
+
+## Validation issue codes
+
+Failures surface through the existing `ChaosConfigError` aggregator. Codes specific to advanced matchers:
+
+- **`matcher_not_found`** - rule references a name that is not in `matchers` (after preset and profile expansion). Path: `matchers.<name>`.
+- **`matcher_collision`** - two entries collide after `trim()` normalization. Path: `matchers.<name>`.
+- **`matcher_inline_conflict`** - rule mixes `matcher` with inline matcher fields. Path: `<rule-array>.[<index>].matcher`.
+- **`matcher_cycle`** - registry entry carries its own `matcher` field. Reserved for future composition; observable today via untyped configs. Path: `matchers.<name>.matcher`.
+
+## Debug attribution
+
+Rules originating from a named matcher are attributed in debug events. Every `type: 'debug'` event from a matcher-resolved rule carries `detail.matcherName: 'customers'` (or whatever name fired). The `rule-matched` stage additionally carries `detail.matchedBy: string[]` listing which non-URL matchers fired (`'hostname' | 'queryParams' | 'requestHeaders' | 'resourceTypes' | 'graphqlOperation'`), and `rule-skip-match` carries `detail.skippedAt: string` naming the matcher field that failed.
+
+```typescript
+{
+  type: 'debug',
+  detail: {
+    stage: 'rule-matched',
+    ruleId: 'failure#0',
+    matcherName: 'customers',
+    matchedBy: ['hostname', 'queryParams'],
+    url: '/api/customers?tenant=acme',
+    method: 'GET',
+  },
+}
+```
+
+This makes the answer to "why did this rule fire?" and "why did this rule skip?" trivially readable in dashboards.
+
+## Out of scope (deferred)
+
+- WebSocket, SSE, and UI rules do not accept named matchers in this release. Each rule shape differs in the matcher dimensions it cares about; named matchers are network-only for now.
+- Built-in matchers. The `matchers` registry is intentionally user-owned. There is no `BUILT_IN_MATCHERS`.
+- Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.
+- Response matchers (status code, response headers). Matchers operate on the request only.
+- Disjunctive (any-of) matchers. A rule's matcher block is conjunctive: every field must pass.
+
+See also: [Scenario profiles](./profiles), [Presets](./presets), [Validation](./validation).
