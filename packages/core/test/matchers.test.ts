@@ -102,6 +102,25 @@ describe('matchQueryParams', () => {
     expect(matchQueryParams(params, { cursor: /^abc/ })).toBe(true);
     expect(matchQueryParams(params, { cursor: /^xyz/ })).toBe(false);
   });
+
+  it('string matcher hits any occurrence when key is repeated', () => {
+    const params = new URLSearchParams('role=admin&role=user');
+    expect(matchQueryParams(params, { role: 'user' })).toBe(true);
+    expect(matchQueryParams(params, { role: 'admin' })).toBe(true);
+    expect(matchQueryParams(params, { role: 'guest' })).toBe(false);
+  });
+
+  it('RegExp matcher hits any occurrence when key is repeated', () => {
+    const params = new URLSearchParams('tag=alpha&tag=beta-build');
+    expect(matchQueryParams(params, { tag: /^beta/ })).toBe(true);
+    expect(matchQueryParams(params, { tag: /^gamma/ })).toBe(false);
+  });
+
+  it('true matcher passes when key repeats; false matcher fails on any occurrence', () => {
+    const params = new URLSearchParams('flag=&flag=on');
+    expect(matchQueryParams(params, { flag: true })).toBe(true);
+    expect(matchQueryParams(params, { flag: false })).toBe(false);
+  });
 });
 
 describe('createHeaderView and matchHeaders', () => {

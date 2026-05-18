@@ -49,14 +49,39 @@ export function matchKvEntry(value: string | undefined, matcher: RequestKvMatche
   return matcher.test(value);
 }
 
+/** Evaluate a single query param requirement against every occurrence of that
+ *  key. Query strings can carry repeated keys (e.g. `?role=admin&role=user`);
+ *  `URLSearchParams.get()` only returns the first value, so we explicitly
+ *  iterate `getAll()` and treat the requirement as satisfied when ANY value
+ *  matches.
+ *
+ *  Semantics per matcher type:
+ *  - `true`  - key must be present at least once (any value).
+ *  - `false` - key must be absent entirely (no occurrences).
+ *  - string  - at least one occurrence must equal the value exactly.
+ *  - RegExp  - at least one occurrence must satisfy `.test()`. */
+function matchQueryParamValues(
+  values: readonly string[],
+  matcher: RequestKvMatcher,
+): boolean {
+  if (matcher === true) return values.length > 0;
+  if (matcher === false) return values.length === 0;
+  if (values.length === 0) return false;
+  if (typeof matcher === 'string') return values.includes(matcher);
+  resetRegexState(matcher);
+  return values.some((v) => {
+    resetRegexState(matcher);
+    return matcher.test(v);
+  });
+}
+
 export function matchQueryParams(
   searchParams: URLSearchParams,
   requirements: Record<string, RequestKvMatcher>,
 ): boolean {
   for (const [key, matcher] of Object.entries(requirements)) {
-    const present = searchParams.has(key);
-    const value = present ? searchParams.get(key) ?? '' : undefined;
-    if (!matchKvEntry(value, matcher)) return false;
+    const values = searchParams.getAll(key);
+    if (!matchQueryParamValues(values, matcher)) return false;
   }
   return true;
 }
