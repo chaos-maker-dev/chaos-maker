@@ -79,6 +79,36 @@ await injectChaos(page, {
 
 See the [Advanced matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/) for the full surface, the four validation issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`), and the matcher attribution on debug events.
 
+## Reporting and timeline
+
+After a chaos run, turn the event log into a structured `ChaosReport` and serialize it as JSON, Markdown, or a self-contained HTML timeline. The core package returns strings; your test writes them to disk or attaches them as CI artifacts.
+
+```typescript
+import { writeFileSync } from 'node:fs';
+import {
+  buildChaosReport,
+  formatReportHtml,
+  getChaosLog,
+  getChaosSeed,
+  injectChaos,
+} from '@chaos-maker/playwright';
+
+test('attach a chaos report on every run', async ({ page }, testInfo) => {
+  await injectChaos(page, { debug: true, network: { failures: [/* … */] }, seed: 42 });
+  // run scenario …
+
+  const events = await getChaosLog(page);
+  const seed = await getChaosSeed(page);
+  const report = buildChaosReport(events, { seed, title: testInfo.title });
+  await testInfo.attach('chaos-report.html', {
+    body: formatReportHtml(report),
+    contentType: 'text/html',
+  });
+});
+```
+
+The HTML output is fully self-contained (inline CSS, no `<script>`, no external URLs). For PR comments, swap `formatReportHtml` for `formatReportMarkdown`. See the [Timeline and reporting concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/timeline-and-reporting/) for the full report shape, determinism guarantees, and per-rule attribution requirements.
+
 ## 30-second Playwright quickstart
 
 When a preset is too coarse, drop down to explicit rules:

@@ -1,0 +1,182 @@
+---
+title: Reporting API
+description: buildChaosReport, formatReportJson/Markdown/Html, and filterEventsByTransport for turning event logs into deterministic artifacts.
+---
+
+The reporting utilities convert a `ChaosEvent[]` log into a structured `ChaosReport` and serialize it as JSON, Markdown, or self-contained HTML. They live in `@chaos-maker/core` and are re-exported from every framework adapter.
+
+For the conceptual overview, the CI patterns, and the worked example, see [Timeline and reporting](/chaos-maker/concepts/timeline-and-reporting/).
+
+## Exports
+
+```typescript
+export {
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+  classifyTransport,
+  filterEventsByTransport,
+};
+
+export type {
+  BuildChaosReportOptions,
+  ChaosReport,
+  ChaosReportMeta,
+  FailureSummary,
+  FormatReportHtmlOptions,
+  FormatReportJsonOptions,
+  RuleHitSummary,
+  SkipReasonSummary,
+  TimelineEntry,
+  TransportKind,
+  TransportSummary,
+};
+```
+
+## buildChaosReport
+
+```typescript
+function buildChaosReport(
+  events: ChaosEvent[],
+  opts?: BuildChaosReportOptions,
+): ChaosReport;
+```
+
+Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page — the summary:
+
+- `meta.appliedCount` counts outcome events with `applied === true`.
+- `meta.skippedCount` counts debug events with stage in `{rule-skip-match, rule-skip-counting, rule-skip-group, rule-skip-probability}`. `rule-group:gated` is not double-counted.
+- `ruleHits[]` sources from the debug stream (requires `debug: true` for per-rule attribution). Sorted by `applied` desc, `skipped` desc, `ruleId` asc.
+- `transports[]` collapses every `network:*` subtype into one `'network'` row. Sorted by `events` desc, `kind` asc.
+- `skipReasons[]` groups by `{stage, skippedAt}`. Sorted by `count` desc, `stage` asc, `skippedAt` asc.
+- `failures[]` includes applied outcome events with `statusCode >= 500` or types `network:failure | network:abort | network:cors | network:corruption`. Sorted by `count` desc, `ruleId` asc, `type` asc, `statusCode` asc.
+- `timeline[]` is every event in emission order with `offsetMs` computed from the first event.
+
+### Options
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `seed` | `number \| null` | `null` | Echoes into `meta.seed` and feeds `formatSeedReproduction` for `meta.replaySnippet`. |
+| `now` | `number` | `Date.now()` | Used for `meta.generatedAt`. Pin to a constant in tests for byte-identical snapshots. |
+| `title` | `string` | `undefined` | Echoed into `meta.title` and used as the default HTML `<title>`. |
+
+## formatReportJson
+
+```typescript
+function formatReportJson(
+  report: ChaosReport,
+  opts?: FormatReportJsonOptions,
+): string;
+```
+
+`opts.pretty` defaults to `true` (two-space indent + trailing newline). Pass `{ pretty: false }` for a single-line output. Output round-trips through `JSON.parse`.
+
+## formatReportMarkdown
+
+```typescript
+function formatReportMarkdown(report: ChaosReport): string;
+```
+
+GitHub-flavored. Renders one `##` section per area, falls back to `_No X._` placeholders when a section is empty, and escapes `|` inside table cells (including inside inline code spans) so rows stay well-formed.
+
+## formatReportHtml
+
+```typescript
+function formatReportHtml(
+  report: ChaosReport,
+  opts?: FormatReportHtmlOptions,
+): string;
+```
+
+Returns a complete `<!doctype html>` document. CSS is inlined via a single `<style>` block. Each section is wrapped in `<details open>` for collapsibility. There is no `<script>` tag and no external URL: open the file from `file://`, attach it as a CI artifact, or serve it; behavior is identical.
+
+`opts.title` overrides the title used in `<title>` and the `<h1>`. When omitted, the formatter uses `report.meta.title ?? 'Chaos run'`.
+
+## filterEventsByTransport
+
+```typescript
+function filterEventsByTransport(
+  events: ChaosEvent[],
+  transport: TransportKind,
+): ChaosEvent[];
+```
+
+`TransportKind` is `'network' | 'websocket' | 'sse' | 'ui' | 'rule-group'`. `'debug'` events are excluded from every bucket because they belong to the diagnostic stream, not a transport. The returned array preserves input order and does not mutate the input.
+
+## classifyTransport
+
+```typescript
+function classifyTransport(event: ChaosEvent): TransportKind | null;
+```
+
+Returns `null` for `type: 'debug'` and any unrecognized prefix. Useful when you need to bucket events yourself without the convenience of `filterEventsByTransport`.
+
+## Types
+
+```typescript
+interface ChaosReport {
+  meta: ChaosReportMeta;
+  ruleHits: RuleHitSummary[];
+  transports: TransportSummary[];
+  skipReasons: SkipReasonSummary[];
+  failures: FailureSummary[];
+  timeline: TimelineEntry[];
+}
+
+interface ChaosReportMeta {
+  title: string | null;
+  generatedAt: number;
+  seed: number | null;
+  eventCount: number;
+  appliedCount: number;
+  skippedCount: number;
+  durationMs: number | null;
+  replaySnippet: string;
+}
+
+interface RuleHitSummary {
+  ruleId: string;
+  ruleName: string | null;
+  applied: number;
+  skipped: number;
+  total: number;
+  types: string[];
+}
+
+interface TransportSummary {
+  kind: TransportKind;
+  events: number;
+  applied: number;
+}
+
+interface SkipReasonSummary {
+  stage: ChaosDebugStage;
+  skippedAt: string | null;
+  count: number;
+}
+
+interface FailureSummary {
+  ruleId: string | null;
+  type: string;
+  statusCode: number | null;
+  count: number;
+  sampleUrl: string | null;
+}
+
+interface TimelineEntry {
+  offsetMs: number;
+  type: string;
+  applied: boolean;
+  ruleId: string | null;
+  ruleType: string | null;
+  matcherName: string | null;
+  title: string;
+}
+```
+
+## See also
+
+- [Timeline and reporting](/chaos-maker/concepts/timeline-and-reporting/) for end-to-end usage.
+- [Observability](/chaos-maker/concepts/observability/) for the `ChaosEvent` taxonomy that feeds the report.
+- [Debug Mode](/chaos-maker/api/debug/) for the stages that populate `ruleHits` and `skipReasons`.
