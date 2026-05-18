@@ -54,7 +54,7 @@ function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
 }
 
 function ruleNeedsHeaderView(rule: NetworkRuleMatchers): boolean {
-  return rule.headers !== undefined;
+  return rule.requestHeaders !== undefined;
 }
 
 function anyRuleMatches(
@@ -117,7 +117,7 @@ function gateRule(
       return { proceed: false, outcome: null };
     }
   }
-  if (rule.headers && !matchHeaders(ctx.getHeaderView(), rule.headers)) {
+  if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
     return { proceed: false, outcome: null };
   }
   const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
@@ -238,7 +238,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
             continue;
           }
         }
-        if (cors.headers && !matchHeaders(ctx.getHeaderView(), cors.headers)) {
+        if (cors.requestHeaders && !matchHeaders(ctx.getHeaderView(), cors.requestHeaders)) {
           emitter?.debug('rule-skip-match', { url, method }, cors);
           continue;
         }

@@ -34,6 +34,7 @@ function deriveRuleType(path: ReadonlyArray<string | number>): RuleType {
   const first = path[0];
   if (first === 'groups') return 'group';
   if (first === 'presets' || first === 'customPresets') return 'preset';
+  if (first === 'matchers') return 'matcher';
 
   // Issues under a profile-related top-level field. Walk past the slice
   // anchor and derive the inner rule type so a `network.failures[0]` under
@@ -115,6 +116,8 @@ function mapZodCode(issue: ZodIssue): ValidationIssueCode {
       if (msg.includes('duplicate')) return 'duplicate';
       if (msg.includes('regexp') || msg.includes('flag')) return 'invalid_regex';
       if (msg.includes('nested profile chaining')) return 'profile_chain';
+      if (msg.includes('matcher reference cannot be combined') || msg.includes('matcher and inline fields')) return 'matcher_inline_conflict';
+      if (msg.includes('references another matcher')) return 'matcher_cycle';
       return 'custom';
     }
     default:

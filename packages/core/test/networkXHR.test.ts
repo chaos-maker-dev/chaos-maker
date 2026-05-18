@@ -453,12 +453,12 @@ describe('patchXHR advanced matchers', () => {
     expect(xhrMiss.status).toBe(200);
   });
 
-  it('headers matcher reads from _chaos_headers map', () => {
+  it('requestHeaders matcher reads from _chaos_headers map', () => {
     const config: NetworkConfig = {
       failures: [
         {
           urlPattern: '/api',
-          headers: { authorization: /^Bearer / },
+          requestHeaders: { authorization: /^Bearer / },
           statusCode: 503,
           probability: 1,
         },

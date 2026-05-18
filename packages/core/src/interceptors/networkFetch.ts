@@ -190,7 +190,7 @@ function gateRule(
       return { proceed: false, outcome: null };
     }
   }
-  if (rule.headers && !matchHeaders(ctx.getHeaderView(), rule.headers)) {
+  if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
     return { proceed: false, outcome: null };
   }
 
@@ -207,7 +207,7 @@ function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
 }
 
 function ruleNeedsHeaderView(rule: NetworkRuleMatchers): boolean {
-  return rule.headers !== undefined;
+  return rule.requestHeaders !== undefined;
 }
 
 function extractFetchHeaders(input: RequestInfo | URL, init?: RequestInit): RequestHeaderView {

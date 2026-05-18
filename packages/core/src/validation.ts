@@ -54,73 +54,147 @@ const graphqlOperationMatcher = z.union([
   ),
 ]);
 
+const hostnameMatcher = z.union([
+  z.string().min(1, 'hostname must not be empty'),
+  z.instanceof(RegExp).refine(
+    (re) => !re.global && !re.sticky,
+    { message: 'hostname RegExp must not use global (g) or sticky (y) flags due to lastIndex mutation' },
+  ),
+]);
+
+const requestKvValue = z.union([
+  z.string(),
+  z.boolean(),
+  z.instanceof(RegExp).refine(
+    (re) => !re.global && !re.sticky,
+    { message: 'value RegExp must not use global (g) or sticky (y) flags due to lastIndex mutation' },
+  ),
+]);
+
+const queryParamMap = z.record(z.string().min(1), requestKvValue);
+const requestHeaderMap = z.record(z.string().min(1), requestKvValue);
+const resourceTypesField = z.array(z.enum(['fetch', 'xhr'])).min(1, 'resourceTypes must have at least one entry');
+const matcherReference = z.string().trim().min(1, 'matcher reference must not be empty');
+
+const matcherInlineFieldNames = [
+  'urlPattern',
+  'methods',
+  'graphqlOperation',
+  'hostname',
+  'queryParams',
+  'requestHeaders',
+  'resourceTypes',
+] as const;
+
 const networkMatcherFields = {
-  urlPattern: z.string().min(1, 'urlPattern must not be empty'),
+  urlPattern: z.string().min(1, 'urlPattern must not be empty').optional(),
   methods: z.array(z.string()).optional(),
   graphqlOperation: graphqlOperationMatcher.optional(),
+  hostname: hostnameMatcher.optional(),
+  queryParams: queryParamMap.optional(),
+  requestHeaders: requestHeaderMap.optional(),
+  resourceTypes: resourceTypesField.optional(),
+  matcher: matcherReference.optional(),
 };
 
+/** Enforce: rule has EITHER `matcher: 'name'` (and zero inline matcher fields)
+ *  OR at least one inline matcher field. The custom error message is
+ *  keyword-matched by `mapZodCode` to surface `matcher_inline_conflict`. */
+function applyMatcherMutualExclusion<S extends z.ZodTypeAny>(schema: S): S {
+  return schema.superRefine((data, ctx) => {
+    if (!data || typeof data !== 'object') return;
+    const obj = data as Record<string, unknown>;
+    const hasMatcher = typeof obj.matcher === 'string';
+    const presentInline = matcherInlineFieldNames.filter((k) => obj[k] !== undefined);
+    if (hasMatcher && presentInline.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['matcher'],
+        message: `matcher reference cannot be combined with inline matcher fields: ${presentInline.join(', ')}`,
+      });
+      return;
+    }
+    if (!hasMatcher && presentInline.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: 'rule must set either matcher reference or at least one matcher field',
+      });
+    }
+  }) as unknown as S;
+}
+
 const buildNetworkFailure = (p: Policy) =>
-  withPolicy(
-    z.object({
-      ...networkMatcherFields,
-      statusCode: z.number().int().min(100).max(599),
-      probability,
-      body: z.string().optional(),
-      statusText: z.string().optional(),
-      headers: z.record(z.string()).optional(),
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyMatcherMutualExclusion(
+    withPolicy(
+      z.object({
+        ...networkMatcherFields,
+        statusCode: z.number().int().min(100).max(599),
+        probability,
+        body: z.string().optional(),
+        statusText: z.string().optional(),
+        headers: z.record(z.string()).optional(),
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildNetworkLatency = (p: Policy) =>
-  withPolicy(
-    z.object({
-      ...networkMatcherFields,
-      delayMs: z.number().min(0, 'delayMs must be >= 0'),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyMatcherMutualExclusion(
+    withPolicy(
+      z.object({
+        ...networkMatcherFields,
+        delayMs: z.number().min(0, 'delayMs must be >= 0'),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildNetworkAbort = (p: Policy) =>
-  withPolicy(
-    z.object({
-      ...networkMatcherFields,
-      probability,
-      timeout: z.number().min(0, 'timeout must be >= 0').optional(),
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyMatcherMutualExclusion(
+    withPolicy(
+      z.object({
+        ...networkMatcherFields,
+        probability,
+        timeout: z.number().min(0, 'timeout must be >= 0').optional(),
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildNetworkCorruption = (p: Policy) =>
-  withPolicy(
-    z.object({
-      ...networkMatcherFields,
-      probability,
-      strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyMatcherMutualExclusion(
+    withPolicy(
+      z.object({
+        ...networkMatcherFields,
+        probability,
+        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildNetworkCors = (p: Policy) =>
-  withPolicy(
-    z.object({
-      ...networkMatcherFields,
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyMatcherMutualExclusion(
+    withPolicy(
+      z.object({
+        ...networkMatcherFields,
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildNetworkConfig = (p: Policy) =>
   withPolicy(
@@ -339,6 +413,56 @@ const presetNameSchema = z.string().trim().min(1, 'preset name must not be empty
 
 const profileNameSchema = z.string().trim().min(1, 'profile name must not be empty');
 
+const matcherNameSchema = z.string().trim().min(1, 'matcher name must not be empty');
+
+/** Inner ZodObject describing a `NamedMatcher` entry inside the `matchers`
+ *  registry. The TypeScript surface (`NamedMatcher`) does NOT carry a
+ *  `matcher` field, but the schema accepts it as `unknown` and the
+ *  `superRefine` below emits the `matcher_cycle` code when it is present.
+ *  This keeps cycle detection observable today via untyped / hand-crafted
+ *  configs and reserves the error code surface for future composition work. */
+const buildNamedMatcherObject = (p: Policy) =>
+  withPolicy(
+    z.object({
+      urlPattern: z.string().min(1, 'urlPattern must not be empty').optional(),
+      methods: z.array(z.string()).optional(),
+      graphqlOperation: graphqlOperationMatcher.optional(),
+      hostname: hostnameMatcher.optional(),
+      queryParams: queryParamMap.optional(),
+      requestHeaders: requestHeaderMap.optional(),
+      resourceTypes: resourceTypesField.optional(),
+      // Declared so strict-mode does not reject this key with `unknown_field`.
+      // Presence is rejected by the superRefine below with `matcher_cycle`.
+      matcher: z.unknown().optional(),
+    }),
+    p,
+  );
+
+const buildNamedMatcherSchema = (p: Policy) =>
+  buildNamedMatcherObject(p).superRefine((entry, ctx) => {
+    if (!entry || typeof entry !== 'object') return;
+    if ((entry as Record<string, unknown>).matcher !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['matcher'],
+        message: 'matcher entry references another matcher: matcher composition is out of scope',
+      });
+      return;
+    }
+    const presentInline = matcherInlineFieldNames.filter(
+      (k) => (entry as Record<string, unknown>)[k] !== undefined,
+    );
+    if (presentInline.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [],
+        message: 'matcher entry must set at least one matcher field',
+      });
+    }
+  });
+
+const matchersRegistrySchema = z.record(matcherNameSchema, buildNamedMatcherSchema('strict'));
+
 const presetsArraySchema = z.array(presetNameSchema).transform((names) => {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -420,6 +544,7 @@ const buildChaosConfigSchema = (p: Policy) =>
       profile: profileNameSchema.optional(),
       profileOverrides: buildProfileSliceSchema(p).optional(),
       customProfiles: z.record(profileNameSchema, buildProfileSliceSchema(p)).optional(),
+      matchers: matchersRegistrySchema.optional(),
     }),
     p,
   );
@@ -481,6 +606,7 @@ const RULE_TYPE_TO_SCHEMA = {
   group: buildGroupConfig('strict'),
   preset: chaosConfigSliceSchema,
   profile: chaosProfileSliceSchema,
+  matcher: buildNamedMatcherSchema('strict'),
   'top-level': chaosConfigSchemaStrict,
 } satisfies Record<RuleType, z.ZodTypeAny>;
 type _MissingFromMap = Exclude<RuleType, keyof typeof RULE_TYPE_TO_SCHEMA>;

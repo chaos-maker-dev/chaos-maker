@@ -664,12 +664,12 @@ describe('patchFetch', () => {
       expect(wrongRole.status).toBe(200);
     });
 
-    it('headers matcher is case-insensitive on the key', async () => {
+    it('requestHeaders matcher is case-insensitive on the key', async () => {
       const config: NetworkConfig = {
         failures: [
           {
             urlPattern: '/api',
-            headers: { authorization: /^Bearer / },
+            requestHeaders: { authorization: /^Bearer / },
             statusCode: 503,
             probability: 1,
           },
@@ -712,7 +712,7 @@ describe('patchFetch', () => {
             hostname: 'api.example.com',
             methods: ['POST'],
             queryParams: { tenant: 'acme' },
-            headers: { 'x-trace-id': true },
+            requestHeaders: { 'x-trace-id': true },
             statusCode: 503,
             probability: 1,
           },

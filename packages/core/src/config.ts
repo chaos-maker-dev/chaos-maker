@@ -63,35 +63,38 @@ export type RequestResourceType = 'fetch' | 'xhr';
 
 /** Reusable named matcher carried in `ChaosConfig.matchers`. A rule references
  *  one via `matcher: 'name'` instead of inlining matcher fields. Composition
- *  (a matcher referencing another matcher) is out of scope for this release. */
+ *  (a matcher referencing another matcher) is out of scope for this release.
+ *
+ *  Request header matchers live under `requestHeaders` (not `headers`) so the
+ *  name does not collide with the response-synthesis `headers` field on
+ *  `NetworkFailureConfig`. */
 export interface NamedMatcher {
   urlPattern?: string;
   methods?: string[];
   graphqlOperation?: GraphQLOperationMatcher;
   hostname?: HostnameMatcher;
   queryParams?: Record<string, RequestKvMatcher>;
-  headers?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
   resourceTypes?: RequestResourceType[];
 }
 
 /** Common matcher fields shared by every network chaos rule type.
  *
  *  A rule MUST use EITHER `matcher: 'name'` (referencing a registered
- *  `NamedMatcher`) OR one or more inline matcher fields. Mixing the two
- *  surfaces a `matcher_inline_conflict` validation error. When the inline
- *  branch is used, `urlPattern` is required; when the named-matcher branch is
- *  used, every inline field MUST be omitted.
+ *  `NamedMatcher`) OR at least one inline matcher field. Mixing the two
+ *  surfaces a `matcher_inline_conflict` validation error.
  *
  *  Inline matcher semantics:
- *  - `urlPattern` — substring match (or `'*'` for any URL). Required when no
- *    `matcher` reference is set.
+ *  - `urlPattern` — substring match (or `'*'` for any URL).
  *  - `methods` — HTTP method whitelist (case-sensitive after `.toUpperCase()`
  *    at the interceptor).
  *  - `hostname` — case-insensitive exact match or RegExp test against the
  *    request URL's hostname.
  *  - `queryParams` — per-key matcher map; every entry must pass.
- *  - `headers` — per-key matcher map (key comparison is case-insensitive);
- *    every entry must pass.
+ *  - `requestHeaders` — per-key matcher map for REQUEST headers (key
+ *    comparison is case-insensitive); every entry must pass. The name is
+ *    `requestHeaders` (not `headers`) so it does not collide with the
+ *    response-synthesis `headers` field on `NetworkFailureConfig`.
  *  - `resourceTypes` — non-empty subset of `{'fetch','xhr'}`; rule fires only
  *    when the originating interceptor is in the list.
  *  - `graphqlOperation` — applied AFTER all other matchers.
@@ -102,7 +105,7 @@ export interface NetworkRuleMatchers {
   graphqlOperation?: GraphQLOperationMatcher;
   hostname?: HostnameMatcher;
   queryParams?: Record<string, RequestKvMatcher>;
-  headers?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
   resourceTypes?: RequestResourceType[];
   matcher?: string;
 }

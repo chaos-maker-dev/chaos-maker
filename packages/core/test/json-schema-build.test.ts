@@ -22,6 +22,7 @@ describe.skipIf(!existsSync(schemaPath))('JSON schema build artifact', () => {
       'customProfiles',
       'debug',
       'groups',
+      'matchers',
       'network',
       'presets',
       'profile',
