@@ -92,41 +92,57 @@ interface MatcherContext {
   getHeaderView(): RequestHeaderView;
 }
 
+interface GateResult {
+  proceed: boolean;
+  outcome: GraphQLRuleOutcome | null;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
 /**
  * Shared per-rule gate covering every matcher field. Counting runs at the
  * end so it advances only when the rule has fully matched (mirrors the
- * pre-matcher behavior).
+ * pre-matcher behavior). Returns `matchedBy` listing extra matcher fields
+ * that fired or `skippedAt` naming the first one that failed.
  */
 function gateRule(
   rule: NetworkRuleMatchers & { onNth?: number; everyNth?: number; afterN?: number },
   ctx: MatcherContext,
   counters: Map<object, number>,
-): { proceed: boolean; outcome: GraphQLRuleOutcome | null } {
-  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null };
-  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null };
-  if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) return { proceed: false, outcome: null };
+): GateResult {
+  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
+  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
+  if (rule.resourceTypes && !matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+    return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+  }
+  const matchedBy: string[] = [];
   if (rule.hostname !== undefined) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
-      return { proceed: false, outcome: null };
+      return { proceed: false, outcome: null, skippedAt: 'hostname' };
     }
+    matchedBy.push('hostname');
   }
   if (rule.queryParams) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
-      return { proceed: false, outcome: null };
+      return { proceed: false, outcome: null, skippedAt: 'queryParams' };
     }
+    matchedBy.push('queryParams');
   }
   if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
-    return { proceed: false, outcome: null };
+    return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
   }
+  if (rule.requestHeaders) matchedBy.push('requestHeaders');
+  if (rule.resourceTypes) matchedBy.push('resourceTypes');
   const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
   if (outcome.kind === 'no-match' || outcome.kind === 'unparseable') {
-    return { proceed: false, outcome };
+    return { proceed: false, outcome, skippedAt: 'graphqlOperation' };
   }
+  if (rule.graphqlOperation !== undefined) matchedBy.push('graphqlOperation');
   const count = incrementCounter(rule, counters);
   if (!checkCountingCondition(rule, count)) return { proceed: false, outcome };
-  return { proceed: true, outcome };
+  return { proceed: true, outcome, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
 }
 
 function operationDetail(outcome: GraphQLRuleOutcome | null): { operationName?: string } {
@@ -213,45 +229,51 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
       for (const cors of config.cors) {
         emitter?.debug('rule-evaluating', { url, method }, cors);
         if (!matchUrl(url, cors.urlPattern)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'urlPattern' }, cors);
           continue;
         }
         if (cors.methods && !cors.methods.includes(method)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'methods' }, cors);
           continue;
         }
-        if (!matchResourceType('xhr', cors.resourceTypes)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+        if (cors.resourceTypes && !matchResourceType('xhr', cors.resourceTypes)) {
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'resourceTypes' }, cors);
           continue;
         }
+        const corsMatchedBy: string[] = [];
         if (cors.hostname !== undefined) {
           const parsed = ctx.getParsedUrl();
           if (!parsed || !matchHostname(parsed.hostname, cors.hostname)) {
-            emitter?.debug('rule-skip-match', { url, method }, cors);
+            emitter?.debug('rule-skip-match', { url, method, skippedAt: 'hostname' }, cors);
             continue;
           }
+          corsMatchedBy.push('hostname');
         }
         if (cors.queryParams) {
           const parsed = ctx.getParsedUrl();
           if (!parsed || !matchQueryParams(parsed.searchParams, cors.queryParams)) {
-            emitter?.debug('rule-skip-match', { url, method }, cors);
+            emitter?.debug('rule-skip-match', { url, method, skippedAt: 'queryParams' }, cors);
             continue;
           }
+          corsMatchedBy.push('queryParams');
         }
         if (cors.requestHeaders && !matchHeaders(ctx.getHeaderView(), cors.requestHeaders)) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'requestHeaders' }, cors);
           continue;
         }
+        if (cors.requestHeaders) corsMatchedBy.push('requestHeaders');
+        if (cors.resourceTypes) corsMatchedBy.push('resourceTypes');
         const outcome = evaluateGraphQLRule(cors.graphqlOperation, gqlExtract);
         if (outcome.kind === 'no-match') {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: 'graphqlOperation' }, cors);
           continue;
         }
         if (outcome.kind === 'unparseable') {
           emitGraphQLDiagnostic(emitter, 'network:cors', url, method, {});
           continue;
         }
-        emitter?.debug('rule-matched', { url, method }, cors);
+        if (cors.graphqlOperation !== undefined) corsMatchedBy.push('graphqlOperation');
+        emitter?.debug('rule-matched', { url, method, matchedBy: corsMatchedBy.length > 0 ? corsMatchedBy : undefined }, cors);
         const count = incrementCounter(cors, counters);
         if (!checkCountingCondition(cors, count)) {
           emitter?.debug('rule-skip-counting', { url, method }, cors);
@@ -289,11 +311,11 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:abort', url, method, { timeoutMs: abort.timeout });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout }, abort);
+            emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout, skippedAt: gate.skippedAt }, abort);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout }, abort);
+        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout, matchedBy: gate.matchedBy }, abort);
         if (!gateGroup(abort, groups, emitter, { url, method, timeoutMs: abort.timeout })) continue;
         const applied = shouldApplyChaos(abort.probability, random);
         if (!applied) {
@@ -372,11 +394,11 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:failure', url, method, { statusCode: failure.statusCode });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode }, failure);
+            emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode, skippedAt: gate.skippedAt }, failure);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode }, failure);
+        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode, matchedBy: gate.matchedBy }, failure);
         if (!gateGroup(failure, groups, emitter, { url, method, statusCode: failure.statusCode })) continue;
         const applied = shouldApplyChaos(failure.probability, random);
         emitter?.emit({
@@ -438,11 +460,11 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:corruption', url, method, { strategy: corruption.strategy });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy }, corruption);
+            emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy, skippedAt: gate.skippedAt }, corruption);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy }, corruption);
+        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy, matchedBy: gate.matchedBy }, corruption);
         if (!gateGroup(corruption, groups, emitter, { url, method, strategy: corruption.strategy })) continue;
         const applied = shouldApplyChaos(corruption.probability, random);
         if (!applied) {
@@ -536,11 +558,11 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:latency', url, method, { delayMs: latency.delayMs });
           } else {
-            emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs }, latency);
+            emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs, skippedAt: gate.skippedAt }, latency);
           }
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs }, latency);
+        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs, matchedBy: gate.matchedBy }, latency);
         if (!gateGroup(latency, groups, emitter, { url, method, delayMs: latency.delayMs })) continue;
         const applied = shouldApplyChaos(latency.probability, random);
         emitter?.emit({

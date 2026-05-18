@@ -184,6 +184,16 @@ export class MatcherRegistry {
  *  are GC'd with the rule object. */
 export const ruleMatcherOrigin = new WeakMap<object, string>();
 
+/** Pull the matcher-origin name for a rule (if any) into a spreadable detail
+ *  fragment. Interceptor emit sites use this to enrich chaos events with
+ *  `matcherName` without adding a rule-aware `emit()` overload to the
+ *  emitter. Returns an empty object when the rule did not come from a named
+ *  matcher; the spread is then a no-op. */
+export function matcherDetail(rule: object): { matcherName?: string } {
+  const name = ruleMatcherOrigin.get(rule);
+  return name !== undefined ? { matcherName: name } : {};
+}
+
 const NETWORK_RULE_CATEGORIES = ['failures', 'latencies', 'aborts', 'corruptions', 'cors'] as const;
 
 /** Resolve every rule with `matcher: 'name'` against `registry`. Inlines the

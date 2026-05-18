@@ -165,41 +165,54 @@ interface MatcherContext {
   getHeaderView(): RequestHeaderView;
 }
 
+interface GateResult {
+  proceed: boolean;
+  outcome: GraphQLRuleOutcome | null;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
 /**
  * Run the shared per-rule gate covering every matcher field. Order:
  * urlPattern -> methods -> resourceTypes -> hostname -> queryParams ->
- * headers -> graphqlOperation. Counting remains in the branch so group
- * gating stays after the counter update and before probability.
+ * requestHeaders -> graphqlOperation. Returns the list of non-URL matcher
+ * fields that fired in `matchedBy`, or the first field that failed in
+ * `skippedAt`, for downstream debug events.
  */
-function gateRule(
-  rule: NetworkRuleMatchers,
-  ctx: MatcherContext,
-): { proceed: boolean; outcome: GraphQLRuleOutcome | null } {
-  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null };
-  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null };
-  if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) return { proceed: false, outcome: null };
+function gateRule(rule: NetworkRuleMatchers, ctx: MatcherContext): GateResult {
+  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
+  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
+  if (rule.resourceTypes && !matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+    return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+  }
+  const matchedBy: string[] = [];
   if (rule.hostname !== undefined) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
-      return { proceed: false, outcome: null };
+      return { proceed: false, outcome: null, skippedAt: 'hostname' };
     }
+    matchedBy.push('hostname');
   }
   if (rule.queryParams) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
-      return { proceed: false, outcome: null };
+      return { proceed: false, outcome: null, skippedAt: 'queryParams' };
     }
+    matchedBy.push('queryParams');
   }
   if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
-    return { proceed: false, outcome: null };
+    return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
   }
+  if (rule.requestHeaders) matchedBy.push('requestHeaders');
+  if (rule.resourceTypes) matchedBy.push('resourceTypes');
 
   const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
   if (outcome.kind === 'no-match') {
-    return { proceed: false, outcome };
+    return { proceed: false, outcome, skippedAt: 'graphqlOperation' };
   }
+  if (rule.graphqlOperation !== undefined) matchedBy.push('graphqlOperation');
 
-  return { proceed: true, outcome };
+  return { proceed: true, outcome, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
 }
 
 function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
@@ -323,10 +336,10 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         emitter?.debug('rule-evaluating', { url, method }, cors);
         const gate = gateRule(cors, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method }, cors);
+          emitter?.debug('rule-skip-match', { url, method, skippedAt: gate.skippedAt }, cors);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method }, cors);
+        emitter?.debug('rule-matched', { url, method, matchedBy: gate.matchedBy }, cors);
         const count = incrementCounter(cors, counters);
         if (!checkCountingCondition(cors, count)) {
           emitter?.debug('rule-skip-counting', { url, method }, cors);
@@ -389,10 +402,10 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         emitter?.debug('rule-evaluating', { url, method, timeoutMs: abort.timeout }, abort);
         const gate = gateRule(abort, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout }, abort);
+          emitter?.debug('rule-skip-match', { url, method, timeoutMs: abort.timeout, skippedAt: gate.skippedAt }, abort);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout }, abort);
+        emitter?.debug('rule-matched', { url, method, timeoutMs: abort.timeout, matchedBy: gate.matchedBy }, abort);
         const count = incrementCounter(abort, counters);
         if (!checkCountingCondition(abort, count)) {
           emitter?.debug('rule-skip-counting', { url, method, timeoutMs: abort.timeout }, abort);
@@ -454,10 +467,10 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         emitter?.debug('rule-evaluating', { url, method, statusCode: failure.statusCode }, failure);
         const gate = gateRule(failure, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode }, failure);
+          emitter?.debug('rule-skip-match', { url, method, statusCode: failure.statusCode, skippedAt: gate.skippedAt }, failure);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode }, failure);
+        emitter?.debug('rule-matched', { url, method, statusCode: failure.statusCode, matchedBy: gate.matchedBy }, failure);
         const count = incrementCounter(failure, counters);
         if (!checkCountingCondition(failure, count)) {
           emitter?.debug('rule-skip-counting', { url, method, statusCode: failure.statusCode }, failure);
@@ -499,10 +512,10 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         emitter?.debug('rule-evaluating', { url, method, delayMs: latency.delayMs }, latency);
         const gate = gateRule(latency, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs }, latency);
+          emitter?.debug('rule-skip-match', { url, method, delayMs: latency.delayMs, skippedAt: gate.skippedAt }, latency);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs }, latency);
+        emitter?.debug('rule-matched', { url, method, delayMs: latency.delayMs, matchedBy: gate.matchedBy }, latency);
         const count = incrementCounter(latency, counters);
         if (!checkCountingCondition(latency, count)) {
           emitter?.debug('rule-skip-counting', { url, method, delayMs: latency.delayMs }, latency);
@@ -540,10 +553,10 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         emitter?.debug('rule-evaluating', { url, method, strategy: corruption.strategy }, corruption);
         const gate = gateRule(corruption, ctx);
         if (!gate.proceed) {
-          emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy }, corruption);
+          emitter?.debug('rule-skip-match', { url, method, strategy: corruption.strategy, skippedAt: gate.skippedAt }, corruption);
           continue;
         }
-        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy }, corruption);
+        emitter?.debug('rule-matched', { url, method, strategy: corruption.strategy, matchedBy: gate.matchedBy }, corruption);
         const count = incrementCounter(corruption, counters);
         if (!checkCountingCondition(corruption, count)) {
           emitter?.debug('rule-skip-counting', { url, method, strategy: corruption.strategy }, corruption);

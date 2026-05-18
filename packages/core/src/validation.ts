@@ -774,11 +774,13 @@ export function prepareChaosConfig(
     }]);
   }
 
+  const finalValidated = validateConfig(expanded);
+
   let matcherResolved: ChaosConfig;
   try {
     const matcherRegistry = new MatcherRegistry();
-    matcherRegistry.registerAll(expanded.matchers);
-    matcherResolved = resolveNamedMatchers(expanded, matcherRegistry);
+    matcherRegistry.registerAll(finalValidated.matchers);
+    matcherResolved = resolveNamedMatchers(finalValidated, matcherRegistry);
   } catch (e) {
     if (e instanceof ChaosConfigError) throw e;
     const msg = (e as Error).message;
@@ -805,7 +807,7 @@ export function prepareChaosConfig(
     }]);
   }
 
-  return validateConfig(matcherResolved);
+  return matcherResolved;
 }
 
 export interface ValidateChaosConfigOptions {
