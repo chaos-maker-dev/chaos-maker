@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chaosConfigSchemaStrict } from '../src/validation';
+import { chaosConfigSchemaStrict, prepareChaosConfig } from '../src/validation';
 import { ChaosConfigError } from '../src/errors';
 import { formatZodIssue } from '../src/validation-format';
 import { z } from 'zod';
@@ -176,5 +176,61 @@ describe('ChaosConfigError surfaces matcher codes', () => {
     if (result.success) return;
     const aggregated = new ChaosConfigError(result.error.issues.map(formatZodIssue));
     expect(aggregated.issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
+  });
+});
+
+describe('prepareChaosConfig: matcher resolution pipeline', () => {
+  it('inlines a registered matcher into a rule and strips the matchers field', () => {
+    const out = prepareChaosConfig({
+      network: {
+        failures: [
+          { matcher: 'customers', statusCode: 503, probability: 1 },
+        ],
+      },
+      matchers: { customers: { urlPattern: '/api/customers', methods: ['GET'] } },
+    });
+    expect(out.matchers).toBeUndefined();
+    const f = out.network!.failures![0] as Record<string, unknown>;
+    expect(f.urlPattern).toBe('/api/customers');
+    expect(f.methods).toEqual(['GET']);
+    expect(f.matcher).toBeUndefined();
+    expect(f.statusCode).toBe(503);
+  });
+
+  it('matcher_not_found when a rule references an unregistered matcher', () => {
+    let err: unknown;
+    try {
+      prepareChaosConfig({
+        network: {
+          failures: [
+            { matcher: 'absent', statusCode: 500, probability: 1 },
+          ],
+        },
+      });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ChaosConfigError);
+    expect((err as ChaosConfigError).issues[0].code).toBe('matcher_not_found');
+    expect((err as ChaosConfigError).issues[0].path).toBe('matchers.absent');
+  });
+
+  it('resolves matchers referenced by rules brought in by presets', () => {
+    const out = prepareChaosConfig({
+      presets: ['my-preset'],
+      customPresets: {
+        'my-preset': {
+          network: {
+            failures: [
+              { matcher: 'shared', statusCode: 503, probability: 1 },
+            ],
+          },
+        },
+      },
+      matchers: { shared: { urlPattern: '/api/shared' } },
+    });
+    const f = out.network!.failures![0] as Record<string, unknown>;
+    expect(f.urlPattern).toBe('/api/shared');
+    expect(f.matcher).toBeUndefined();
   });
 });

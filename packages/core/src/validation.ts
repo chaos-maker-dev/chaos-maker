@@ -3,6 +3,7 @@ import { ChaosConfigError } from './errors';
 import type { ChaosConfig } from './config';
 import { PresetRegistry, expandPresets, type PresetConfigSlice } from './presets';
 import { ProfileRegistry, applyProfile, type ProfileConfigSlice } from './profiles';
+import { MatcherRegistry, resolveNamedMatchers } from './matchers';
 import { formatZodIssue } from './validation-format';
 import type {
   CustomValidatorMap,
@@ -773,7 +774,38 @@ export function prepareChaosConfig(
     }]);
   }
 
-  return validateConfig(expanded);
+  let matcherResolved: ChaosConfig;
+  try {
+    const matcherRegistry = new MatcherRegistry();
+    matcherRegistry.registerAll(expanded.matchers);
+    matcherResolved = resolveNamedMatchers(expanded, matcherRegistry);
+  } catch (e) {
+    if (e instanceof ChaosConfigError) throw e;
+    const msg = (e as Error).message;
+    let code: ValidationIssueCode = 'custom';
+    let path = 'matchers';
+    if (msg.includes('is not registered')) {
+      code = 'matcher_not_found';
+      const match = msg.match(/matcher '([^']+)'/);
+      path = match ? `matchers.${match[1]}` : 'matchers';
+    } else if (msg.includes('already registered')) {
+      code = 'matcher_collision';
+      const match = msg.match(/matcher '([^']+)'/);
+      path = match ? `matchers.${match[1]}` : 'matchers';
+    } else if (msg.includes('references another matcher')) {
+      code = 'matcher_cycle';
+      const match = msg.match(/matcher '([^']+)'/);
+      path = match ? `matchers.${match[1]}` : 'matchers';
+    }
+    throw new ChaosConfigError([{
+      path,
+      code,
+      ruleType: 'matcher',
+      message: msg,
+    }]);
+  }
+
+  return validateConfig(matcherResolved);
 }
 
 export interface ValidateChaosConfigOptions {

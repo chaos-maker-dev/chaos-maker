@@ -278,6 +278,10 @@ export function expandPresets(config: ChaosConfig, registry: PresetRegistry): Ch
   delete userClone.customPresets;
   if (userClone.seed !== undefined) out.seed = userClone.seed;
   if (userClone.debug !== undefined) out.debug = userClone.debug;
+  // `matchers` is a top-level registry that survives preset expansion so
+  // resolveNamedMatchers (run after this step in `prepareChaosConfig`) can
+  // see entries referenced by rules added through presets.
+  if (userClone.matchers !== undefined) out.matchers = userClone.matchers;
   appendSlice(out, userClone as PresetConfigSlice);
   return out;
 }
