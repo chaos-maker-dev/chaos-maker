@@ -112,10 +112,13 @@ function gateRule(
 ): GateResult {
   if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
   if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
-  if (rule.resourceTypes && !matchResourceType(ctx.resourceType, rule.resourceTypes)) {
-    return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
-  }
   const matchedBy: string[] = [];
+  if (rule.resourceTypes) {
+    if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+      return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+    }
+    matchedBy.push('resourceTypes');
+  }
   if (rule.hostname !== undefined) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
@@ -130,12 +133,16 @@ function gateRule(
     }
     matchedBy.push('queryParams');
   }
-  if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
-    return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+  if (rule.requestHeaders) {
+    if (!matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
+      return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+    }
+    matchedBy.push('requestHeaders');
   }
-  if (rule.requestHeaders) matchedBy.push('requestHeaders');
-  if (rule.resourceTypes) matchedBy.push('resourceTypes');
   const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
+  // XHR's gateRule short-circuits on `unparseable` as proceed:false (caller
+  // emits the GraphQL diagnostic) - intentional divergence from fetch's
+  // probabilistic-emit path because XHR has no per-request body re-read.
   if (outcome.kind === 'no-match' || outcome.kind === 'unparseable') {
     return { proceed: false, outcome, skippedAt: 'graphqlOperation' };
   }
@@ -225,6 +232,12 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     };
 
     // 1. Check for CORS
+    // CORS uses inline matcher checks (not gateRule) on purpose: CORS rules
+    // emit a `graphql-body-unparseable` diagnostic without first incrementing
+    // the per-rule counter, whereas gateRule increments before evaluating
+    // graphqlOperation. Sharing gateRule would either double-count or skip the
+    // diagnostic. The matcher checks below stay deliberately parallel to
+    // gateRule's order so behavior remains consistent across both paths.
     if (config.cors) {
       for (const cors of config.cors) {
         emitter?.debug('rule-evaluating', { url, method }, cors);

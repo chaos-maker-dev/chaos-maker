@@ -233,4 +233,39 @@ describe('prepareChaosConfig: matcher resolution pipeline', () => {
     expect(f.urlPattern).toBe('/api/shared');
     expect(f.matcher).toBeUndefined();
   });
+
+  it('resolves matchers referenced by rules brought in by a profile', () => {
+    const out = prepareChaosConfig({
+      profile: 'team-profile',
+      customProfiles: {
+        'team-profile': {
+          network: {
+            failures: [
+              { matcher: 'shared', statusCode: 503, probability: 1 },
+            ],
+          },
+        },
+      },
+      matchers: { shared: { urlPattern: '/api/team' } },
+    });
+    const f = out.network!.failures![0] as Record<string, unknown>;
+    expect(f.urlPattern).toBe('/api/team');
+    expect(f.matcher).toBeUndefined();
+  });
+
+  it('resolves matchers referenced by rules brought in by profileOverrides', () => {
+    const out = prepareChaosConfig({
+      profileOverrides: {
+        network: {
+          failures: [
+            { matcher: 'shared', statusCode: 503, probability: 1 },
+          ],
+        },
+      },
+      matchers: { shared: { urlPattern: '/api/override' } },
+    });
+    const f = out.network!.failures![0] as Record<string, unknown>;
+    expect(f.urlPattern).toBe('/api/override');
+    expect(f.matcher).toBeUndefined();
+  });
 });

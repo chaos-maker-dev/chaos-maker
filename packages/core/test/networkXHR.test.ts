@@ -379,6 +379,22 @@ describe('patchXHR (send)', () => {
 });
 
 describe('patchXHRSetRequestHeader', () => {
+  type XhrProto = { setRequestHeader?: (n: string, v: string) => void };
+
+  let priorSetRequestHeader: ((n: string, v: string) => void) | undefined;
+  beforeEach(() => {
+    priorSetRequestHeader = (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader;
+  });
+  afterEach(() => {
+    // Restore the mock prototype's setRequestHeader so a stray patch from one
+    // test does not leak into the next test in this file.
+    if (priorSetRequestHeader === undefined) {
+      delete (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader;
+    } else {
+      (global.XMLHttpRequest.prototype as XhrProto).setRequestHeader = priorSetRequestHeader;
+    }
+  });
+
   it('records headers per XHR instance with lowercased keys', () => {
     const patchedOpen = patchXHROpen(originalXhrOpen);
     const originalSetRequestHeader = vi.fn();

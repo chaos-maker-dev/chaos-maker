@@ -241,6 +241,7 @@ export function applyProfile(
   delete (topSlice as ChaosConfig).seed;
   delete (topSlice as ChaosConfig).debug;
   delete (topSlice as ChaosConfig).schemaVersion;
+  delete (topSlice as ChaosConfig).matchers;
   appendProfileSlice(out, topSlice);
 
   if (overridesSlice) {
@@ -255,6 +256,13 @@ export function applyProfile(
   if (mergedPresets) out.presets = mergedPresets;
 
   if (inputCopy.customPresets) out.customPresets = inputCopy.customPresets;
+
+  // `matchers` is a top-level registry that must survive profile resolution
+  // so `resolveNamedMatchers` (run last in `prepareChaosConfig`) can see the
+  // entries referenced by rules brought in through profile slices or
+  // overrides. Profile and override slices themselves are forbidden from
+  // carrying `matchers` by the schema.
+  if (inputCopy.matchers !== undefined) out.matchers = inputCopy.matchers;
 
   const seed = overridesSlice?.seed ?? inputCopy.seed ?? profileSlice?.seed;
   if (seed !== undefined) out.seed = seed;

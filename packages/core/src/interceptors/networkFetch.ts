@@ -182,10 +182,13 @@ interface GateResult {
 function gateRule(rule: NetworkRuleMatchers, ctx: MatcherContext): GateResult {
   if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null, skippedAt: 'urlPattern' };
   if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null, skippedAt: 'methods' };
-  if (rule.resourceTypes && !matchResourceType(ctx.resourceType, rule.resourceTypes)) {
-    return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
-  }
   const matchedBy: string[] = [];
+  if (rule.resourceTypes) {
+    if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) {
+      return { proceed: false, outcome: null, skippedAt: 'resourceTypes' };
+    }
+    matchedBy.push('resourceTypes');
+  }
   if (rule.hostname !== undefined) {
     const parsed = ctx.getParsedUrl();
     if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
@@ -200,11 +203,12 @@ function gateRule(rule: NetworkRuleMatchers, ctx: MatcherContext): GateResult {
     }
     matchedBy.push('queryParams');
   }
-  if (rule.requestHeaders && !matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
-    return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+  if (rule.requestHeaders) {
+    if (!matchHeaders(ctx.getHeaderView(), rule.requestHeaders)) {
+      return { proceed: false, outcome: null, skippedAt: 'requestHeaders' };
+    }
+    matchedBy.push('requestHeaders');
   }
-  if (rule.requestHeaders) matchedBy.push('requestHeaders');
-  if (rule.resourceTypes) matchedBy.push('resourceTypes');
 
   const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
   if (outcome.kind === 'no-match') {
