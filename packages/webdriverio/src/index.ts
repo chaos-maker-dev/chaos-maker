@@ -300,6 +300,17 @@ export type {
   RequestResourceType,
   NamedMatcher,
   MatcherEntry,
+  BuildChaosReportOptions,
+  ChaosReport,
+  ChaosReportMeta,
+  FailureSummary,
+  FormatReportHtmlOptions,
+  FormatReportJsonOptions,
+  RuleHitSummary,
+  SkipReasonSummary,
+  TimelineEntry,
+  TransportKind,
+  TransportSummary,
 } from '@chaos-maker/core';
 
 // Runtime export so adapter consumers can construct a Logger
@@ -307,6 +318,16 @@ export type {
 export { Logger } from '@chaos-maker/core';
 // Validation surface re-exported for adapter consumers.
 export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@chaos-maker/core';
+// Reporting utilities — turn an event log into a structured report and
+// emit JSON/Markdown/HTML artifacts for CI and debugging.
+export {
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+  classifyTransport,
+  filterEventsByTransport,
+} from '@chaos-maker/core';
 export type {
   ValidateChaosConfigOptions,
   ValidationIssue,
