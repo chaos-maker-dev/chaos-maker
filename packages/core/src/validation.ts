@@ -456,6 +456,7 @@ type _ProfileSchemaKeys = keyof typeof chaosProfileSliceObject.shape;
 type _MissingProfile = Exclude<_ProfileSliceKeys, _ProfileSchemaKeys>;
 const _profileSliceSchemaCovers: _MissingProfile extends never ? true : never = true;
 void _profileSliceSchemaCovers;
+void chaosProfileSliceObject;
 
 // RuleType drift guard (compile-time, no runtime cost). The `satisfies`
 // clause enforces every `RuleType` is present; the `keyof typeof ...` lets
