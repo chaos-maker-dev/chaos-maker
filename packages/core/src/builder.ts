@@ -1,4 +1,4 @@
-import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, RequestCountingOptions, SSECorruptionStrategy, WebSocketDirection, WebSocketCorruptionStrategy } from './config';
+import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, NamedMatcher, RequestCountingOptions, SSECorruptionStrategy, WebSocketDirection, WebSocketCorruptionStrategy } from './config';
 import type { RuleGroupConfig } from './groups';
 import type { ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 import { cloneValue } from './utils';
@@ -27,6 +27,14 @@ function normalizeProfileNameForBuilder(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) {
     throw new Error('[chaos-maker] profile name cannot be empty');
+  }
+  return trimmed;
+}
+
+function normalizeMatcherNameForBuilder(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error('[chaos-maker] matcher name cannot be empty');
   }
   return trimmed;
 }
@@ -328,6 +336,21 @@ export class ChaosConfigBuilder {
       throw new Error(`[chaos-maker] profile '${norm}' already defined on this builder`);
     }
     this.config.customProfiles[norm] = cloneValue(slice);
+    return this;
+  }
+
+  /** Register a reusable named matcher on this builder.
+   *  Equivalent to setting one key on `ChaosConfig.matchers`. Names normalize
+   *  via `trim()` and collide fail-fast within a single builder; collisions
+   *  against built-in or other custom matchers surface at engine init via the
+   *  `matcher_collision` validation code. */
+  defineMatcher(name: string, matcher: NamedMatcher): this {
+    const norm = normalizeMatcherNameForBuilder(name);
+    if (!this.config.matchers) this.config.matchers = {};
+    if (Object.prototype.hasOwnProperty.call(this.config.matchers, norm)) {
+      throw new Error(`[chaos-maker] matcher '${norm}' already defined on this builder`);
+    }
+    this.config.matchers[norm] = cloneValue(matcher);
     return this;
   }
 
