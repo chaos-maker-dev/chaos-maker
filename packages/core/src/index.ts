@@ -1,11 +1,12 @@
 import { ChaosMaker } from './ChaosMaker';
-import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RuleGroupAssignment, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher } from './config';
+import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher } from './config';
 import { ChaosConfigError } from './errors';
 import { validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, type ValidateChaosConfigOptions, type PrepareChaosConfigOptions } from './validation';
 import { ChaosEvent, ChaosEventType, ChaosEventListener, ChaosEventEmitter } from './events';
 import { ChaosConfigBuilder } from './builder';
 import { presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets } from './presets';
 import { ProfileRegistry, BUILT_IN_PROFILES, applyProfile } from './profiles';
+import { MatcherRegistry, resolveNamedMatchers } from './matchers';
 import { createPrng, generateSeed } from './prng';
 import { deserializeForTransport } from './transport';
 import { formatStepTitle, shouldEmitStep } from './format-event';
@@ -23,7 +24,7 @@ import { formatSeedReproduction } from './seed-reporting';
  *
  *  `validateConfig` is the schema-only primitive — does NOT expand presets.
  *  Use only for unit-test structural assertions. */
-export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction };
+export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, MatcherRegistry, resolveNamedMatchers, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction };
 /** Internal: prebuilt Zod schema variants. Exported so the JSON-schema build
  *  script can serialize the canonical strict variant. Application code should
  *  call `validateChaosConfig` instead — the schemas are not the public
@@ -43,7 +44,8 @@ export type { RuleGroup, RuleGroupConfig } from './groups';
 export type { GraphQLExtractResult, GraphQLRuleOutcome } from './graphql';
 export type { DebugOptions, ChaosDebugStage, RuleIdEntry } from './debug';
 export type { ChaosLifecyclePhase } from './events';
-export type { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RuleGroupAssignment, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, ChaosEvent, ChaosEventType, ChaosEventListener };
+export type { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, ChaosEvent, ChaosEventType, ChaosEventListener };
+export type { MatcherEntry, ParsedRequestUrl, RequestHeaderView } from './matchers';
 
 // --- NEW INTERFACE ---
 interface ChaosUtilsApi {
