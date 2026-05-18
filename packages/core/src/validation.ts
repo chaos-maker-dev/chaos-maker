@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ChaosConfigError } from './errors';
 import type { ChaosConfig } from './config';
 import { PresetRegistry, expandPresets, type PresetConfigSlice } from './presets';
+import { ProfileRegistry, applyProfile, type ProfileConfigSlice } from './profiles';
 import { formatZodIssue } from './validation-format';
 import type {
   CustomValidatorMap,
@@ -336,6 +337,8 @@ const buildSliceSchema = (p: Policy) =>
 
 const presetNameSchema = z.string().trim().min(1, 'preset name must not be empty');
 
+const profileNameSchema = z.string().trim().min(1, 'profile name must not be empty');
+
 const presetsArraySchema = z.array(presetNameSchema).transform((names) => {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -349,6 +352,63 @@ const presetsArraySchema = z.array(presetNameSchema).transform((names) => {
   return out;
 });
 
+/** Forbidden keys inside a profile / override slice. Declared on the schema
+ *  shape so strict policy does NOT short-circuit them as generic
+ *  `unknown_field` issues; the `superRefine` below emits the dedicated
+ *  `profile_chain` code instead, giving callers a precise, actionable error
+ *  whenever a slice attempts to nest profile-related fields or re-introduce
+ *  top-level-only fields. */
+const PROFILE_CHAIN_FORBIDDEN_KEYS = [
+  'profile',
+  'profileOverrides',
+  'customProfiles',
+  'customPresets',
+  'schemaVersion',
+] as const;
+
+/** Inner ZodObject for the scenario profile slice. Used as the drift-guard
+ *  target so `.shape` stays accessible (the public `buildProfileSliceSchema`
+ *  wraps this in a `superRefine`, which produces a `ZodEffects` without a
+ *  `.shape` field). */
+const buildProfileSliceObject = (p: Policy) =>
+  withPolicy(
+    buildSliceSchema(p).extend({
+      presets: presetsArraySchema.optional(),
+      seed: z.number().int('Seed must be an integer').optional(),
+      debug: buildDebugSchema(p).optional(),
+      // Forbidden keys are declared so strict mode does not emit
+      // `unrecognized_keys` for them. The superRefine layered on top of this
+      // object catches their presence and emits `profile_chain`.
+      profile: z.unknown().optional(),
+      profileOverrides: z.unknown().optional(),
+      customProfiles: z.unknown().optional(),
+      customPresets: z.unknown().optional(),
+      schemaVersion: z.unknown().optional(),
+    }),
+    p,
+  );
+
+/** Shape of a scenario profile slice OR a runtime override slice. A profile
+ *  MAY carry its own `presets[]`, `seed`, `debug`, `groups`, and the four rule
+ *  categories. It MAY NOT carry `customPresets`, `customProfiles`, `profile`,
+ *  `profileOverrides`, or `schemaVersion` — nested profile chaining is
+ *  explicitly out-of-scope. A `superRefine` flags forbidden keys with a
+ *  `profile_chain` code so the error surface stays actionable on the public
+ *  validation path. */
+const buildProfileSliceSchema = (p: Policy) =>
+  buildProfileSliceObject(p).superRefine((slice, ctx) => {
+    if (!slice || typeof slice !== 'object') return;
+    for (const k of PROFILE_CHAIN_FORBIDDEN_KEYS) {
+      if ((slice as Record<string, unknown>)[k] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [k],
+          message: `nested profile chaining is not allowed: '${k}' may not appear inside a profile slice`,
+        });
+      }
+    }
+  });
+
 const buildChaosConfigSchema = (p: Policy) =>
   withPolicy(
     buildSliceSchema(p).extend({
@@ -357,6 +417,9 @@ const buildChaosConfigSchema = (p: Policy) =>
       seed: z.number().int('Seed must be an integer').optional(),
       debug: buildDebugSchema(p).optional(),
       schemaVersion: z.literal(1).optional(),
+      profile: profileNameSchema.optional(),
+      profileOverrides: buildProfileSliceSchema(p).optional(),
+      customProfiles: z.record(profileNameSchema, buildProfileSliceSchema(p)).optional(),
     }),
     p,
   );
@@ -381,6 +444,20 @@ type _Missing = Exclude<_SliceKeys, _SchemaKeys>;
 const _sliceSchemaCovers: _Missing extends never ? true : never = true;
 void _sliceSchemaCovers;
 
+const chaosProfileSliceObject = buildProfileSliceObject('strict');
+const chaosProfileSliceSchema = buildProfileSliceSchema('strict');
+
+// DRIFT GUARD — fails to compile if `ProfileConfigSlice` gains a top-level
+// key the profile-slice schema doesn't model. Same coverage scope as the
+// preset slice guard above. Targets the inner ZodObject so `.shape` is
+// available (the public schema wraps it in a `superRefine`).
+type _ProfileSliceKeys = keyof Required<ProfileConfigSlice>;
+type _ProfileSchemaKeys = keyof typeof chaosProfileSliceObject.shape;
+type _MissingProfile = Exclude<_ProfileSliceKeys, _ProfileSchemaKeys>;
+const _profileSliceSchemaCovers: _MissingProfile extends never ? true : never = true;
+void _profileSliceSchemaCovers;
+void chaosProfileSliceObject;
+
 // RuleType drift guard (compile-time, no runtime cost). The `satisfies`
 // clause enforces every `RuleType` is present; the `keyof typeof ...` lets
 // the bidirectional Exclude<...> check catch a stray map key not in the
@@ -403,6 +480,7 @@ const RULE_TYPE_TO_SCHEMA = {
   'sse.close': buildSseClose('strict'),
   group: buildGroupConfig('strict'),
   preset: chaosConfigSliceSchema,
+  profile: chaosProfileSliceSchema,
   'top-level': chaosConfigSchemaStrict,
 } satisfies Record<RuleType, z.ZodTypeAny>;
 type _MissingFromMap = Exclude<RuleType, keyof typeof RULE_TYPE_TO_SCHEMA>;
@@ -479,12 +557,16 @@ export interface PrepareChaosConfigOptions {
  *
  *  Composes:
  *    1. Zod pass 1 (strict OR passthrough+strip per `opts.unknownFields`).
- *    2. Build per-instance `PresetRegistry`, register customs.
- *    3. `expandPresets` — append rule arrays + groups, strip preset fields.
- *    4. Zod pass 2 (strict, on the merged config).
+ *    2. Build per-instance `ProfileRegistry`, register `customProfiles`,
+ *       resolve `profile` + `profileOverrides` into a flat config (strips
+ *       all three profile fields).
+ *    3. Build per-instance `PresetRegistry`, register `customPresets`.
+ *    4. `expandPresets` — append rule arrays + groups, strip preset fields.
+ *    5. Zod pass 2 (strict, on the merged config).
  *
  *  v0.4.x callers pass no opts and get strict-by-default behavior identical
- *  to before. */
+ *  to before. Configs that omit profile-related fields skip the new
+ *  resolution layer entirely (single fast-path `cloneValue` no-op). */
 export function prepareChaosConfig(
   input: unknown,
   opts: PrepareChaosConfigOptions = {},
@@ -513,11 +595,44 @@ export function prepareChaosConfig(
     validated = stripUnknownKeys(validated);
   }
 
+  let profileResolved: ChaosConfig;
+  try {
+    const profileRegistry = new ProfileRegistry();
+    profileRegistry.registerAll(validated.customProfiles);
+    profileResolved = applyProfile(validated, profileRegistry);
+  } catch (e) {
+    if (e instanceof ChaosConfigError) throw e;
+    const msg = (e as Error).message;
+    let code: ValidationIssueCode = 'custom';
+    if (msg.includes('is not registered')) code = 'unknown_profile';
+    else if (msg.includes('already registered')) code = 'profile_collision';
+    else if (msg.includes('may not contain')) code = 'profile_chain';
+    // Registration collisions originate from ProfileRegistry.registerAll over
+    // customProfiles, so the error path is the offending customProfiles entry.
+    // applyProfile-origin errors (unknown_profile / profile_chain) stay
+    // attributed to the field that triggered resolution.
+    let path: string;
+    if (code === 'profile_collision') {
+      const match = msg.match(/profile '([^']+)' already registered/);
+      path = match ? `customProfiles.${match[1]}` : 'customProfiles';
+    } else if (validated.profile !== undefined) {
+      path = 'profile';
+    } else {
+      path = 'profileOverrides';
+    }
+    throw new ChaosConfigError([{
+      path,
+      code,
+      ruleType: 'profile',
+      message: msg,
+    }]);
+  }
+
   let expanded: ChaosConfig;
   try {
     const registry = new PresetRegistry();
-    registry.registerAll(validated.customPresets);
-    expanded = expandPresets(validated, registry);
+    registry.registerAll(profileResolved.customPresets);
+    expanded = expandPresets(profileResolved, registry);
   } catch (e) {
     if (e instanceof ChaosConfigError) throw e;
     const msg = (e as Error).message;

@@ -19,10 +19,13 @@ describe.skipIf(!existsSync(schemaPath))('JSON schema build artifact', () => {
     const props = Object.keys(top.properties ?? {}).sort();
     const expected = [
       'customPresets',
+      'customProfiles',
       'debug',
       'groups',
       'network',
       'presets',
+      'profile',
+      'profileOverrides',
       'schemaVersion',
       'sse',
       'seed',

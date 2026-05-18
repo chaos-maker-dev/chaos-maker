@@ -54,6 +54,9 @@ export type {
   ChaosDebugStage,
   ChaosLifecyclePhase,
   DebugOptions,
+  Profile,
+  ProfileConfigSlice,
+  ProfileOverrideSlice,
 } from '@chaos-maker/core';
 
 // Augment Cypress's Chainable interface so `cy.injectChaos(...)` etc. get

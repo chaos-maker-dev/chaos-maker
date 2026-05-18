@@ -27,11 +27,35 @@ const RULE_TYPE_BY_CATEGORY_KEY: Record<string, Partial<Record<string, RuleType>
   },
 };
 
+const PROFILE_PATH_PREFIXES = new Set(['profile', 'profileOverrides', 'customProfiles']);
+
 function deriveRuleType(path: ReadonlyArray<string | number>): RuleType {
   if (path.length === 0) return 'top-level';
   const first = path[0];
   if (first === 'groups') return 'group';
   if (first === 'presets' || first === 'customPresets') return 'preset';
+
+  // Issues under a profile-related top-level field. Walk past the slice
+  // anchor and derive the inner rule type so a `network.failures[0]` under
+  // `profileOverrides` or `customProfiles.<name>` still surfaces as
+  // `network.failure` rather than collapsing to `top-level`.
+  if (typeof first === 'string' && PROFILE_PATH_PREFIXES.has(first)) {
+    if (first === 'profile') return 'profile';
+    const sliceStart = first === 'customProfiles' ? 2 : 1;
+    if (path.length <= sliceStart) return 'profile';
+    const sliceFirst = path[sliceStart];
+    if (sliceFirst === 'groups') return 'group';
+    if (sliceFirst === 'presets') return 'preset';
+    if (typeof sliceFirst === 'string') {
+      const sub = RULE_TYPE_BY_CATEGORY_KEY[sliceFirst];
+      if (sub && typeof path[sliceStart + 1] === 'string') {
+        const mapped = sub[path[sliceStart + 1] as string];
+        if (mapped) return mapped;
+      }
+    }
+    return 'profile';
+  }
+
   if (typeof first === 'string') {
     const sub = RULE_TYPE_BY_CATEGORY_KEY[first];
     if (sub && typeof path[1] === 'string') {
@@ -90,6 +114,7 @@ function mapZodCode(issue: ZodIssue): ValidationIssueCode {
       if (msg.includes('mutually exclusive') || msg.includes('only one of')) return 'mutually_exclusive';
       if (msg.includes('duplicate')) return 'duplicate';
       if (msg.includes('regexp') || msg.includes('flag')) return 'invalid_regex';
+      if (msg.includes('nested profile chaining')) return 'profile_chain';
       return 'custom';
     }
     default:

@@ -102,6 +102,10 @@ Every failure mode surfaces as a `ChaosConfigError` at construction time, never 
 
 Built-in preset configs are deep-frozen. Attempts to mutate them via `presets.slowNetwork` or `registry.get(...)` throw in strict mode (and are no-ops in sloppy mode). Custom presets passed via `customPresets` are NOT frozen on input - your own preset literals stay mutable in your code. The engine takes a deep clone at expansion time, so any post-construction tweaks you make are not observed.
 
+## Profiles vs presets
+
+Presets are the primitive resilience bundles. **Scenario profiles** are the layer above - one named entry that composes presets, seed, debug, and rule slices into a single identifier you reach for from many tests. See the [scenario profiles concept](./profiles) for the full surface, including the runtime override block applied at the inject site.
+
 ## Legacy spread
 
 ```typescript

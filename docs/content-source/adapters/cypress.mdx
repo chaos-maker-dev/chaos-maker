@@ -41,6 +41,22 @@ For Service Worker chaos, call `cy.visit()` first, wait until `navigator.service
 
 SSE chaos and GraphQL operation matching use the same `cy.injectChaos()` command as network, UI, and WebSocket chaos.
 
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the command forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+cy.injectChaos({
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
 ## Debug Mode
 
 Pass `debug: true` to `cy.injectChaos()` to enable [Debug Mode](/api/debug/). It does not affect Cypress's own `--browser` debugger or the `DEBUG=cypress:*` env var - Chaos Maker never reads them. Capture console mirrors with `cy.spy(win.console, 'debug')` inside `onBeforeLoad`; debug events also surface in `cy.getChaosLog()`.

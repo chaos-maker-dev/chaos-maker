@@ -22,7 +22,13 @@ test('checkout works under degraded mobile network', async ({ page }) => {
 });
 ```
 
-See the [Presets catalog](/chaos-maker/concepts/presets/) for the full list. When you need precise control, drop down to explicit rules:
+See the [Presets catalog](/chaos-maker/concepts/presets/) for the full list. When several tests should share the same named scenario, wrap it into a [scenario profile](/chaos-maker/concepts/profiles/) - the one built-in demo profile composes both presets above into a single name:
+
+```typescript
+await injectChaos(page, { profile: 'mobile-checkout', seed: 42 });
+```
+
+Pass `profileOverrides` alongside `profile` to tune one parameter for this call without forking the profile. When you need precise control, drop down to explicit rules:
 
 ```typescript
 import { test, expect } from '@playwright/test';
