@@ -7,7 +7,26 @@ import {
   GraphQLExtractResult,
   GraphQLRuleOutcome,
 } from '../graphql';
+import {
+  createHeaderView,
+  matchHeaders,
+  matchHostname,
+  matchQueryParams,
+  matchResourceType,
+  parseRequestUrl,
+  ParsedRequestUrl,
+  RequestHeaderView,
+} from '../matchers';
 import { ChaosEvent, ChaosEventEmitter, ChaosEventType } from '../events';
+
+/** Per-instance metadata attached to each XHR after `open()` / `send()` /
+ *  `setRequestHeader()` patches run. Lives on the XHR object as
+ *  non-enumerable properties to avoid polluting the public XHR surface. */
+interface XhrChaosMeta {
+  _chaos_url: string;
+  _chaos_method: string;
+  _chaos_headers?: Map<string, string>;
+}
 
 interface XhrBodyView {
   text: string | null;
@@ -30,10 +49,21 @@ function ruleHasGraphQLConstraint(rule: NetworkRuleMatchers): boolean {
   return rule.graphqlOperation !== undefined;
 }
 
-function configHasGraphQLRule(config: NetworkConfig): boolean {
+function ruleNeedsParsedUrl(rule: NetworkRuleMatchers): boolean {
+  return rule.hostname !== undefined || rule.queryParams !== undefined;
+}
+
+function ruleNeedsHeaderView(rule: NetworkRuleMatchers): boolean {
+  return rule.headers !== undefined;
+}
+
+function anyRuleMatches(
+  config: NetworkConfig,
+  predicate: (rule: NetworkRuleMatchers) => boolean,
+): boolean {
   const groups = [config.failures, config.latencies, config.aborts, config.corruptions, config.cors];
   for (const group of groups) {
-    if (group?.some(ruleHasGraphQLConstraint)) return true;
+    if (group?.some(predicate)) return true;
   }
   return false;
 }
@@ -53,16 +83,44 @@ function emitGraphQLDiagnostic(
   });
 }
 
+interface MatcherContext {
+  url: string;
+  method: string;
+  resourceType: 'xhr';
+  gqlExtract: GraphQLExtractResult;
+  getParsedUrl(): ParsedRequestUrl | null;
+  getHeaderView(): RequestHeaderView;
+}
+
+/**
+ * Shared per-rule gate covering every matcher field. Counting runs at the
+ * end so it advances only when the rule has fully matched (mirrors the
+ * pre-matcher behavior).
+ */
 function gateRule(
   rule: NetworkRuleMatchers & { onNth?: number; everyNth?: number; afterN?: number },
-  url: string,
-  method: string,
-  gqlExtract: GraphQLExtractResult,
+  ctx: MatcherContext,
   counters: Map<object, number>,
 ): { proceed: boolean; outcome: GraphQLRuleOutcome | null } {
-  if (!matchUrl(url, rule.urlPattern)) return { proceed: false, outcome: null };
-  if (rule.methods && !rule.methods.includes(method)) return { proceed: false, outcome: null };
-  const outcome = evaluateGraphQLRule(rule.graphqlOperation, gqlExtract);
+  if (!matchUrl(ctx.url, rule.urlPattern)) return { proceed: false, outcome: null };
+  if (rule.methods && !rule.methods.includes(ctx.method)) return { proceed: false, outcome: null };
+  if (!matchResourceType(ctx.resourceType, rule.resourceTypes)) return { proceed: false, outcome: null };
+  if (rule.hostname !== undefined) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
+      return { proceed: false, outcome: null };
+    }
+  }
+  if (rule.queryParams) {
+    const parsed = ctx.getParsedUrl();
+    if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
+      return { proceed: false, outcome: null };
+    }
+  }
+  if (rule.headers && !matchHeaders(ctx.getHeaderView(), rule.headers)) {
+    return { proceed: false, outcome: null };
+  }
+  const outcome = evaluateGraphQLRule(rule.graphqlOperation, ctx.gqlExtract);
   if (outcome.kind === 'no-match' || outcome.kind === 'unparseable') {
     return { proceed: false, outcome };
   }
@@ -112,17 +170,43 @@ function emitCorruptionEvent(
 }
 
 export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyInit) => void, config: NetworkConfig, random: () => number, emitter?: ChaosEventEmitter, counters: Map<object, number> = new Map(), groups?: RuleGroupRegistry) {
-  const needsGqlExtract = configHasGraphQLRule(config);
+  const needsGqlExtract = anyRuleMatches(config, ruleHasGraphQLConstraint);
+  const needsParsedUrl = anyRuleMatches(config, ruleNeedsParsedUrl);
+  const needsHeaderView = anyRuleMatches(config, ruleNeedsHeaderView);
 
   return function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit) {
-    const url = (this as any)._chaos_url;
-    const method = (this as any)._chaos_method;
+    const url = (this as unknown as XhrChaosMeta)._chaos_url;
+    const method = (this as unknown as XhrChaosMeta)._chaos_method;
 
     let gqlExtract: GraphQLExtractResult = { kind: 'not-graphql' };
     if (needsGqlExtract) {
       const view = readXhrBody(body);
       gqlExtract = extractGraphQLOperation(method, url, view.text, view.unparseable);
     }
+
+    let parsedUrlCache: ParsedRequestUrl | null | undefined;
+    let headerViewCache: RequestHeaderView | undefined;
+    const ctx: MatcherContext = {
+      url,
+      method,
+      resourceType: 'xhr',
+      gqlExtract,
+      getParsedUrl: () => {
+        if (parsedUrlCache === undefined) {
+          parsedUrlCache = needsParsedUrl ? parseRequestUrl(url) : null;
+        }
+        return parsedUrlCache;
+      },
+      getHeaderView: () => {
+        if (headerViewCache === undefined) {
+          const tracked = (this as unknown as XhrChaosMeta)._chaos_headers;
+          headerViewCache = needsHeaderView
+            ? createHeaderView(tracked)
+            : createHeaderView(undefined);
+        }
+        return headerViewCache;
+      },
+    };
 
     // 1. Check for CORS
     if (config.cors) {
@@ -133,6 +217,28 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
           continue;
         }
         if (cors.methods && !cors.methods.includes(method)) {
+          emitter?.debug('rule-skip-match', { url, method }, cors);
+          continue;
+        }
+        if (!matchResourceType('xhr', cors.resourceTypes)) {
+          emitter?.debug('rule-skip-match', { url, method }, cors);
+          continue;
+        }
+        if (cors.hostname !== undefined) {
+          const parsed = ctx.getParsedUrl();
+          if (!parsed || !matchHostname(parsed.hostname, cors.hostname)) {
+            emitter?.debug('rule-skip-match', { url, method }, cors);
+            continue;
+          }
+        }
+        if (cors.queryParams) {
+          const parsed = ctx.getParsedUrl();
+          if (!parsed || !matchQueryParams(parsed.searchParams, cors.queryParams)) {
+            emitter?.debug('rule-skip-match', { url, method }, cors);
+            continue;
+          }
+        }
+        if (cors.headers && !matchHeaders(ctx.getHeaderView(), cors.headers)) {
           emitter?.debug('rule-skip-match', { url, method }, cors);
           continue;
         }
@@ -178,7 +284,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.aborts) {
       for (const abort of config.aborts) {
         emitter?.debug('rule-evaluating', { url, method, timeoutMs: abort.timeout }, abort);
-        const gate = gateRule(abort, url, method, gqlExtract, counters);
+        const gate = gateRule(abort, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:abort', url, method, { timeoutMs: abort.timeout });
@@ -261,7 +367,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.failures) {
       for (const failure of config.failures) {
         emitter?.debug('rule-evaluating', { url, method, statusCode: failure.statusCode }, failure);
-        const gate = gateRule(failure, url, method, gqlExtract, counters);
+        const gate = gateRule(failure, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:failure', url, method, { statusCode: failure.statusCode });
@@ -327,7 +433,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.corruptions) {
       for (const corruption of config.corruptions) {
         emitter?.debug('rule-evaluating', { url, method, strategy: corruption.strategy }, corruption);
-        const gate = gateRule(corruption, url, method, gqlExtract, counters);
+        const gate = gateRule(corruption, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:corruption', url, method, { strategy: corruption.strategy });
@@ -425,7 +531,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
     if (config.latencies) {
       for (const latency of config.latencies) {
         emitter?.debug('rule-evaluating', { url, method, delayMs: latency.delayMs }, latency);
-        const gate = gateRule(latency, url, method, gqlExtract, counters);
+        const gate = gateRule(latency, ctx, counters);
         if (!gate.proceed) {
           if (gate.outcome?.kind === 'unparseable') {
             emitGraphQLDiagnostic(emitter, 'network:latency', url, method, { delayMs: latency.delayMs });
@@ -463,8 +569,28 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
 
 export function patchXHROpen(originalXhrOpen: (method: string, url: string | URL) => void) {
   return function (this: XMLHttpRequest, method: string, url: string | URL) {
-    (this as any)._chaos_url = url.toString();
-    (this as any)._chaos_method = method.toUpperCase();
+    const meta = this as unknown as XhrChaosMeta;
+    meta._chaos_url = url.toString();
+    meta._chaos_method = method.toUpperCase();
+    // Reset per-request header tracker so a re-used XHR instance starts clean.
+    meta._chaos_headers = new Map();
     originalXhrOpen.call(this, method, url);
+  };
+}
+
+/** Patch `XMLHttpRequest.prototype.setRequestHeader` so the chaos engine can
+ *  evaluate header matchers in `patchXHR` (send-time). Headers are stored in
+ *  a per-instance `Map` keyed by lowercased name. Repeated calls for the same
+ *  header name append per the spec (comma-joined). */
+export function patchXHRSetRequestHeader(
+  originalSetRequestHeader: (name: string, value: string) => void,
+) {
+  return function (this: XMLHttpRequest, name: string, value: string) {
+    const meta = this as unknown as XhrChaosMeta;
+    const headers = meta._chaos_headers ?? (meta._chaos_headers = new Map());
+    const key = String(name).toLowerCase();
+    const existing = headers.get(key);
+    headers.set(key, existing === undefined ? String(value) : `${existing}, ${value}`);
+    originalSetRequestHeader.call(this, name, value);
   };
 }
