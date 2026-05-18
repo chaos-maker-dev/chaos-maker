@@ -142,3 +142,7 @@ Every `type: 'debug'` event emitted for a rule that came from a named matcher (s
 ## Playwright traces
 
 The Playwright adapter can add chaos events to the trace viewer and attach `chaos-log.json` at test end. `type: 'debug'` events land in the JSON attachment but never render as inline `test.step` entries, so the action timeline stays focused on real chaos decisions.
+
+## Timeline and reporting artifacts
+
+For a structured, file-shaped view of a run, hand the same event log to `buildChaosReport()` and pick a serializer. See [Timeline and reporting](./timeline-and-reporting) for the full output shape and CI integration patterns.
