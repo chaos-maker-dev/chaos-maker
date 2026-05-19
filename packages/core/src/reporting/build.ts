@@ -160,7 +160,9 @@ export function buildChaosReport(
     if (!isSkipDebugEvent(event)) continue;
     const stage = event.detail.stage;
     const skippedAt = event.detail.skippedAt ?? null;
-    const key = `${stage}|${skippedAt ?? ''}`;
+    // Tuple-stringified key avoids collisions if `stage` or `skippedAt` ever
+    // contain the delimiter. Stable across runtimes (no Unicode normalization).
+    const key = JSON.stringify([stage, skippedAt]);
     let agg = skipMap.get(key);
     if (!agg) {
       agg = { stage, skippedAt, count: 0 };
@@ -180,7 +182,9 @@ export function buildChaosReport(
     if (!isFailureEvent(event)) continue;
     const ruleId = event.detail?.ruleId ?? null;
     const statusCode = event.detail?.statusCode ?? null;
-    const key = `${ruleId ?? ''}|${event.type}|${statusCode ?? ''}`;
+    // Tuple-stringified key avoids collisions if `ruleId` or `type` ever
+    // contain the delimiter (future-proof for user-supplied rule names).
+    const key = JSON.stringify([ruleId, event.type, statusCode]);
     let agg = failureMap.get(key);
     if (!agg) {
       agg = {

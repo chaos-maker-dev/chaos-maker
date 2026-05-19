@@ -21,6 +21,17 @@ function code(value: string | null): string {
   return `\`${escaped}\``;
 }
 
+/** Sanitize free-form text (event titles, URLs, selectors) for inline Markdown
+ *  rendering: collapse newlines to spaces and escape backticks plus pipes so a
+ *  malicious or quirky URL/selector cannot break list-item or table layout. */
+function inline(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/\r?\n/g, ' ')
+    .replace(/`/g, '\\`')
+    .replace(/\|/g, '\\|');
+}
+
 function section(title: string, body: string): string {
   return `## ${title}\n\n${body}\n`;
 }
@@ -75,8 +86,8 @@ function timelineList(rows: TimelineEntry[]): string {
   if (rows.length === 0) return '_No events recorded._';
   return rows
     .map((entry) => {
-      const rule = entry.ruleId ? ` (rule \`${entry.ruleId}\`)` : '';
-      return `- \`+${entry.offsetMs}ms\` ${entry.title}${rule}`;
+      const rule = entry.ruleId ? ` (rule ${code(entry.ruleId)})` : '';
+      return `- \`+${entry.offsetMs}ms\` ${inline(entry.title)}${rule}`;
     })
     .join('\n');
 }

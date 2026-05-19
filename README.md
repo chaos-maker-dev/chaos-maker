@@ -84,7 +84,7 @@ See the [Advanced matchers concept](https://chaos-maker-dev.github.io/chaos-make
 After a chaos run, turn the event log into a structured `ChaosReport` and serialize it as JSON, Markdown, or a self-contained HTML timeline. The core package returns strings; your test writes them to disk or attaches them as CI artifacts.
 
 ```typescript
-import { writeFileSync } from 'node:fs';
+import { test } from '@playwright/test';
 import {
   buildChaosReport,
   formatReportHtml,

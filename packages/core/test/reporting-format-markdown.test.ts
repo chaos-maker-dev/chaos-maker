@@ -88,4 +88,21 @@ describe('formatReportMarkdown', () => {
     expect(out).toContain('- `+100ms`');
     expect(out).toContain('(rule `r1`)');
   });
+
+  it('sanitizes newlines, backticks, and pipes inside timeline titles', () => {
+    const events: ChaosEvent[] = [
+      {
+        type: 'ui:assault',
+        timestamp: 0,
+        applied: true,
+        detail: { selector: '#a\nb`c|d', action: 'click' },
+      },
+    ];
+    const out = formatReportMarkdown(buildChaosReport(events, { now: FIXED_NOW }));
+    const timelineLine = out.split('\n').find((line) => line.startsWith('- `+0ms`'));
+    expect(timelineLine).toBeDefined();
+    expect(timelineLine!).not.toMatch(/\n/);
+    expect(timelineLine!).toContain('\\`');
+    expect(timelineLine!).toContain('\\|');
+  });
 });
