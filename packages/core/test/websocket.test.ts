@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { patchWebSocket } from '../src/interceptors/websocket';
 import { ChaosEventEmitter } from '../src/events';
+import { Logger } from '../src/debug';
 import type { WebSocketConfig } from '../src/config';
 
 // ---------------------------------------------------------------------------
@@ -454,5 +455,107 @@ describe('close interrupts pending delays', () => {
       .filter(e => e.type === 'websocket:drop')
       .map(e => e.detail.reason);
     expect(dropReasons).toContain('close-interrupt');
+  });
+});
+
+describe('hostname and queryParams matchers', () => {
+  it('hostname inline fires on matching host and skips on mismatch', () => {
+    const cfg: WebSocketConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          direction: 'outbound',
+          hostname: 'realtime.example.com',
+          probability: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    const matching = new Wrapped('ws://realtime.example.com/api');
+    matching.send('m1');
+    expect(matching.sentMessages).toEqual([]);
+
+    const nonMatching = new Wrapped('ws://other.example.com/api');
+    nonMatching.send('m2');
+    expect(nonMatching.sentMessages).toEqual(['m2']);
+  });
+
+  it('queryParams inline fires for ?room=alpha and skips for ?room=beta', () => {
+    const cfg: WebSocketConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          direction: 'outbound',
+          queryParams: { room: 'alpha' },
+          probability: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    const alpha = new Wrapped('ws://test.example.com/api?room=alpha');
+    alpha.send('a');
+    expect(alpha.sentMessages).toEqual([]);
+
+    const beta = new Wrapped('ws://test.example.com/api?room=beta');
+    beta.send('b');
+    expect(beta.sentMessages).toEqual(['b']);
+  });
+
+  it('counter does not increment on hostname mismatch', () => {
+    const cfg: WebSocketConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          direction: 'outbound',
+          hostname: 'realtime.example.com',
+          probability: 1,
+          onNth: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    // First send hits a non-matching host. If hostname mismatch incremented
+    // the counter, the next matching send would not be the "1st matching"
+    // request and onNth: 1 would no longer fire.
+    new Wrapped('ws://other.example.com/api').send('miss');
+
+    const matching = new Wrapped('ws://realtime.example.com/api');
+    matching.send('hit');
+    expect(matching.sentMessages).toEqual([]);
+  });
+
+  it('debug stream carries skippedAt and matchedBy when hostname matters', () => {
+    const cfg: WebSocketConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          direction: 'outbound',
+          hostname: 'realtime.example.com',
+          probability: 1,
+        } as never,
+      ],
+    };
+    const emitter = new ChaosEventEmitter();
+    emitter.setLogger(new Logger({ enabled: true }));
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const counters = new Map<object, number>();
+    const handle = patchWebSocket(
+      MockWebSocket as unknown as typeof WebSocket,
+      cfg, emitter, ALWAYS, counters,
+    );
+    const Wrapped = handle.Wrapped as unknown as WSCtor;
+
+    new Wrapped('ws://other.example.com/api').send('miss');
+    new Wrapped('ws://realtime.example.com/api').send('hit');
+
+    const log = emitter.getLog();
+    const skipped = log.find(
+      (e) => e.type === 'debug' && e.detail.stage === 'rule-skip-match' && e.detail.skippedAt === 'hostname',
+    );
+    expect(skipped).toBeDefined();
+    const matched = log.find(
+      (e) => e.type === 'debug' && e.detail.stage === 'rule-matched' && Array.isArray(e.detail.matchedBy) && (e.detail.matchedBy as string[]).includes('hostname'),
+    );
+    expect(matched).toBeDefined();
   });
 });

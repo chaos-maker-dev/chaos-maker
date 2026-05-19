@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { patchEventSource, type EventSourceLikeStatic } from '../src/interceptors/eventSource';
 import { ChaosEventEmitter } from '../src/events';
+import { Logger } from '../src/debug';
 import type { SSEConfig } from '../src/config';
 
 // ---------------------------------------------------------------------------
@@ -308,5 +309,115 @@ describe('uninstall', () => {
     handle.uninstall();
     es.simulateMessage('after-stop');
     expect(received).toEqual(['after-stop']);
+  });
+});
+
+describe('hostname and queryParams matchers', () => {
+  it('hostname inline fires on matching host and skips on mismatch', () => {
+    const cfg: SSEConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          hostname: 'sse.example.com',
+          probability: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    const matching = new Wrapped('http://sse.example.com/feed');
+    const matched: unknown[] = [];
+    matching.addEventListener('message', (e) => matched.push((e as MessageEvent).data));
+    matching.simulateMessage('a');
+    expect(matched).toEqual([]);
+
+    const other = new Wrapped('http://other.example.com/feed');
+    const otherReceived: unknown[] = [];
+    other.addEventListener('message', (e) => otherReceived.push((e as MessageEvent).data));
+    other.simulateMessage('b');
+    expect(otherReceived).toEqual(['b']);
+  });
+
+  it('queryParams inline fires for ?topic=alerts and skips for ?topic=quotes', () => {
+    const cfg: SSEConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          queryParams: { topic: 'alerts' },
+          probability: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    const alerts = new Wrapped('http://sse.example.com/feed?topic=alerts');
+    const alertsReceived: unknown[] = [];
+    alerts.addEventListener('message', (e) => alertsReceived.push((e as MessageEvent).data));
+    alerts.simulateMessage('a');
+    expect(alertsReceived).toEqual([]);
+
+    const quotes = new Wrapped('http://sse.example.com/feed?topic=quotes');
+    const quotesReceived: unknown[] = [];
+    quotes.addEventListener('message', (e) => quotesReceived.push((e as MessageEvent).data));
+    quotes.simulateMessage('q');
+    expect(quotesReceived).toEqual(['q']);
+  });
+
+  it('counter does not increment on hostname mismatch', () => {
+    const cfg: SSEConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          hostname: 'sse.example.com',
+          probability: 1,
+          onNth: 1,
+        } as never,
+      ],
+    };
+    const { Wrapped } = setupPatch(cfg, ALWAYS);
+    const miss = new Wrapped('http://other.example.com/feed');
+    const missReceived: unknown[] = [];
+    miss.addEventListener('message', (e) => missReceived.push((e as MessageEvent).data));
+    miss.simulateMessage('m');
+    expect(missReceived).toEqual(['m']);
+
+    const hit = new Wrapped('http://sse.example.com/feed');
+    const hitReceived: unknown[] = [];
+    hit.addEventListener('message', (e) => hitReceived.push((e as MessageEvent).data));
+    hit.simulateMessage('h');
+    expect(hitReceived).toEqual([]);
+  });
+
+  it('debug stream carries skippedAt and matchedBy when hostname matters', () => {
+    const cfg: SSEConfig = {
+      drops: [
+        {
+          urlPattern: '*',
+          hostname: 'sse.example.com',
+          probability: 1,
+        } as never,
+      ],
+    };
+    const emitter = new ChaosEventEmitter();
+    emitter.setLogger(new Logger({ enabled: true }));
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+    const counters = new Map<object, number>();
+    const handle = patchEventSource(
+      MockEventSource as unknown as EventSourceLikeStatic,
+      cfg, emitter, ALWAYS, counters,
+    );
+    type Ctor = new (url: string | URL, init?: EventSourceInit) => MockEventSource;
+    const Wrapped = handle.Wrapped as unknown as Ctor;
+
+    new Wrapped('http://other.example.com/feed').simulateMessage('miss');
+    new Wrapped('http://sse.example.com/feed').simulateMessage('hit');
+
+    const log = emitter.getLog();
+    const skipped = log.find(
+      (e) => e.type === 'debug' && e.detail.stage === 'rule-skip-match' && e.detail.skippedAt === 'hostname',
+    );
+    expect(skipped).toBeDefined();
+    const matched = log.find(
+      (e) => e.type === 'debug' && e.detail.stage === 'rule-matched' && Array.isArray(e.detail.matchedBy) && (e.detail.matchedBy as string[]).includes('hostname'),
+    );
+    expect(matched).toBeDefined();
   });
 });
