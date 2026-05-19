@@ -75,7 +75,7 @@ function eventTypeMatches(rule: WildcardOrString, actual: string): boolean {
   return rule === actual;
 }
 
-function findFiringRule<T extends RequestCountingOptions & { urlPattern: string; eventType?: WildcardOrString; probability: number; group?: string }>(
+function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string; eventType?: WildcardOrString; probability: number; group?: string }>(
   rules: T[] | undefined,
   url: string,
   eventType: string,

@@ -106,7 +106,7 @@ function corruptBinaryPayload(
   return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + end));
 }
 
-function findFiringRule<T extends RequestCountingOptions & { urlPattern: string; direction: WebSocketDirection; probability: number; group?: string }>(
+function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string; direction: WebSocketDirection; probability: number; group?: string }>(
   rules: T[] | undefined,
   url: string,
   direction: Direction,
