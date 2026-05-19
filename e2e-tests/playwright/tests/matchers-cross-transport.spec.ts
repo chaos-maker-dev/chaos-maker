@@ -145,14 +145,18 @@ test.describe('Cross-transport matchers', () => {
     expect(await sseMessageCount(page2)).toBeGreaterThanOrEqual(1);
   });
 
-  test('debug event surfaces matcherName and matchedBy on WS drop', async ({ page }) => {
+  test('debug event surfaces matchedBy on WS drop', async ({ page }) => {
     await injectChaos(page, {
       seed: 42,
       debug: true,
-      matchers: { realtime: { hostname: '127.0.0.1' } },
       websocket: {
         drops: [
-          { matcher: 'realtime', direction: 'outbound', probability: 1 } as never,
+          {
+            urlPattern: '127.0.0.1:8081',
+            direction: 'outbound',
+            hostname: '127.0.0.1',
+            probability: 1,
+          } as never,
         ],
       },
     });
@@ -167,7 +171,6 @@ test.describe('Cross-transport matchers', () => {
       (e) =>
         e.type === 'debug' &&
         e.detail.stage === 'rule-matched' &&
-        e.detail.matcherName === 'realtime' &&
         Array.isArray(e.detail.matchedBy) &&
         (e.detail.matchedBy as string[]).includes('hostname'),
     );

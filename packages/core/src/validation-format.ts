@@ -121,7 +121,6 @@ function mapZodCode(issue: ZodIssue): ValidationIssueCode {
         msg.includes('matcher and inline fields') ||
         msg.includes('rule must set either matcher reference')
       ) return 'matcher_inline_conflict';
-      if (msg.includes('urlpattern is required unless matcher')) return 'transport_urlpattern_required';
       if (msg.includes('references another matcher')) return 'matcher_cycle';
       return 'custom';
     }

@@ -151,7 +151,7 @@ type TransportRuleMatchers =
     };
 ```
 
-A rule sets either inline targeting (`urlPattern` required, optional `hostname` / `queryParams` refinements) or a `matcher: 'name'` reference into the top-level matcher registry. Mixing the two surfaces `matcher_inline_conflict`; omitting both surfaces `transport_urlpattern_required`. The transport-irrelevant fields from `NamedMatcher` (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined and silently ignored when carried by a referenced matcher so one matcher can target network, WebSocket, and SSE without duplication. See [Advanced matchers](../concepts/matchers) for the full semantics.
+A rule sets either inline targeting (`urlPattern` required at the TypeScript level, with optional `hostname` / `queryParams` refinements) or a `matcher: 'name'` reference into the top-level matcher registry. Mixing the two surfaces `matcher_inline_conflict`. Omitting both surfaces the existing `matcher_inline_conflict` "rule must set either matcher reference or at least one matcher field" issue. The transport-irrelevant fields from `NamedMatcher` (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined and silently ignored when carried by a referenced matcher so one matcher can target network, WebSocket, and SSE without duplication. See [Advanced matchers](../concepts/matchers) for the full semantics.
 
 ## Server-Sent Events
 

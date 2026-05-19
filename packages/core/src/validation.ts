@@ -141,24 +141,15 @@ function applyMatcherMutualExclusion<S extends z.ZodTypeAny>(
   }) as unknown as S;
 }
 
-/** Transport rules (WebSocket, SSE) tighten the network mutual exclusion with
- *  an additional invariant: when `matcher` is absent the rule MUST supply
- *  `urlPattern`. Hostname/queryParams alone are not enough on transport rules
- *  because the underlying browser APIs always carry a URL and `urlPattern` is
- *  the discriminator users expect to see on the inline shape. */
+/** Transport rules (WebSocket, SSE) reuse the network mutual-exclusion helper
+ *  with a narrower inline-field list. The TypeScript-level `TransportRuleMatchers`
+ *  discriminated union enforces the stricter "urlPattern required unless
+ *  matcher is set" invariant at compile time; the runtime validator stays
+ *  permissive enough to accept already-resolved configs (where a matcher
+ *  reference has been stripped and replaced with its inlined matcher fields)
+ *  without flagging them as missing `urlPattern`. */
 function applyTransportMatcherRefinement<S extends z.ZodTypeAny>(schema: S): S {
-  return applyMatcherMutualExclusion(schema, transportMatcherInlineFieldNames).superRefine((data, ctx) => {
-    if (!data || typeof data !== 'object') return;
-    const obj = data as Record<string, unknown>;
-    const hasMatcher = typeof obj.matcher === 'string';
-    if (!hasMatcher && obj.urlPattern === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['urlPattern'],
-        message: 'urlPattern is required unless matcher is set',
-      });
-    }
-  }) as unknown as S;
+  return applyMatcherMutualExclusion(schema, transportMatcherInlineFieldNames);
 }
 
 const buildNetworkFailure = (p: Policy) =>

@@ -44,7 +44,6 @@ export type ValidationIssueCode =
   | 'matcher_collision'
   | 'matcher_inline_conflict'
   | 'matcher_cycle'
-  | 'transport_urlpattern_required'
   | 'unknown_schema_version'
   | 'deprecated'
   | 'custom'

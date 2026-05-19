@@ -180,7 +180,7 @@ websocket: {
 
 The transport gate runs `urlPattern → direction (WS) / eventType (SSE) → hostname → queryParams` before counting and probability so a matcher mismatch never consumes counting state. Debug attribution mirrors the network surface: `rule-matched` carries `detail.matchedBy`, `rule-skip-match` carries `detail.skippedAt`, and matcher-resolved rules carry `detail.matcherName`.
 
-If neither `matcher` nor `urlPattern` is set on a WS or SSE rule, validation surfaces a `transport_urlpattern_required` issue. This is stricter than network rules, where `urlPattern` is optional whenever any inline matcher field is present.
+The TypeScript shape `TransportRuleMatchers` is a discriminated union: a rule either declares `urlPattern` (with optional `hostname` / `queryParams` refinements) or declares `matcher: 'name'`. At runtime, the existing `matcher_inline_conflict` check still rejects rules that supply neither, so untyped configs cannot ship a rule with no targeting at all.
 
 ## Out of scope (deferred)
 

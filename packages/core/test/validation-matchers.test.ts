@@ -176,23 +176,18 @@ describe('Zod schema: transport matcher surface (WS + SSE)', () => {
     expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
   });
 
-  it.each(wsCategories)('WebSocket %s rule rejects hostname without urlPattern (transport_urlpattern_required)', (cat, extra) => {
-    const issues = parseExpectIssues({
+  it.each(wsCategories)('WebSocket %s rule accepts hostname-only inline targeting (urlPattern is optional)', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
       websocket: { [cat]: [{ hostname: 'realtime.example.com', ...extra }] },
     });
-    expect(issues.some((i) => i.code === 'transport_urlpattern_required')).toBe(true);
+    expect(res.success).toBe(true);
   });
 
-  it.each(wsCategories)('WebSocket %s rule rejects empty targeting (transport_urlpattern_required)', (cat, extra) => {
+  it.each(wsCategories)('WebSocket %s rule rejects empty targeting (matcher_inline_conflict)', (cat, extra) => {
     const issues = parseExpectIssues({
       websocket: { [cat]: [{ ...extra }] },
     });
-    expect(
-      issues.some(
-        (i) =>
-          i.code === 'transport_urlpattern_required' || i.code === 'matcher_inline_conflict',
-      ),
-    ).toBe(true);
+    expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
   });
 
   it.each([['methods', ['GET']], ['requestHeaders', { x: 'y' }], ['resourceTypes', ['fetch']], ['graphqlOperation', 'GetX']])(
@@ -230,11 +225,11 @@ describe('Zod schema: transport matcher surface (WS + SSE)', () => {
     expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
   });
 
-  it.each(sseCategories)('SSE %s rule rejects queryParams without urlPattern (transport_urlpattern_required)', (cat, extra) => {
-    const issues = parseExpectIssues({
+  it.each(sseCategories)('SSE %s rule accepts queryParams-only inline targeting (urlPattern is optional)', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
       sse: { [cat]: [{ queryParams: { topic: 'alerts' }, ...extra }] },
     });
-    expect(issues.some((i) => i.code === 'transport_urlpattern_required')).toBe(true);
+    expect(res.success).toBe(true);
   });
 
   it.each([['methods', ['GET']], ['requestHeaders', { x: 'y' }], ['resourceTypes', ['fetch']], ['graphqlOperation', 'GetX']])(
