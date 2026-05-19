@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-19
+
+### Security
+
+- Bump transitive `ws` dependency to 8.20.1 across the workspace to clear [GHSA-58qx-3vcg-4xpx](https://github.com/advisories/GHSA-58qx-3vcg-4xpx) (uninitialized memory disclosure when `WebSocket.close()` is passed a `TypedArray` reason). The vulnerable `ws` versions never appeared in any published `@chaos-maker/*` package - the exposure was limited to dev-only e2e fixtures. The repo's `pnpm.overrides` policy now pins `ws@>=8.0.0 <8.20.1` to 8.20.1 so any future transitive bump cannot regress below the patched line.
+
 ## [0.7.0] - 2026-05-19
 
 ### Added

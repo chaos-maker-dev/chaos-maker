@@ -1,6 +1,6 @@
 {
   "name": "@chaos-maker/cypress",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Cypress adapter for @chaos-maker/core - custom commands for one-line chaos injection",
   "keywords": [
