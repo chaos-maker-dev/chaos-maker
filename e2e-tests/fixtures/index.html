@@ -46,6 +46,8 @@
   <section>
     <h2>WebSocket</h2>
     <button id="ws-connect">Connect</button>
+    <button id="ws-connect-alpha">Connect ?room=alpha</button>
+    <button id="ws-connect-beta">Connect ?room=beta</button>
     <button id="ws-send">Send "ping"</button>
     <button id="ws-close">Close</button>
     <div id="ws-status">idle</div>
@@ -73,6 +75,8 @@
     <h2>EventSource (SSE)</h2>
     <button id="sse-connect">Connect</button>
     <button id="sse-connect-named">Connect (named events)</button>
+    <button id="sse-connect-alerts">Connect ?topic=alerts</button>
+    <button id="sse-connect-quotes">Connect ?topic=quotes</button>
     <button id="sse-close">Close</button>
     <div id="sse-status">idle</div>
     <div id="sse-message-count">0</div>
@@ -208,12 +212,12 @@
       document.getElementById('ws-inbound-count').textContent = String(n);
     }
 
-    document.getElementById('ws-connect').addEventListener('click', function () {
+    function openWs(url) {
       if (ws && ws.readyState !== WebSocket.CLOSED) return;
       wsInboundCount = 0;
       setWsInboundCount(0);
       setWsStatus('connecting');
-      ws = new WebSocket(WS_URL);
+      ws = new WebSocket(url);
       ws.addEventListener('open', function () { setWsStatus('open'); });
       ws.addEventListener('message', function (evt) {
         wsInboundCount += 1;
@@ -224,6 +228,18 @@
         setWsStatus('closed ' + evt.code + ' ' + (evt.reason || ''));
       });
       ws.addEventListener('error', function () { setWsStatus('error'); });
+    }
+
+    document.getElementById('ws-connect').addEventListener('click', function () {
+      openWs(WS_URL);
+    });
+
+    document.getElementById('ws-connect-alpha').addEventListener('click', function () {
+      openWs(WS_URL + '/?room=alpha');
+    });
+
+    document.getElementById('ws-connect-beta').addEventListener('click', function () {
+      openWs(WS_URL + '/?room=beta');
     });
 
     document.getElementById('ws-send').addEventListener('click', function () {
@@ -306,6 +322,14 @@
 
     document.getElementById('sse-connect-named').addEventListener('click', function () {
       connectSse(SSE_BASE + '/sse-named');
+    });
+
+    document.getElementById('sse-connect-alerts').addEventListener('click', function () {
+      connectSse(SSE_BASE + '/sse-topics?topic=alerts');
+    });
+
+    document.getElementById('sse-connect-quotes').addEventListener('click', function () {
+      connectSse(SSE_BASE + '/sse-topics?topic=quotes');
     });
 
     document.getElementById('sse-close').addEventListener('click', function () {
