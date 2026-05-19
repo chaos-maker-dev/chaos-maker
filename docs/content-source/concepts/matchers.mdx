@@ -132,9 +132,58 @@ Rules originating from a named matcher are attributed in debug events. Every `ty
 
 This makes the answer to "why did this rule fire?" and "why did this rule skip?" trivially readable in dashboards.
 
+## Cross-transport usage
+
+WebSocket and SSE rules accept the same named-matcher registry and a subset of the inline matcher fields. The supported inline fields on every WS and SSE rule are:
+
+- `urlPattern`
+- `hostname`
+- `queryParams`
+- `matcher` (named-matcher reference)
+
+The four network-only fields (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined onto a WS or SSE rule because they have no meaning on those transports: WebSocket opens via a fixed Upgrade handshake, SSE is GET-only, neither browser API exposes request headers, and there is no JSON-body operation to extract.
+
+A `NamedMatcher` reused across transports may still declare any of its fields. The WS/SSE gate evaluates only `urlPattern`, `hostname`, and `queryParams`; non-applicable fields are silently ignored so one matcher can target network, WebSocket, and SSE without per-transport duplication.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    realtimeApi: { hostname: /realtime/ },
+  },
+  websocket: {
+    drops: [
+      { matcher: 'realtimeApi', direction: 'inbound', probability: 0.2 },
+    ],
+  },
+  sse: {
+    drops: [
+      { matcher: 'realtimeApi', probability: 0.2 },
+    ],
+  },
+});
+```
+
+Inline forms work the same way:
+
+```typescript
+websocket: {
+  drops: [
+    {
+      urlPattern: 'wss://realtime',
+      direction: 'outbound',
+      queryParams: { room: 'alpha' },
+      probability: 1,
+    },
+  ],
+}
+```
+
+The transport gate runs `urlPattern → direction (WS) / eventType (SSE) → hostname → queryParams` before counting and probability so a matcher mismatch never consumes counting state. Debug attribution mirrors the network surface: `rule-matched` carries `detail.matchedBy`, `rule-skip-match` carries `detail.skippedAt`, and matcher-resolved rules carry `detail.matcherName`.
+
+If neither `matcher` nor `urlPattern` is set on a WS or SSE rule, validation surfaces a `transport_urlpattern_required` issue. This is stricter than network rules, where `urlPattern` is optional whenever any inline matcher field is present.
+
 ## Out of scope (deferred)
 
-- WebSocket, SSE, and UI rules do not accept named matchers in this release. Each rule shape differs in the matcher dimensions it cares about; named matchers are network-only for now.
 - Built-in matchers. The `matchers` registry is intentionally user-owned. There is no `BUILT_IN_MATCHERS`.
 - Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.
 - Response matchers (status code, response headers). Matchers operate on the request only.

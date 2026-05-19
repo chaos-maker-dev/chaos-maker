@@ -137,6 +137,22 @@ type WebSocketDirection = 'inbound' | 'outbound' | 'both';
 type WebSocketCorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-type';
 ```
 
+Every WebSocket rule type is a discriminated union of two shapes:
+
+```typescript
+type TransportRuleMatchers =
+  | {
+      urlPattern: string;
+      hostname?: HostnameMatcher;
+      queryParams?: Record<string, RequestKvMatcher>;
+    }
+  | {
+      matcher: string;
+    };
+```
+
+A rule sets either inline targeting (`urlPattern` required, optional `hostname` / `queryParams` refinements) or a `matcher: 'name'` reference into the top-level matcher registry. Mixing the two surfaces `matcher_inline_conflict`; omitting both surfaces `transport_urlpattern_required`. The transport-irrelevant fields from `NamedMatcher` (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined and silently ignored when carried by a referenced matcher so one matcher can target network, WebSocket, and SSE without duplication. See [Advanced matchers](../concepts/matchers) for the full semantics.
+
 ## Server-Sent Events
 
 ```typescript
@@ -152,6 +168,8 @@ type SSECorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-ty
 ```
 
 Drop, delay, and corruption rules accept optional `eventType`. The default is `message`; use a named event like `token` or the `'*'` wildcard for all data events.
+
+Every SSE rule type uses the same `TransportRuleMatchers` discriminated union as WebSocket rules: either inline `urlPattern` (with optional `hostname` / `queryParams` refinements) or a `matcher: 'name'` reference. The validation guarantees, debug attribution, and silent-ignore semantics for transport-irrelevant matcher fields match the WebSocket surface.
 
 ## ChaosEvent
 
