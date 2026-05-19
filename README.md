@@ -6,11 +6,11 @@
 
 Inject controlled chaos into web applications to test frontend resilience. Works with Playwright, Cypress, WebdriverIO, and Puppeteer with no backend changes.
 
-## What's new in v0.6.0
+## What's new in v0.7.0
 
-- **Production-ready presets** for the scenarios you'd actually script: `mobile-3g`, `checkout-degraded`. Drop one into a config and run. [Preset catalog](https://chaos-maker-dev.github.io/chaos-maker/concepts/presets/).
-- **Deterministic replay and visibility**: `formatSeedReproduction(seed)` reexported from every adapter, Cypress Command Log writes applied chaos events inline, and Playwright trace step coverage is rock solid. [Replay recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/reproduce-flaky-failure/).
-- **Cleanup reliability hardening**: stop clears Service Worker seed and counters, cancels delayed WebSocket and EventSource deliveries, frees runtime handles, and fails fast on double-inject. Repeat inject/remove cycles and reused pages are now safe by construction.
+- **Scenario profiles and runtime overrides**: bundle several presets and rules behind one name with `profile`, register inline with `customProfiles`, and tune one parameter per call site via `profileOverrides`. [Profiles concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/profiles/).
+- **Advanced matchers and named registry**: every network rule now accepts `hostname`, `queryParams`, `requestHeaders`, and `resourceTypes` filters alongside `urlPattern`. A top-level `matchers` registry holds reusable named matchers so several rules can share one targeting definition. [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/).
+- **Chaos timeline and reporting**: turn a chaos event log into a deterministic `ChaosReport` with `buildChaosReport`, then serialize it as JSON, Markdown, or a self-contained HTML timeline for PR comments and CI artifacts. [Timeline and reporting concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/timeline-and-reporting/).
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 

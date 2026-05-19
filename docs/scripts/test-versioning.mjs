@@ -195,10 +195,18 @@ function testPaginationScope(manifest) {
 // 4. Version selector renders + embedded manifest matches versions.json.
 //    Tested on every page in the version (splash + non-splash) — splash pages
 //    have no sidebar but the dropdown lives in the header and must still work.
+//    The archived snapshot whose tag equals `manifest.latestTag` is the twin
+//    of `latest/` and is hidden from the dropdown to avoid a duplicate
+//    "Latest (v0.X.0)" + "v0.X.0" pair; on those pages the dropdown surfaces
+//    `latest` as the preselected option instead.
 function testVersionSelector(manifest) {
+  const isDropdownTwin = (v) =>
+    !v.isLatest && v.tag === manifest.latestTag;
+  const dropdownVersions = manifest.versions.filter((v) => !isDropdownTwin(v));
   for (const version of manifest.versions) {
     const pages = listHtmlPages(version.slug);
     if (pages.length === 0) continue;
+    const twin = isDropdownTwin(version);
     for (const page of pages) {
       const html = readFileSync(page, 'utf8');
       const rel = relative(DIST, page);
@@ -210,14 +218,21 @@ function testVersionSelector(manifest) {
         new RegExp(`data-active="${version.slug}"`).test(html),
         `selector active flag wrong on ${rel}`,
       );
+      const preselectedSlug = twin ? 'latest' : version.slug;
       check(
-        new RegExp(`<option value="${version.slug}" selected`).test(html),
+        new RegExp(`<option value="${preselectedSlug}" selected`).test(html),
         `selector preselect wrong on ${rel}`,
       );
-      for (const v of manifest.versions) {
+      for (const v of dropdownVersions) {
         check(
           new RegExp(`<option value="${v.slug}"`).test(html),
           `selector missing option for ${v.slug} on ${rel}`,
+        );
+      }
+      if (twin) {
+        check(
+          !new RegExp(`<option value="${version.slug}"`).test(html),
+          `selector should hide archived twin ${version.slug} of latest on ${rel}`,
         );
       }
     }

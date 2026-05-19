@@ -103,7 +103,7 @@ interface ChaosEvent {
 
 ## Rule identifiers
 
-`ruleId` is a **positional** identifier derived from `<ruleType>#<index>` within the current config. Reordering rules between runs changes the IDs - that's acceptable for in-test diagnostics. Persistent IDs across config evolution are out of scope for v0.6.0.
+`ruleId` is a **positional** identifier derived from `<ruleType>#<index>` within the current config. Reordering rules between runs changes the IDs - that's acceptable for in-test diagnostics. Persistent IDs across config evolution remain out of scope.
 
 `ruleName` is reserved for a future builder field (e.g. `.failRequests({ ..., name: 'slow-api' })`). It is undefined today.
 
