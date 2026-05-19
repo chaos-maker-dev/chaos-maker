@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-transport matchers**: every WebSocket and SSE rule now accepts the same matcher targeting surface as network rules. Inline `hostname`, `queryParams`, and `matcher: 'name'` references (into the existing top-level `matchers` registry) work on every WS and SSE rule type. The network-only fields (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined on a WS/SSE rule and silently ignored when carried by a referenced named matcher, so one matcher can target network, WebSocket, and SSE without per-transport duplication. Matcher resolution now walks every transport's rule arrays; the existing `matcher_inline_conflict`, `matcher_not_found`, `matcher_collision`, and `matcher_cycle` validation codes extend to WS and SSE rules. WS and SSE debug events now carry `detail.matcherName`, `detail.matchedBy`, and `detail.skippedAt` exactly as network events do. The gate runs `urlPattern → direction (WS) / eventType (SSE) → hostname → queryParams` before counting and probability so a matcher mismatch never consumes counting state. New public type `TransportRuleMatchers` re-exported from `@chaos-maker/core` and every framework adapter package. New `transport_urlpattern_required` validation issue code surfaces when a WS or SSE rule omits both `urlPattern` and `matcher`. New `concepts/websocket-chaos.mdx` documentation page mirrors the existing SSE concept doc and covers the cross-transport matcher surface inline.
+
+### Changed
+
+- WebSocket and SSE rule types (`WebSocketDropConfig`, `WebSocketDelayConfig`, `WebSocketCorruptConfig`, `WebSocketCloseConfig`, `SSEDropConfig`, `SSEDelayConfig`, `SSECorruptConfig`, `SSECloseConfig`) are now `type` aliases over a discriminated union (`TransportRuleMatchers` intersection) rather than `interface extends`. A rule either declares `urlPattern` (with optional `hostname` / `queryParams` refinements) or declares `matcher: 'name'`; the two modes are mutually exclusive at both the TypeScript level and at validation. Existing configs that supplied `urlPattern` continue to validate and run unchanged. Consumers who previously did `interface MyRule extends WebSocketDropConfig` should switch to `type MyRule = WebSocketDropConfig & { ... }`.
+
 ## [0.7.1] - 2026-05-19
 
 ### Security
