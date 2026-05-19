@@ -11,6 +11,6 @@
     "@chaos-maker/cypress": "workspace:*",
     "cypress": "^13.0.0",
     "http-server": "^14.1.1",
-    "ws": "^8.17.0"
+    "ws": "^8.20.1"
   }
 }
