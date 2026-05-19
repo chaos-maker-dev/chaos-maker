@@ -91,8 +91,8 @@ importers:
         specifier: ^14.1.1
         version: 14.1.1
       ws:
-        specifier: 8.17.1
-        version: 8.17.1
+        specifier: ^8.20.1
+        version: 8.20.1
 
   e2e-tests/playwright:
     devDependencies:
@@ -112,8 +112,8 @@ importers:
         specifier: ^14.1.1
         version: 14.1.1
       ws:
-        specifier: ^8.20.0
-        version: 8.20.0
+        specifier: ^8.20.1
+        version: 8.20.1
 
   e2e-tests/puppeteer:
     devDependencies:
@@ -136,8 +136,8 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@24.12.2)(jsdom@27.0.1(postcss@8.5.14))(tsx@4.21.0)(yaml@2.8.3)
       ws:
-        specifier: 8.17.1
-        version: 8.17.1
+        specifier: ^8.20.1
+        version: 8.20.1
 
   e2e-tests/webdriverio:
     devDependencies:
@@ -178,8 +178,8 @@ importers:
         specifier: ^8.40.0
         version: 8.46.0
       ws:
-        specifier: 8.17.1
-        version: 8.17.1
+        specifier: ^8.20.1
+        version: 8.20.1
 
   packages/core:
     dependencies:
@@ -5154,8 +5154,8 @@ packages:
       utf-8-validate:
         optional: true
 
-  ws@8.20.0:
-    resolution: {integrity: sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA==}
+  ws@8.20.1:
+    resolution: {integrity: sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -8574,7 +8574,7 @@ snapshots:
       whatwg-encoding: 3.1.1
       whatwg-mimetype: 4.0.0
       whatwg-url: 15.1.0
-      ws: 8.20.0
+      ws: 8.20.1
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - bufferutil
@@ -9745,7 +9745,7 @@ snapshots:
       chromium-bidi: 0.6.3(devtools-protocol@0.0.1312386)
       debug: 4.4.3(supports-color@8.1.1)
       devtools-protocol: 0.0.1312386
-      ws: 8.20.0
+      ws: 8.20.1
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer
@@ -11111,7 +11111,7 @@ snapshots:
 
   ws@8.17.1: {}
 
-  ws@8.20.0: {}
+  ws@8.20.1: {}
 
   xml-name-validator@5.0.0: {}
 
