@@ -28,9 +28,17 @@ import {
   WebSocketDirection,
   WebSocketCorruptionStrategy,
   RequestCountingOptions,
+  HostnameMatcher,
+  RequestKvMatcher,
 } from '../config';
 import { ChaosEventEmitter } from '../events';
 import { shouldApplyChaos, matchUrl, incrementCounter, checkCountingCondition, gateGroup } from '../utils';
+import {
+  parseRequestUrl,
+  matchHostname,
+  matchQueryParams,
+  type ParsedRequestUrl,
+} from '../matchers';
 import type { RuleGroupRegistry } from '../groups';
 
 type Direction = 'inbound' | 'outbound';
@@ -106,7 +114,51 @@ function corruptBinaryPayload(
   return new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + end));
 }
 
-function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string; direction: WebSocketDirection; probability: number; group?: string }>(
+interface WsGateResult {
+  proceed: boolean;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
+function gateWsRule(
+  rule: {
+    urlPattern?: string;
+    direction: WebSocketDirection;
+    hostname?: HostnameMatcher;
+    queryParams?: Record<string, RequestKvMatcher>;
+  },
+  url: string,
+  direction: Direction,
+  getParsedUrl: () => ParsedRequestUrl | null,
+): WsGateResult {
+  if (!matchUrl(url, rule.urlPattern)) return { proceed: false, skippedAt: 'urlPattern' };
+  if (!directionApplies(rule.direction, direction)) return { proceed: false, skippedAt: 'direction' };
+  const matchedBy: string[] = [];
+  if (rule.hostname !== undefined) {
+    const parsed = getParsedUrl();
+    if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
+      return { proceed: false, skippedAt: 'hostname' };
+    }
+    matchedBy.push('hostname');
+  }
+  if (rule.queryParams) {
+    const parsed = getParsedUrl();
+    if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
+      return { proceed: false, skippedAt: 'queryParams' };
+    }
+    matchedBy.push('queryParams');
+  }
+  return { proceed: true, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
+}
+
+function findFiringRule<T extends RequestCountingOptions & {
+  urlPattern?: string;
+  direction: WebSocketDirection;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  probability: number;
+  group?: string;
+}>(
   rules: T[] | undefined,
   url: string,
   direction: Direction,
@@ -114,19 +166,17 @@ function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string
   counters: Map<object, number>,
   groups: RuleGroupRegistry | undefined,
   emitter: ChaosEventEmitter | undefined,
+  getParsedUrl: () => ParsedRequestUrl | null,
 ): T | null {
   if (!rules) return null;
   for (const rule of rules) {
     emitter?.debug('rule-evaluating', { url, direction }, rule as object);
-    if (!matchUrl(url, rule.urlPattern)) {
-      emitter?.debug('rule-skip-match', { url, direction }, rule as object);
+    const gate = gateWsRule(rule, url, direction, getParsedUrl);
+    if (!gate.proceed) {
+      emitter?.debug('rule-skip-match', { url, direction, skippedAt: gate.skippedAt }, rule as object);
       continue;
     }
-    if (!directionApplies(rule.direction, direction)) {
-      emitter?.debug('rule-skip-match', { url, direction }, rule as object);
-      continue;
-    }
-    emitter?.debug('rule-matched', { url, direction }, rule as object);
+    emitter?.debug('rule-matched', { url, direction, matchedBy: gate.matchedBy }, rule as object);
     const count = incrementCounter(rule, counters);
     if (!checkCountingCondition(rule, count)) {
       emitter?.debug('rule-skip-counting', { url, direction }, rule as object);
@@ -268,14 +318,19 @@ export function patchWebSocket(
 
     const direction: Direction = 'outbound';
     const payloadType = getPayloadType(data);
+    let parsedCache: ParsedRequestUrl | null | undefined;
+    const getParsedUrl = (): ParsedRequestUrl | null => {
+      if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+      return parsedCache;
+    };
 
-    if (findFiringRule<WebSocketDropConfig>(config.drops, url, direction, random, counters, groups, emitter)) {
+    if (findFiringRule<WebSocketDropConfig>(config.drops, url, direction, random, counters, groups, emitter, getParsedUrl)) {
       emitDrop(emitter, url, direction, payloadType);
       return { handled: true, data };
     }
 
     let payload = data;
-    const corruptRule = findFiringRule<WebSocketCorruptConfig>(config.corruptions, url, direction, random, counters, groups, emitter);
+    const corruptRule = findFiringRule<WebSocketCorruptConfig>(config.corruptions, url, direction, random, counters, groups, emitter, getParsedUrl);
     if (corruptRule) {
       if (payloadType === 'text') {
         payload = corruptTextPayload(payload as string, corruptRule.strategy);
@@ -291,7 +346,7 @@ export function patchWebSocket(
       }
     }
 
-    const delayRule = findFiringRule<WebSocketDelayConfig>(config.delays, url, direction, random, counters, groups, emitter);
+    const delayRule = findFiringRule<WebSocketDelayConfig>(config.delays, url, direction, random, counters, groups, emitter, getParsedUrl);
     if (delayRule) {
       emitDelay(emitter, url, direction, payloadType, delayRule.delayMs);
       const timer: PendingDelayTimer = {
@@ -323,8 +378,13 @@ export function patchWebSocket(
 
       const direction: Direction = 'inbound';
       const payloadType = getPayloadType(msgEvt.data);
+      let parsedCache: ParsedRequestUrl | null | undefined;
+      const getParsedUrl = (): ParsedRequestUrl | null => {
+        if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+        return parsedCache;
+      };
 
-      if (findFiringRule<WebSocketDropConfig>(config.drops, url, direction, random, counters, groups, emitter)) {
+      if (findFiringRule<WebSocketDropConfig>(config.drops, url, direction, random, counters, groups, emitter, getParsedUrl)) {
         msgEvt.stopImmediatePropagation();
         emitDrop(emitter, url, direction, payloadType);
         return;
@@ -332,7 +392,7 @@ export function patchWebSocket(
 
       let payload: unknown = msgEvt.data;
       let wasCorrupted = false;
-      const corruptRule = findFiringRule<WebSocketCorruptConfig>(config.corruptions, url, direction, random, counters, groups, emitter);
+      const corruptRule = findFiringRule<WebSocketCorruptConfig>(config.corruptions, url, direction, random, counters, groups, emitter, getParsedUrl);
       if (corruptRule) {
         if (payloadType === 'text') {
           payload = corruptTextPayload(payload as string, corruptRule.strategy);
@@ -350,7 +410,7 @@ export function patchWebSocket(
         }
       }
 
-      const delayRule = findFiringRule<WebSocketDelayConfig>(config.delays, url, direction, random, counters, groups, emitter);
+      const delayRule = findFiringRule<WebSocketDelayConfig>(config.delays, url, direction, random, counters, groups, emitter, getParsedUrl);
       if (delayRule) {
         msgEvt.stopImmediatePropagation();
         emitDelay(emitter, url, direction, payloadType, delayRule.delayMs);
@@ -376,13 +436,24 @@ export function patchWebSocket(
 
   const scheduleCloseChaos = (socket: WebSocket, url: string): void => {
     if (!config.closes) return;
+    let parsedCache: ParsedRequestUrl | null | undefined;
+    const getParsedUrl = (): ParsedRequestUrl | null => {
+      if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+      return parsedCache;
+    };
     for (const rule of config.closes) {
       emitter.debug('rule-evaluating', { url }, rule);
-      if (!matchUrl(url, rule.urlPattern)) {
-        emitter.debug('rule-skip-match', { url }, rule);
+      const gate = gateWsRule(
+        { urlPattern: rule.urlPattern, direction: 'both', hostname: rule.hostname, queryParams: rule.queryParams },
+        url,
+        'inbound',
+        getParsedUrl,
+      );
+      if (!gate.proceed) {
+        emitter.debug('rule-skip-match', { url, skippedAt: gate.skippedAt }, rule);
         continue;
       }
-      emitter.debug('rule-matched', { url }, rule);
+      emitter.debug('rule-matched', { url, matchedBy: gate.matchedBy }, rule);
       const count = incrementCounter(rule, counters);
       if (!checkCountingCondition(rule, count)) {
         emitter.debug('rule-skip-counting', { url }, rule);
