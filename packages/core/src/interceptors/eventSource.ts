@@ -32,9 +32,17 @@ import {
   SSECloseConfig,
   SSECorruptionStrategy,
   RequestCountingOptions,
+  HostnameMatcher,
+  RequestKvMatcher,
 } from '../config';
 import { ChaosEventEmitter } from '../events';
 import { shouldApplyChaos, matchUrl, incrementCounter, checkCountingCondition, corruptText, gateGroup } from '../utils';
+import {
+  parseRequestUrl,
+  matchHostname,
+  matchQueryParams,
+  type ParsedRequestUrl,
+} from '../matchers';
 import type { RuleGroupRegistry } from '../groups';
 
 const INTERCEPT_MARKER = Symbol.for('chaos-maker.eventsource.intercepted');
@@ -75,7 +83,51 @@ function eventTypeMatches(rule: WildcardOrString, actual: string): boolean {
   return rule === actual;
 }
 
-function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string; eventType?: WildcardOrString; probability: number; group?: string }>(
+interface SseGateResult {
+  proceed: boolean;
+  matchedBy?: string[];
+  skippedAt?: string;
+}
+
+function gateSseRule(
+  rule: {
+    urlPattern?: string;
+    eventType?: WildcardOrString;
+    hostname?: HostnameMatcher;
+    queryParams?: Record<string, RequestKvMatcher>;
+  },
+  url: string,
+  eventType: string,
+  getParsedUrl: () => ParsedRequestUrl | null,
+): SseGateResult {
+  if (!matchUrl(url, rule.urlPattern)) return { proceed: false, skippedAt: 'urlPattern' };
+  if (!eventTypeMatches(rule.eventType, eventType)) return { proceed: false, skippedAt: 'eventType' };
+  const matchedBy: string[] = [];
+  if (rule.hostname !== undefined) {
+    const parsed = getParsedUrl();
+    if (!parsed || !matchHostname(parsed.hostname, rule.hostname)) {
+      return { proceed: false, skippedAt: 'hostname' };
+    }
+    matchedBy.push('hostname');
+  }
+  if (rule.queryParams) {
+    const parsed = getParsedUrl();
+    if (!parsed || !matchQueryParams(parsed.searchParams, rule.queryParams)) {
+      return { proceed: false, skippedAt: 'queryParams' };
+    }
+    matchedBy.push('queryParams');
+  }
+  return { proceed: true, matchedBy: matchedBy.length > 0 ? matchedBy : undefined };
+}
+
+function findFiringRule<T extends RequestCountingOptions & {
+  urlPattern?: string;
+  eventType?: WildcardOrString;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  probability: number;
+  group?: string;
+}>(
   rules: T[] | undefined,
   url: string,
   eventType: string,
@@ -83,19 +135,17 @@ function findFiringRule<T extends RequestCountingOptions & { urlPattern?: string
   counters: Map<object, number>,
   groups: RuleGroupRegistry | undefined,
   emitter: ChaosEventEmitter | undefined,
+  getParsedUrl: () => ParsedRequestUrl | null,
 ): T | null {
   if (!rules) return null;
   for (const rule of rules) {
     emitter?.debug('rule-evaluating', { url, eventType }, rule as object);
-    if (!matchUrl(url, rule.urlPattern)) {
-      emitter?.debug('rule-skip-match', { url, eventType }, rule as object);
+    const gate = gateSseRule(rule, url, eventType, getParsedUrl);
+    if (!gate.proceed) {
+      emitter?.debug('rule-skip-match', { url, eventType, skippedAt: gate.skippedAt }, rule as object);
       continue;
     }
-    if (!eventTypeMatches(rule.eventType, eventType)) {
-      emitter?.debug('rule-skip-match', { url, eventType }, rule as object);
-      continue;
-    }
-    emitter?.debug('rule-matched', { url, eventType }, rule as object);
+    emitter?.debug('rule-matched', { url, eventType, matchedBy: gate.matchedBy }, rule as object);
     const count = incrementCounter(rule, counters);
     if (!checkCountingCondition(rule, count)) {
       emitter?.debug('rule-skip-counting', { url, eventType }, rule as object);
@@ -201,8 +251,13 @@ export function patchEventSource(
     // `MessageEvent.type` reflects the SSE event name, defaulting to 'message'
     // for unnamed events.
     const eventType = msgEvt.type || 'message';
+    let parsedCache: ParsedRequestUrl | null | undefined;
+    const getParsedUrl = (): ParsedRequestUrl | null => {
+      if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+      return parsedCache;
+    };
 
-    if (findFiringRule<SSEDropConfig>(config.drops, url, eventType, random, counters, groups, emitter)) {
+    if (findFiringRule<SSEDropConfig>(config.drops, url, eventType, random, counters, groups, emitter, getParsedUrl)) {
       msgEvt.stopImmediatePropagation();
       emitDrop(emitter, url, eventType);
       return;
@@ -211,14 +266,14 @@ export function patchEventSource(
     let payload = typeof msgEvt.data === 'string' ? msgEvt.data : String(msgEvt.data);
     let mutated = false;
 
-    const corruptRule = findFiringRule<SSECorruptConfig>(config.corruptions, url, eventType, random, counters, groups, emitter);
+    const corruptRule = findFiringRule<SSECorruptConfig>(config.corruptions, url, eventType, random, counters, groups, emitter, getParsedUrl);
     if (corruptRule) {
       payload = corruptText(payload, corruptRule.strategy);
       mutated = true;
       emitCorrupt(emitter, url, eventType, corruptRule.strategy);
     }
 
-    const delayRule = findFiringRule<SSEDelayConfig>(config.delays, url, eventType, random, counters, groups, emitter);
+    const delayRule = findFiringRule<SSEDelayConfig>(config.delays, url, eventType, random, counters, groups, emitter, getParsedUrl);
     if (delayRule) {
       msgEvt.stopImmediatePropagation();
       emitDelay(emitter, url, eventType, delayRule.delayMs);
@@ -250,13 +305,24 @@ export function patchEventSource(
 
   const findCloseRule = (url: string): SSECloseConfig | null => {
     if (!config.closes) return null;
+    let parsedCache: ParsedRequestUrl | null | undefined;
+    const getParsedUrl = (): ParsedRequestUrl | null => {
+      if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+      return parsedCache;
+    };
     for (const rule of config.closes) {
       emitter.debug('rule-evaluating', { url }, rule);
-      if (!matchUrl(url, rule.urlPattern)) {
-        emitter.debug('rule-skip-match', { url }, rule);
+      const gate = gateSseRule(
+        { urlPattern: rule.urlPattern, eventType: '*', hostname: rule.hostname, queryParams: rule.queryParams },
+        url,
+        'message',
+        getParsedUrl,
+      );
+      if (!gate.proceed) {
+        emitter.debug('rule-skip-match', { url, skippedAt: gate.skippedAt }, rule);
         continue;
       }
-      emitter.debug('rule-matched', { url }, rule);
+      emitter.debug('rule-matched', { url, matchedBy: gate.matchedBy }, rule);
       const count = incrementCounter(rule, counters);
       if (!checkCountingCondition(rule, count)) {
         emitter.debug('rule-skip-counting', { url }, rule);
