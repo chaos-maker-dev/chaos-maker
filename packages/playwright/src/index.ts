@@ -298,6 +298,17 @@ export type {
   RequestResourceType,
   NamedMatcher,
   MatcherEntry,
+  BuildChaosReportOptions,
+  ChaosReport,
+  ChaosReportMeta,
+  FailureSummary,
+  FormatReportHtmlOptions,
+  FormatReportJsonOptions,
+  RuleHitSummary,
+  SkipReasonSummary,
+  TimelineEntry,
+  TransportKind,
+  TransportSummary,
 } from '@chaos-maker/core';
 
 export type { TraceReporterOptions, ChaosTraceAttachment } from './trace';
@@ -307,6 +318,16 @@ export { Logger } from '@chaos-maker/core';
 // Re-export the structured validation surface so adapter consumers
 // can validate on demand outside of injectChaos and import the error type.
 export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@chaos-maker/core';
+// Reporting utilities — turn an event log into a structured report and
+// emit JSON/Markdown/HTML artifacts for CI and debugging.
+export {
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+  classifyTransport,
+  filterEventsByTransport,
+} from '@chaos-maker/core';
 
 export {
   injectSWChaos,

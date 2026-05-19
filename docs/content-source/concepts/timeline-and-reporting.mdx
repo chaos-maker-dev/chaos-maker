@@ -1,0 +1,106 @@
+---
+title: Timeline and reporting
+description: Turn a chaos event log into deterministic JSON, Markdown, or HTML artifacts for CI and PR review.
+---
+
+`getChaosLog()` returns the full structured event stream. The reporting utilities turn that stream into a stable, file-shaped artifact you can attach to CI, drop into a PR comment, or open locally as a self-contained HTML timeline.
+
+```typescript
+import { writeFileSync } from 'node:fs';
+import {
+  buildChaosReport,
+  formatReportHtml,
+  getChaosLog,
+  getChaosSeed,
+} from '@chaos-maker/playwright';
+
+const events = await getChaosLog(page);
+const seed = await getChaosSeed(page);
+
+const report = buildChaosReport(events, { seed, title: 'checkout flow' });
+writeFileSync('chaos-report.html', formatReportHtml(report));
+```
+
+The same surface is re-exported from `@chaos-maker/cypress`, `@chaos-maker/puppeteer`, and `@chaos-maker/webdriverio`.
+
+## What the report contains
+
+| Section | Source | What it answers |
+| --- | --- | --- |
+| `meta` | Aggregate of the full event array | Seed, title, generated-at, event count, applied/skipped totals, run duration, ready-to-copy replay snippet |
+| `ruleHits` | Debug stream attribution | Which rules applied or skipped, grouped by `ruleId`. Requires `debug: true` (see below) |
+| `transports` | Event `type` prefix | Network vs WebSocket vs SSE vs UI vs rule-group volume, with applied counts |
+| `skipReasons` | Debug stream skip stages | Why rules skipped, grouped by `{stage, skippedAt}` so you can see the dominant blocker at a glance |
+| `failures` | Outcome events | Every applied failure-class event (`network:failure`, `network:abort`, `network:cors`, `network:corruption`, or any `statusCode >= 500`), grouped by rule, type, and status |
+| `timeline` | Every event in emission order | Chronological audit trail with relative `+Nms` offsets and `formatStepTitle()` labels |
+
+`meta`, `transports`, `failures`, and `timeline` populate from outcome events alone and work on any run. `ruleHits` and `skipReasons` source from the debug stream, so add `debug: true` to your config when you want per-rule attribution and structured skip reasons in the report.
+
+## Output formats
+
+`formatReportJson`, `formatReportMarkdown`, and `formatReportHtml` all consume the same `ChaosReport` and emit strings. The core package never writes to disk; pass the string to `fs.writeFileSync` or `testInfo.attach` in your test.
+
+```typescript
+import {
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+} from '@chaos-maker/playwright';
+
+const report = buildChaosReport(events, { seed });
+
+const json = formatReportJson(report);            // pretty by default; { pretty: false } for one-liner
+const md = formatReportMarkdown(report);          // GitHub-flavored tables, drop into a PR comment
+const html = formatReportHtml(report);            // self-contained document, inline CSS, no <script>, no CDNs
+```
+
+The HTML output ships every section as a native `<details open>` block so reviewers can collapse what they do not need. There is no inline JavaScript and no external URL: opening the file from `file://` works the same as serving it.
+
+## Determinism
+
+`buildChaosReport(events, opts)` is a pure function. Given the same `events`, `seed`, `title`, and `now` it always produces the same report, and every formatter emits the same string for the same report. Two guards keep CI artifacts diff-friendly:
+
+- The timeline renders relative offsets (`+0ms`, `+125ms`), not absolute wall-clock times. Two runs that reproduce the same chaos sequence produce the same timeline rendering, even when the absolute `timestamp` values differ.
+- All aggregates have an explicit total ordering (counts desc, then names asc) so re-running a flaky test cannot reorder rows.
+
+In tests that snapshot the formatted output, pin `now` to a fixed value via `buildChaosReport(events, { now: 1_700_000_000_000 })`.
+
+## Filtering by transport
+
+`filterEventsByTransport(events, kind)` returns the subset of events whose `type` prefix maps to one bucket. The bucket taxonomy mirrors what `transports[]` reports.
+
+```typescript
+import { filterEventsByTransport } from '@chaos-maker/playwright';
+
+const wsEvents = filterEventsByTransport(events, 'websocket');
+```
+
+Valid kinds: `'network'`, `'websocket'`, `'sse'`, `'ui'`, `'rule-group'`. The single `'network'` bucket spans fetch and XHR because today's `ChaosEvent.detail` does not distinguish them.
+
+## CI patterns
+
+The Playwright adapter has the cleanest seam: write the report inside the same `afterEach` or test body that calls `getChaosLog`, then attach it with `testInfo.attach` so the HTML reporter renders a download link on failed runs.
+
+```typescript
+test('checkout survives slow API', async ({ page }, testInfo) => {
+  await injectChaos(page, { debug: true, network: { latencies: [/* … */] } });
+  // … run scenario …
+
+  const events = await getChaosLog(page);
+  const seed = await getChaosSeed(page);
+  const report = buildChaosReport(events, { seed, title: testInfo.title });
+  await testInfo.attach('chaos-report.html', {
+    body: formatReportHtml(report),
+    contentType: 'text/html',
+  });
+});
+```
+
+For Cypress, Puppeteer, and WebdriverIO, write the string to disk from the test process and upload it as a CI artifact using whatever your pipeline already does for screenshots.
+
+## Related
+
+- [Observability](./observability) for the underlying `ChaosEvent` taxonomy.
+- [Seeded reproducibility](./seeded-reproducibility) for how the replay snippet locks the run.
+- [Reporting API reference](/chaos-maker/api/reporting/) for the full signature table.

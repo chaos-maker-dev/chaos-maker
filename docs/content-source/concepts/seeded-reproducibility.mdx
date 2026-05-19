@@ -47,3 +47,5 @@ The seed does not freeze the rest of the world:
 - Assertions that depend on elapsed time instead of observable UI or log state.
 
 For replay, drive the same user actions in the same order and assert the chaos log shape, not exact timestamps. When a rule still does not fire, turn on `debug: true` and follow [Diagnose no chaos](/chaos-maker/recipes/diagnose-no-chaos/).
+
+To capture the seed plus the full decision sequence as a single shareable artifact, see [Timeline and reporting](./timeline-and-reporting). `formatReportHtml` includes the same `formatSeedReproduction` line in `meta.replaySnippet` so the report doubles as a replay handle.
