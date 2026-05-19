@@ -4,6 +4,7 @@ import versionsData from '../generated/versions.json';
 interface VersionEntry {
   slug: string;
   label: string;
+  tag: string | null;
   isLatest: boolean;
   isMain: boolean;
   isPrerelease: boolean;
@@ -22,17 +23,34 @@ const route = Astro.locals.starlightRoute as
   | undefined;
 const active = route?.activeVersion ?? null;
 
+// The build script keeps every archived tag in the manifest (including the
+// current latest) so the route middleware can recognise `/v0-7-0/` URLs even
+// when `/latest/` already serves the same content. The dropdown should not
+// list both `Latest (v0.7.0)` and `v0.7.0`, so hide the archived twin of the
+// current latest tag from the selector while leaving it in the manifest.
+const dropdownVersions = manifest.versions.filter(
+  (v) => v.isLatest || v.tag !== manifest.latestTag,
+);
+
 // Render the dropdown only on routes whose URL maps to a known docs version.
 // The root redirect index (`/chaos-maker/`) has no active version, so the
 // selector would offer no meaningful preselection — hide it there.
-const show = manifest.versions.length > 0 && active !== null;
+const show = dropdownVersions.length > 0 && active !== null;
+
+// Resolve the option that should be preselected. When the user is on the
+// hidden archived twin (`/v0-7-0/...`), surface `Latest (v0.7.0)` as the
+// active option so the dropdown stays in sync with the visible content.
+const activeOptionSlug =
+  active && dropdownVersions.some((v) => v.slug === active.slug)
+    ? active.slug
+    : dropdownVersions.find((v) => v.isLatest)?.slug ?? null;
 
 // Embed the manifest into the page as JSON for the client-side switcher.
 // Cross-version mapping needs every version's full page list, but the entire
 // payload is tens of KB of static data — fine for a docs site.
 const payload = {
   base: manifest.base,
-  versions: manifest.versions.map((v) => ({
+  versions: dropdownVersions.map((v) => ({
     slug: v.slug,
     label: v.label,
     isLatest: v.isLatest,
@@ -46,8 +64,8 @@ const payload = {
     <label>
       <span class="sr-only">Docs version</span>
       <select aria-label="Docs version">
-        {manifest.versions.map((v) => (
-          <option value={v.slug} selected={active?.slug === v.slug}>
+        {dropdownVersions.map((v) => (
+          <option value={v.slug} selected={activeOptionSlug === v.slug}>
             {v.label}
           </option>
         ))}
