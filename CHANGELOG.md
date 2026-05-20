@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- WebSocket and SSE rule types (`WebSocketDropConfig`, `WebSocketDelayConfig`, `WebSocketCorruptConfig`, `WebSocketCloseConfig`, `SSEDropConfig`, `SSEDelayConfig`, `SSECorruptConfig`, `SSECloseConfig`) are now `type` aliases over a discriminated union (`TransportRuleMatchers` intersection) rather than `interface extends`. A rule either declares `urlPattern` (with optional `hostname` / `queryParams` refinements) or declares `matcher: 'name'`; the two modes are mutually exclusive at both the TypeScript level and at validation. Existing configs that supplied `urlPattern` continue to validate and run unchanged. Consumers who previously did `interface MyRule extends WebSocketDropConfig` should switch to `type MyRule = WebSocketDropConfig & { ... }`.
+- WebSocket and SSE rule types (`WebSocketDropConfig`, `WebSocketDelayConfig`, `WebSocketCorruptConfig`, `WebSocketCloseConfig`, `SSEDropConfig`, `SSEDelayConfig`, `SSECorruptConfig`, `SSECloseConfig`) are now `type` aliases over a discriminated union (`TransportRuleMatchers` intersection) rather than `interface extends`. A rule either declares one or more inline matcher fields (`urlPattern`, `hostname`, `queryParams`) or declares `matcher: 'name'`, never both; the inline-versus-named split is mutually exclusive at both the TypeScript level and at validation. `urlPattern` is optional as long as `hostname` or `queryParams` is present, matching the network rule surface. Existing configs that supplied `urlPattern` continue to validate and run unchanged. Consumers who previously did `interface MyRule extends WebSocketDropConfig` should switch to `type MyRule = WebSocketDropConfig & { ... }`.
 
 ## [0.7.1] - 2026-05-19
 

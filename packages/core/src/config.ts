@@ -121,8 +121,11 @@ export interface NetworkRuleMatchers {
  *  - `graphqlOperation`: these are not HTTP-with-JSON-body transports.
  *
  *  A rule is exactly ONE of two shapes:
- *  - inline targeting: `urlPattern` is required, `hostname` and `queryParams`
- *    are optional refinements, `matcher` is forbidden.
+ *  - inline targeting: any combination of `urlPattern`, `hostname`, and
+ *    `queryParams`; `matcher` is forbidden. At least one inline field must be
+ *    present (enforced at validation, not at the type level), matching the
+ *    `NetworkRuleMatchers` inline surface so `urlPattern` is not mandatory
+ *    when `hostname` or `queryParams` already targets the rule.
  *  - named reference: `matcher: 'name'` is required and all inline matcher
  *    fields are forbidden.
  *
@@ -137,7 +140,7 @@ export interface NetworkRuleMatchers {
  *  network, WebSocket, and SSE without per-transport duplication. */
 export type TransportRuleMatchers =
   | {
-      urlPattern: string;
+      urlPattern?: string;
       hostname?: HostnameMatcher;
       queryParams?: Record<string, RequestKvMatcher>;
       matcher?: never;
