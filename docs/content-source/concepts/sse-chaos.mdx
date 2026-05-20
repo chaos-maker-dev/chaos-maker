@@ -49,7 +49,7 @@ Each SSE event includes `detail.url`. Drop, delay, and corruption events include
 
 ## Targeting with matchers
 
-Every SSE rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Mix and match exactly like network rules, with the same `matcher_inline_conflict` and `transport_urlpattern_required` validation guarantees.
+Every SSE rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Mix and match exactly like network rules, with the same `matcher_inline_conflict` validation guarantee covering both the matcher-plus-inline conflict and the no-targeting case.
 
 ```typescript
 await injectChaos(page, {

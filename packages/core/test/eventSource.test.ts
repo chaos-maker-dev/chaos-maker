@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { patchEventSource, type EventSourceLikeStatic } from '../src/interceptors/eventSource';
 import { ChaosEventEmitter } from '../src/events';
 import { Logger } from '../src/debug';
@@ -313,6 +313,10 @@ describe('uninstall', () => {
 });
 
 describe('hostname and queryParams matchers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('hostname inline fires on matching host and skips on mismatch', () => {
     const cfg: SSEConfig = {
       drops: [
@@ -398,6 +402,7 @@ describe('hostname and queryParams matchers', () => {
     };
     const emitter = new ChaosEventEmitter();
     emitter.setLogger(new Logger({ enabled: true }));
+    // Restored by the suite-level afterEach so the mock does not leak.
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     const counters = new Map<object, number>();
     const handle = patchEventSource(

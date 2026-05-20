@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { patchWebSocket } from '../src/interceptors/websocket';
 import { ChaosEventEmitter } from '../src/events';
 import { Logger } from '../src/debug';
@@ -459,6 +459,10 @@ describe('close interrupts pending delays', () => {
 });
 
 describe('hostname and queryParams matchers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('hostname inline fires on matching host and skips on mismatch', () => {
     const cfg: WebSocketConfig = {
       drops: [
@@ -537,6 +541,7 @@ describe('hostname and queryParams matchers', () => {
     };
     const emitter = new ChaosEventEmitter();
     emitter.setLogger(new Logger({ enabled: true }));
+    // Restored by the suite-level afterEach so the mock does not leak.
     vi.spyOn(console, 'debug').mockImplementation(() => {});
     const counters = new Map<object, number>();
     const handle = patchWebSocket(

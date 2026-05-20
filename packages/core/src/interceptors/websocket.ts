@@ -443,6 +443,11 @@ export function patchWebSocket(
     };
     for (const rule of config.closes) {
       emitter.debug('rule-evaluating', { url }, rule);
+      // Close rules act on the connection, not on directional messages, so
+      // there is no `direction` to filter on. Passing `direction: 'both'` plus
+      // an actual `'inbound'` makes the shared `gateWsRule` direction check a
+      // guaranteed pass while still reusing its urlPattern/hostname/queryParams
+      // evaluation.
       const gate = gateWsRule(
         { urlPattern: rule.urlPattern, direction: 'both', hostname: rule.hostname, queryParams: rule.queryParams },
         url,

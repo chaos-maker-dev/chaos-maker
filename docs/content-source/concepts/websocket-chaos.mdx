@@ -41,7 +41,7 @@ The direction filter applies inside the matched stream; pair it with `urlPattern
 
 ## Targeting with matchers
 
-Every WebSocket rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Inline and named forms share the same `matcher_inline_conflict` and `transport_urlpattern_required` validation guarantees as network and SSE rules.
+Every WebSocket rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Inline and named forms share the same `matcher_inline_conflict` validation guarantee as network and SSE rules, covering both the matcher-plus-inline conflict and the no-targeting case.
 
 ```typescript
 await injectChaos(page, {
