@@ -158,6 +158,47 @@ function normalizeMatcherName(name: string): string {
   return trimmed;
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of Object.values(value as Record<string, unknown>)) deepFreeze(v);
+  }
+  return value;
+}
+
+// Hard-coded built-in matcher configs so reading the file shows exactly what
+// each built-in name resolves to. A built-in resolves through the same
+// `resolveNamedMatchers` path as a user matcher; a user entry of the same name
+// shadows the built-in (see `MatcherRegistry`).
+const GRAPHQL: NamedMatcher = { urlPattern: '/graphql' };
+const API_REQUESTS: NamedMatcher = { urlPattern: '/api' };
+const AUTH_REQUESTS: NamedMatcher = { requestHeaders: { authorization: true } };
+
+// Built-in configs are immutable. Mutating `registry.get('graphql').urlPattern`
+// is a no-op in sloppy mode and throws in strict mode. The resolver
+// deep-clones every entry at inline time, so the freeze never reaches a rule.
+[GRAPHQL, API_REQUESTS, AUTH_REQUESTS].forEach(deepFreeze);
+
+/** All built-in named matchers. A rule may reference any of these by name
+ *  (e.g. `matcher: 'graphql'`) without declaring a `matchers` entry.
+ *
+ *  Both the array AND each `{ name, config }` descriptor are frozen so that
+ *  `BUILT_IN_MATCHERS[0].config = {}` cannot poison future `MatcherRegistry`
+ *  lookups. Configs are already deep-frozen above.
+ *
+ *  `authRequests` carries only the network-only `requestHeaders` field, so a
+ *  WebSocket or SSE rule that references it has no transport-applicable
+ *  targeting and matches every stream — it is meaningful on network rules
+ *  only. `graphql` uses `urlPattern` (not `graphqlOperation`) so it does not
+ *  force request-body extraction. */
+export const BUILT_IN_MATCHERS: ReadonlyArray<MatcherEntry> = Object.freeze(
+  ([
+    { name: 'graphql',      config: GRAPHQL },
+    { name: 'apiRequests',  config: API_REQUESTS },
+    { name: 'authRequests', config: AUTH_REQUESTS },
+  ] as MatcherEntry[]).map((e) => Object.freeze(e)),
+);
+
 /** Per-instance registry of named matchers. Constructor takes no built-ins.
  *  Mirrors the surface of `ProfileRegistry` so the public ergonomics line up. */
 export class MatcherRegistry {
