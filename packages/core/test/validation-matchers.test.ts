@@ -269,6 +269,26 @@ describe('Zod schema: matchers registry', () => {
   });
 });
 
+describe('Zod schema: built-in matcher references', () => {
+  it('accepts a network rule referencing a built-in with no matchers field', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      network: {
+        failures: [{ matcher: 'graphql', statusCode: 503, probability: 1 }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('accepts a WebSocket rule referencing a built-in with no matchers field', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      websocket: {
+        drops: [{ matcher: 'apiRequests', direction: 'inbound', probability: 1 }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
+});
+
 describe('ChaosConfigError surfaces matcher codes', () => {
   it('throws ChaosConfigError with matcher_inline_conflict code via aggregator', () => {
     const result = chaosConfigSchemaStrict.safeParse({

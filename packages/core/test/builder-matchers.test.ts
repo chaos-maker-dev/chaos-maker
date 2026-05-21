@@ -50,3 +50,33 @@ describe('ChaosConfigBuilder.defineMatcher', () => {
     expect(resolved.matchers).toBeUndefined();
   });
 });
+
+describe('ChaosConfigBuilder.defineMatcher: built-in interaction', () => {
+  it('a defineMatcher entry overrides the built-in of the same name', () => {
+    const cfg = new ChaosConfigBuilder()
+      .defineMatcher('graphql', { urlPattern: '/internal/graphql' })
+      .build();
+    cfg.network = {
+      failures: [
+        { matcher: 'graphql', statusCode: 503, probability: 1 } as never,
+      ],
+    };
+    const resolved = validateChaosConfig(cfg);
+    const failure = resolved.network!.failures![0] as Record<string, unknown>;
+    expect(failure.urlPattern).toBe('/internal/graphql');
+    expect(failure.matcher).toBeUndefined();
+  });
+
+  it('a rule can reference a built-in without any defineMatcher call', () => {
+    const cfg = new ChaosConfigBuilder().build();
+    cfg.network = {
+      failures: [
+        { matcher: 'authRequests', statusCode: 401, probability: 1 } as never,
+      ],
+    };
+    const resolved = validateChaosConfig(cfg);
+    const failure = resolved.network!.failures![0] as Record<string, unknown>;
+    expect(failure.requestHeaders).toEqual({ authorization: true });
+    expect(failure.matcher).toBeUndefined();
+  });
+});
