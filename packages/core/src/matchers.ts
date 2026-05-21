@@ -199,8 +199,17 @@ export const BUILT_IN_MATCHERS: ReadonlyArray<MatcherEntry> = Object.freeze(
   ] as MatcherEntry[]).map((e) => Object.freeze(e)),
 );
 
-/** Per-instance registry of named matchers. Constructor takes no built-ins.
- *  Mirrors the surface of `ProfileRegistry` so the public ergonomics line up. */
+/** Internal O(1) lookup over `BUILT_IN_MATCHERS`, keyed by matcher name. */
+const BUILT_IN_MATCHER_MAP: ReadonlyMap<string, NamedMatcher> = new Map(
+  BUILT_IN_MATCHERS.map((e) => [e.name, e.config]),
+);
+
+/** Per-instance registry of named matchers. The constructor and `register`
+ *  hold only user-supplied entries; `BUILT_IN_MATCHERS` is consulted as a
+ *  read-only fallback by `has`, `get`, and `list`. A user entry shadows a
+ *  built-in of the same name (`get` checks the user map first), so built-ins
+ *  are overridable without a collision error. Mirrors the surface of
+ *  `ProfileRegistry` so the public ergonomics line up. */
 export class MatcherRegistry {
   private map = new Map<string, NamedMatcher>();
 
@@ -224,12 +233,16 @@ export class MatcherRegistry {
   }
 
   has(name: string): boolean {
-    return this.map.has(normalizeMatcherName(name));
+    const norm = normalizeMatcherName(name);
+    return this.map.has(norm) || BUILT_IN_MATCHER_MAP.has(norm);
   }
 
+  /** Resolve a matcher by name. A user entry takes precedence over a built-in
+   *  of the same name; falls back to `BUILT_IN_MATCHERS` when the user map has
+   *  no entry. */
   get(name: string): NamedMatcher {
     const norm = normalizeMatcherName(name);
-    const cfg = this.map.get(norm);
+    const cfg = this.map.get(norm) ?? BUILT_IN_MATCHER_MAP.get(norm);
     if (!cfg) {
       throw new Error(
         `[chaos-maker] matcher '${norm}' is not registered. Known: ${this.list().join(', ')}`,
@@ -238,8 +251,15 @@ export class MatcherRegistry {
     return cfg;
   }
 
+  /** Every resolvable matcher name: user entries plus built-in fallbacks,
+   *  deduplicated so a user override of a built-in appears once. */
   list(): string[] {
-    return [...this.map.keys()];
+    return [...new Set([...this.map.keys(), ...BUILT_IN_MATCHER_MAP.keys()])];
+  }
+
+  /** Built-in matcher names only, excluding user-registered entries. */
+  listBuiltIns(): string[] {
+    return [...BUILT_IN_MATCHER_MAP.keys()];
   }
 }
 
