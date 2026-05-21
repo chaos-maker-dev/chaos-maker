@@ -109,6 +109,8 @@ interface NamedMatcher {
 
 The top-level `matchers` registry holds reusable `NamedMatcher` entries. Rules reference one via `matcher: 'name'`. The resolver runs after preset and profile expansion, inlines the registered fields, and strips both the `matcher` reference and the `matchers` registry from the resolved config. See [Advanced matchers](/chaos-maker/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`).
 
+Three matchers are built in and resolve by name with no `matchers` entry: `graphql` (`urlPattern: '/graphql'`), `apiRequests` (`urlPattern: '/api'`), and `authRequests` (`requestHeaders: { authorization: true }`). A `matchers` entry that reuses one of these names overrides it. `authRequests` is a network-only matcher; see [Advanced matchers](/chaos-maker/concepts/matchers/) for built-in behavior across transports.
+
 ## UI
 
 ```typescript
