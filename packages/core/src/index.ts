@@ -6,7 +6,7 @@ import { ChaosEvent, ChaosEventType, ChaosEventListener, ChaosEventEmitter } fro
 import { ChaosConfigBuilder } from './builder';
 import { presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets } from './presets';
 import { ProfileRegistry, BUILT_IN_PROFILES, applyProfile } from './profiles';
-import { MatcherRegistry, resolveNamedMatchers } from './matchers';
+import { MatcherRegistry, resolveNamedMatchers, BUILT_IN_MATCHERS } from './matchers';
 import { createPrng, generateSeed } from './prng';
 import { deserializeForTransport } from './transport';
 import { formatStepTitle, shouldEmitStep } from './format-event';
@@ -32,7 +32,7 @@ import {
  *
  *  `validateConfig` is the schema-only primitive — does NOT expand presets.
  *  Use only for unit-test structural assertions. */
-export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, MatcherRegistry, resolveNamedMatchers, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction, buildChaosReport, formatReportJson, formatReportMarkdown, formatReportHtml, classifyTransport, filterEventsByTransport };
+export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, MatcherRegistry, resolveNamedMatchers, BUILT_IN_MATCHERS, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction, buildChaosReport, formatReportJson, formatReportMarkdown, formatReportHtml, classifyTransport, filterEventsByTransport };
 export type {
   BuildChaosReportOptions,
   ChaosReport,
