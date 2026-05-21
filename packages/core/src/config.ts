@@ -110,6 +110,48 @@ export interface NetworkRuleMatchers {
   matcher?: string;
 }
 
+/** Common matcher fields for every WebSocket and SSE chaos rule.
+ *
+ *  WebSocket and SSE expose a SUBSET of the matcher surface that
+ *  `NetworkRuleMatchers` carries. Fields omitted here are intentional:
+ *  - `methods`: WS opens via a fixed Upgrade handshake; SSE is GET-only.
+ *  - `requestHeaders`: neither browser API (`WebSocket`, `EventSource`)
+ *    exposes request headers at the constructor surface.
+ *  - `resourceTypes`: transport is implicit in the rule category.
+ *  - `graphqlOperation`: these are not HTTP-with-JSON-body transports.
+ *
+ *  A rule is exactly ONE of two shapes:
+ *  - inline targeting: any combination of `urlPattern`, `hostname`, and
+ *    `queryParams`; `matcher` is forbidden. At least one inline field must be
+ *    present (enforced at validation, not at the type level), matching the
+ *    `NetworkRuleMatchers` inline surface so `urlPattern` is not mandatory
+ *    when `hostname` or `queryParams` already targets the rule.
+ *  - named reference: `matcher: 'name'` is required and all inline matcher
+ *    fields are forbidden.
+ *
+ *  The per-rule discriminator fields `direction` (WebSocket) and `eventType`
+ *  (SSE) filter within an already-matched stream rather than selecting the
+ *  stream itself, so they live on the per-rule type and do not appear here.
+ *
+ *  A `NamedMatcher` referenced via `matcher: 'name'` may declare any field
+ *  the `NamedMatcher` shape allows; the WS/SSE gate evaluates only
+ *  `urlPattern`, `hostname`, and `queryParams`. Fields not applicable to the
+ *  transport are silently ignored so a single named matcher can target
+ *  network, WebSocket, and SSE without per-transport duplication. */
+export type TransportRuleMatchers =
+  | {
+      urlPattern?: string;
+      hostname?: HostnameMatcher;
+      queryParams?: Record<string, RequestKvMatcher>;
+      matcher?: never;
+    }
+  | {
+      matcher: string;
+      urlPattern?: never;
+      hostname?: never;
+      queryParams?: never;
+    };
+
 export interface NetworkFailureConfig extends RequestCountingOptions, NetworkRuleMatchers, RuleGroupAssignment {
   statusCode: number;
   probability: number;
@@ -164,18 +206,20 @@ export interface UiConfig {
  */
 export type WebSocketDirection = 'inbound' | 'outbound' | 'both';
 
-export interface WebSocketDropConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface WebSocketDropRule {
   direction: WebSocketDirection;
   probability: number;
 }
+export type WebSocketDropConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & WebSocketDropRule;
 
-export interface WebSocketDelayConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface WebSocketDelayRule {
   direction: WebSocketDirection;
   delayMs: number;
   probability: number;
 }
+export type WebSocketDelayConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & WebSocketDelayRule;
 
 /** Strategies for corrupting WebSocket payloads.
  *  `truncate` and `empty` apply to both text and binary payloads.
@@ -185,15 +229,15 @@ export interface WebSocketDelayConfig extends RequestCountingOptions, RuleGroupA
  */
 export type WebSocketCorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-type';
 
-export interface WebSocketCorruptConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface WebSocketCorruptRule {
   direction: WebSocketDirection;
   strategy: WebSocketCorruptionStrategy;
   probability: number;
 }
+export type WebSocketCorruptConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & WebSocketCorruptRule;
 
-export interface WebSocketCloseConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface WebSocketCloseRule {
   /**
    * WebSocket close code. Must be either `1000` (Normal Closure) or in the
    * `3000–4999` range per the WebSocket spec; other values are rejected by
@@ -210,6 +254,8 @@ export interface WebSocketCloseConfig extends RequestCountingOptions, RuleGroupA
   afterMs?: number;
   probability: number;
 }
+export type WebSocketCloseConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & WebSocketCloseRule;
 
 export interface WebSocketConfig {
   drops?: WebSocketDropConfig[];
@@ -233,32 +279,36 @@ export type SSECorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'w
  */
 export type SSEEventTypeMatcher = string | '*';
 
-export interface SSEDropConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface SSEDropRule {
   eventType?: SSEEventTypeMatcher;
   probability: number;
 }
+export type SSEDropConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & SSEDropRule;
 
-export interface SSEDelayConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface SSEDelayRule {
   eventType?: SSEEventTypeMatcher;
   delayMs: number;
   probability: number;
 }
+export type SSEDelayConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & SSEDelayRule;
 
-export interface SSECorruptConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface SSECorruptRule {
   eventType?: SSEEventTypeMatcher;
   strategy: SSECorruptionStrategy;
   probability: number;
 }
+export type SSECorruptConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & SSECorruptRule;
 
-export interface SSECloseConfig extends RequestCountingOptions, RuleGroupAssignment {
-  urlPattern: string;
+interface SSECloseRule {
   /** Delay after `open` before dispatching `error` + closing, in ms. Default 0. */
   afterMs?: number;
   probability: number;
 }
+export type SSECloseConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & SSECloseRule;
 
 export interface SSEConfig {
   drops?: SSEDropConfig[];

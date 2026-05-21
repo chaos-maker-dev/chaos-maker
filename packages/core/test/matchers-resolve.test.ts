@@ -158,4 +158,97 @@ describe('resolveNamedMatchers', () => {
     const out = resolveNamedMatchers(cfg, registry);
     expect(out.network!.latencies![0].urlPattern).toBe('/x');
   });
+
+  it('inlines matcher fields onto WebSocket rules across every category', () => {
+    const cfg: ChaosConfig = {
+      websocket: {
+        drops: [{ matcher: 'realtime', direction: 'inbound', probability: 1 } as never],
+        delays: [{ matcher: 'realtime', direction: 'outbound', delayMs: 10, probability: 1 } as never],
+        corruptions: [{ matcher: 'realtime', direction: 'both', strategy: 'truncate', probability: 1 } as never],
+        closes: [{ matcher: 'realtime', probability: 1 } as never],
+      },
+      matchers: {
+        realtime: { hostname: 'realtime.example.com', queryParams: { room: 'alpha' } },
+      },
+    };
+    const registry = new MatcherRegistry();
+    registry.registerAll(cfg.matchers);
+    const out = resolveNamedMatchers(cfg, registry);
+    for (const cat of ['drops', 'delays', 'corruptions', 'closes'] as const) {
+      const rule = out.websocket![cat]![0] as Record<string, unknown>;
+      expect(rule.matcher).toBeUndefined();
+      expect(rule.hostname).toBe('realtime.example.com');
+      expect(rule.queryParams).toEqual({ room: 'alpha' });
+      expect(ruleMatcherOrigin.get(rule)).toBe('realtime');
+    }
+  });
+
+  it('inlines matcher fields onto SSE rules across every category', () => {
+    const cfg: ChaosConfig = {
+      sse: {
+        drops: [{ matcher: 'feed', probability: 1 } as never],
+        delays: [{ matcher: 'feed', delayMs: 10, probability: 1 } as never],
+        corruptions: [{ matcher: 'feed', strategy: 'truncate', probability: 1 } as never],
+        closes: [{ matcher: 'feed', probability: 1 } as never],
+      },
+      matchers: {
+        feed: { hostname: 'sse.example.com', queryParams: { topic: 'alerts' } },
+      },
+    };
+    const registry = new MatcherRegistry();
+    registry.registerAll(cfg.matchers);
+    const out = resolveNamedMatchers(cfg, registry);
+    for (const cat of ['drops', 'delays', 'corruptions', 'closes'] as const) {
+      const rule = out.sse![cat]![0] as Record<string, unknown>;
+      expect(rule.matcher).toBeUndefined();
+      expect(rule.hostname).toBe('sse.example.com');
+      expect(rule.queryParams).toEqual({ topic: 'alerts' });
+      expect(ruleMatcherOrigin.get(rule)).toBe('feed');
+    }
+  });
+
+  it('inlines transport-irrelevant fields onto WS rules without throwing (gate ignores them)', () => {
+    const cfg: ChaosConfig = {
+      websocket: {
+        drops: [{ matcher: 'shared', direction: 'inbound', probability: 1 } as never],
+      },
+      matchers: {
+        shared: {
+          hostname: 'shared.example.com',
+          methods: ['POST'],
+          requestHeaders: { Authorization: /^Bearer/ },
+          graphqlOperation: 'GetThing',
+          resourceTypes: ['fetch'],
+        },
+      },
+    };
+    const registry = new MatcherRegistry();
+    registry.registerAll(cfg.matchers);
+    const out = resolveNamedMatchers(cfg, registry);
+    const rule = out.websocket!.drops![0] as Record<string, unknown>;
+    expect(rule.hostname).toBe('shared.example.com');
+    expect(rule.methods).toEqual(['POST']);
+    expect(rule.requestHeaders).toBeDefined();
+    expect(rule.resourceTypes).toEqual(['fetch']);
+  });
+
+  it('throws matcher_not_found for an unregistered name on a WebSocket rule', () => {
+    const cfg: ChaosConfig = {
+      websocket: {
+        drops: [{ matcher: 'absent', direction: 'both', probability: 1 } as never],
+      },
+    };
+    const registry = new MatcherRegistry();
+    expect(() => resolveNamedMatchers(cfg, registry)).toThrow(/is not registered/);
+  });
+
+  it('throws matcher_not_found for an unregistered name on an SSE rule', () => {
+    const cfg: ChaosConfig = {
+      sse: {
+        drops: [{ matcher: 'absent', probability: 1 } as never],
+      },
+    };
+    const registry = new MatcherRegistry();
+    expect(() => resolveNamedMatchers(cfg, registry)).toThrow(/is not registered/);
+  });
 });

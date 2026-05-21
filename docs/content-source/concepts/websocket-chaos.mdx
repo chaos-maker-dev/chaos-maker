@@ -1,0 +1,104 @@
+---
+title: WebSocket Chaos
+description: Drop, delay, corrupt, or force-close WebSocket traffic in either direction.
+---
+
+WebSocket traffic does not go through `fetch`, so streaming UI and bidirectional channels need a dedicated chaos surface. Chaos Maker wraps `globalThis.WebSocket` with a constructor that owns a hidden real socket, overrides `.send` for outbound, and installs a capture-phase listener for inbound `MessageEvent`s before app code sees them.
+
+## Config shape
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  websocket: {
+    drops: [
+      { urlPattern: 'wss://realtime', direction: 'outbound', probability: 0.1 },
+    ],
+    delays: [
+      { urlPattern: 'wss://realtime', direction: 'inbound', delayMs: 500, probability: 1 },
+    ],
+    corruptions: [
+      { urlPattern: 'wss://realtime', direction: 'both', strategy: 'truncate', probability: 0.05 },
+    ],
+    closes: [
+      { urlPattern: 'wss://realtime', afterMs: 2000, code: 4000, reason: 'chaos', probability: 0.02 },
+    ],
+  },
+});
+```
+
+All WebSocket rules support `urlPattern`, `probability`, and request counting with `onNth`, `everyNth`, or `afterN`. Drop, delay, and corruption rules also carry a required `direction` field.
+
+## Direction
+
+`direction: 'inbound' | 'outbound' | 'both'` decides which side of the connection a rule applies to:
+
+- `outbound` intercepts at `.send()` before the wire receives the payload.
+- `inbound` intercepts during inbound `message` dispatch, before app listeners.
+- `both` evaluates the rule independently in either direction.
+
+The direction filter applies inside the matched stream; pair it with `urlPattern` (or `hostname` / `queryParams` matchers below) to select the stream itself.
+
+## Targeting with matchers
+
+Every WebSocket rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Inline and named forms share the same `matcher_inline_conflict` validation guarantee as network and SSE rules, covering both the matcher-plus-inline conflict and the no-targeting case.
+
+```typescript
+await injectChaos(page, {
+  websocket: {
+    drops: [
+      {
+        urlPattern: 'wss://realtime',
+        direction: 'outbound',
+        queryParams: { room: 'alpha' },
+        probability: 1,
+      },
+    ],
+  },
+});
+```
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    realtimeApi: { hostname: /realtime/ },
+  },
+  websocket: {
+    drops: [
+      { matcher: 'realtimeApi', direction: 'inbound', probability: 0.2 },
+    ],
+  },
+});
+```
+
+See [Advanced matchers](./matchers) for the full field semantics and debug attribution.
+
+## Corruption strategies
+
+`truncate` and `empty` apply to both text and binary payloads. `malformed-json` and `wrong-type` apply to text payloads only; when the runtime payload is binary, corruption is skipped and the event records `applied: false` with `reason: 'incompatible-payload-type'`.
+
+## Events
+
+Chaos Maker emits:
+
+| Event | Meaning |
+| --- | --- |
+| `websocket:drop` | A message was silently discarded. |
+| `websocket:delay` | A message was held for `delayMs` before delivery (inbound) or send (outbound). |
+| `websocket:corrupt` | The payload was rewritten according to `strategy`. |
+| `websocket:close` | The socket was force-closed by chaos. |
+
+Each event includes `detail.url`. Drop, delay, and corruption events include `detail.direction` and `detail.payloadType`. Corruption events also include `detail.strategy`. Close events include `detail.closeCode` and `detail.closeReason`.
+
+## Preset
+
+```typescript
+import { presets } from '@chaos-maker/core';
+
+await injectChaos(page, {
+  ...presets.unreliableWebSocket,
+  seed: 42,
+});
+```
+
+`unreliableWebSocket` (also available under the kebab-case alias `websocket-instability`) combines low-probability drops, a small inbound delay, and occasional closes against the default `urlPattern: '*'`.

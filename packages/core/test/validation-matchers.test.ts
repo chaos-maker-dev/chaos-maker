@@ -138,6 +138,113 @@ describe('Zod schema: matcher / inline mutual exclusion', () => {
   });
 });
 
+describe('Zod schema: transport matcher surface (WS + SSE)', () => {
+  const wsCategories = [
+    ['drops', { direction: 'inbound', probability: 1 }],
+    ['delays', { direction: 'inbound', delayMs: 10, probability: 1 }],
+    ['corruptions', { direction: 'inbound', strategy: 'truncate', probability: 1 }],
+    ['closes', { probability: 1 }],
+  ] as const;
+
+  const sseCategories = [
+    ['drops', { probability: 1 }],
+    ['delays', { delayMs: 10, probability: 1 }],
+    ['corruptions', { strategy: 'truncate', probability: 1 }],
+    ['closes', { probability: 1 }],
+  ] as const;
+
+  it.each(wsCategories)('WebSocket %s rule accepts matcher reference without urlPattern', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      websocket: { [cat]: [{ matcher: 'realtime', ...extra }] },
+      matchers: { realtime: { hostname: 'realtime.example.com' } },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each(wsCategories)('WebSocket %s rule accepts urlPattern with hostname refinement', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      websocket: { [cat]: [{ urlPattern: 'ws://realtime', hostname: 'realtime.example.com', ...extra }] },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each(wsCategories)('WebSocket %s rule rejects matcher combined with hostname (matcher_inline_conflict)', (cat, extra) => {
+    const issues = parseExpectIssues({
+      websocket: { [cat]: [{ matcher: 'realtime', hostname: 'realtime.example.com', ...extra }] },
+      matchers: { realtime: { hostname: 'other' } },
+    });
+    expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
+  });
+
+  it.each(wsCategories)('WebSocket %s rule accepts hostname-only inline targeting (urlPattern is optional)', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      websocket: { [cat]: [{ hostname: 'realtime.example.com', ...extra }] },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each(wsCategories)('WebSocket %s rule rejects empty targeting (matcher_inline_conflict)', (cat, extra) => {
+    const issues = parseExpectIssues({
+      websocket: { [cat]: [{ ...extra }] },
+    });
+    expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
+  });
+
+  it.each([['methods', ['GET']], ['requestHeaders', { x: 'y' }], ['resourceTypes', ['fetch']], ['graphqlOperation', 'GetX']])(
+    'WebSocket drop rule rejects inline %s as unknown_field',
+    (field, value) => {
+      const issues = parseExpectIssues({
+        websocket: {
+          drops: [{ urlPattern: 'ws://x', direction: 'inbound', probability: 1, [field]: value }],
+        },
+      });
+      expect(issues.some((i) => i.code === 'unknown_field')).toBe(true);
+    },
+  );
+
+  it.each(sseCategories)('SSE %s rule accepts matcher reference without urlPattern', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      sse: { [cat]: [{ matcher: 'feed', ...extra }] },
+      matchers: { feed: { hostname: 'sse.example.com' } },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each(sseCategories)('SSE %s rule accepts urlPattern with queryParams refinement', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      sse: { [cat]: [{ urlPattern: '/sse', queryParams: { topic: 'alerts' }, ...extra }] },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each(sseCategories)('SSE %s rule rejects matcher combined with queryParams (matcher_inline_conflict)', (cat, extra) => {
+    const issues = parseExpectIssues({
+      sse: { [cat]: [{ matcher: 'feed', queryParams: { topic: 'alerts' }, ...extra }] },
+      matchers: { feed: { hostname: 'sse.example.com' } },
+    });
+    expect(issues.some((i) => i.code === 'matcher_inline_conflict')).toBe(true);
+  });
+
+  it.each(sseCategories)('SSE %s rule accepts queryParams-only inline targeting (urlPattern is optional)', (cat, extra) => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      sse: { [cat]: [{ queryParams: { topic: 'alerts' }, ...extra }] },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it.each([['methods', ['GET']], ['requestHeaders', { x: 'y' }], ['resourceTypes', ['fetch']], ['graphqlOperation', 'GetX']])(
+    'SSE drop rule rejects inline %s as unknown_field',
+    (field, value) => {
+      const issues = parseExpectIssues({
+        sse: {
+          drops: [{ urlPattern: '/sse', probability: 1, [field]: value }],
+        },
+      });
+      expect(issues.some((i) => i.code === 'unknown_field')).toBe(true);
+    },
+  );
+});
+
 describe('Zod schema: matchers registry', () => {
   it('rejects an empty matcher entry', () => {
     const issues = parseExpectIssues({

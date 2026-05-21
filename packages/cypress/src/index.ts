@@ -72,6 +72,7 @@ export type {
   RequestResourceType,
   NamedMatcher,
   MatcherEntry,
+  TransportRuleMatchers,
   BuildChaosReportOptions,
   ChaosReport,
   ChaosReportMeta,

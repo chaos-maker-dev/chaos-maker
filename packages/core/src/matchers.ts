@@ -220,29 +220,17 @@ export function matcherDetail(rule: object): { matcherName?: string } {
 }
 
 const NETWORK_RULE_CATEGORIES = ['failures', 'latencies', 'aborts', 'corruptions', 'cors'] as const;
+const WEBSOCKET_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
+const SSE_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
 
-/** Resolve every rule with `matcher: 'name'` against `registry`. Inlines the
- *  registered `NamedMatcher` fields into the rule, deletes the `matcher` key,
- *  and stamps the matcher name on `ruleMatcherOrigin` for debug attribution.
- *  Returns a fresh `ChaosConfig` (deep-cloned) with the top-level `matchers`
- *  field stripped, identical immutability contract to `applyProfile`.
- *
- *  Throws plain `Error`s that `prepareChaosConfig` maps to structured codes:
- *  - `matcher_not_found` - rule references a missing name.
- *  - `matcher_cycle` - registry entry carries its own `matcher` field
- *    (structurally impossible via the typed surface; defensive). */
-export function resolveNamedMatchers(
-  config: ChaosConfig,
+function resolveRulesIn(
+  group: Record<string, unknown> | undefined,
+  categories: readonly string[],
   registry: MatcherRegistry,
-): ChaosConfig {
-  const out = cloneValue(config);
-  delete out.matchers;
-  const network = out.network;
-  if (!network) return out;
-  for (const cat of NETWORK_RULE_CATEGORIES) {
-    const arr = (network as Record<string, unknown>)[cat] as
-      | Array<Record<string, unknown>>
-      | undefined;
+): void {
+  if (!group) return;
+  for (const cat of categories) {
+    const arr = group[cat] as Array<Record<string, unknown>> | undefined;
     if (!arr) continue;
     for (const rule of arr) {
       const ref = rule.matcher;
@@ -263,6 +251,29 @@ export function resolveNamedMatchers(
       ruleMatcherOrigin.set(rule, ref);
     }
   }
+}
+
+/** Resolve every rule with `matcher: 'name'` against `registry`. Inlines the
+ *  registered `NamedMatcher` fields into the rule, deletes the `matcher` key,
+ *  and stamps the matcher name on `ruleMatcherOrigin` for debug attribution.
+ *  Walks network, WebSocket, and SSE rule arrays so a single named matcher
+ *  can target any combination of transports. Returns a fresh `ChaosConfig`
+ *  (deep-cloned) with the top-level `matchers` field stripped, identical
+ *  immutability contract to `applyProfile`.
+ *
+ *  Throws plain `Error`s that `prepareChaosConfig` maps to structured codes:
+ *  - `matcher_not_found` - rule references a missing name.
+ *  - `matcher_cycle` - registry entry carries its own `matcher` field
+ *    (structurally impossible via the typed surface; defensive). */
+export function resolveNamedMatchers(
+  config: ChaosConfig,
+  registry: MatcherRegistry,
+): ChaosConfig {
+  const out = cloneValue(config);
+  delete out.matchers;
+  resolveRulesIn(out.network as Record<string, unknown> | undefined, NETWORK_RULE_CATEGORIES, registry);
+  resolveRulesIn(out.websocket as Record<string, unknown> | undefined, WEBSOCKET_RULE_CATEGORIES, registry);
+  resolveRulesIn(out.sse as Record<string, unknown> | undefined, SSE_RULE_CATEGORIES, registry);
   return out;
 }
 

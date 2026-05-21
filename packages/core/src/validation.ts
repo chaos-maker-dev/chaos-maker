@@ -98,15 +98,31 @@ const networkMatcherFields = {
   matcher: matcherReference.optional(),
 };
 
+const transportMatcherInlineFieldNames = ['urlPattern', 'hostname', 'queryParams'] as const;
+
+const transportMatcherFields = {
+  urlPattern: z.string().min(1, 'urlPattern must not be empty').optional(),
+  hostname: hostnameMatcher.optional(),
+  queryParams: queryParamMap.optional(),
+  matcher: matcherReference.optional(),
+};
+
 /** Enforce: rule has EITHER `matcher: 'name'` (and zero inline matcher fields)
  *  OR at least one inline matcher field. The custom error message is
- *  keyword-matched by `mapZodCode` to surface `matcher_inline_conflict`. */
-function applyMatcherMutualExclusion<S extends z.ZodTypeAny>(schema: S): S {
+ *  keyword-matched by `mapZodCode` to surface `matcher_inline_conflict`.
+ *
+ *  `inlineFieldNames` defaults to the full network field list. Transport
+ *  rules (WebSocket, SSE) pass a narrower list so the helper's "inline" tally
+ *  reflects only the matcher fields each transport actually supports. */
+function applyMatcherMutualExclusion<S extends z.ZodTypeAny>(
+  schema: S,
+  inlineFieldNames: readonly string[] = matcherInlineFieldNames,
+): S {
   return schema.superRefine((data, ctx) => {
     if (!data || typeof data !== 'object') return;
     const obj = data as Record<string, unknown>;
     const hasMatcher = typeof obj.matcher === 'string';
-    const presentInline = matcherInlineFieldNames.filter((k) => obj[k] !== undefined);
+    const presentInline = inlineFieldNames.filter((k) => obj[k] !== undefined);
     if (hasMatcher && presentInline.length > 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -123,6 +139,18 @@ function applyMatcherMutualExclusion<S extends z.ZodTypeAny>(schema: S): S {
       });
     }
   }) as unknown as S;
+}
+
+/** Transport rules (WebSocket, SSE) reuse the network mutual-exclusion helper
+ *  with a narrower inline-field list (`urlPattern`, `hostname`, `queryParams`).
+ *  Like network rules, a transport rule targets via any combination of those
+ *  inline fields OR a single `matcher` reference, never both; `urlPattern` is
+ *  not required when `hostname` or `queryParams` is present. Keeping the rule
+ *  lenient also lets an already-resolved config re-validate cleanly: the
+ *  matcher resolver strips the `matcher` reference and inlines the matcher's
+ *  fields, which may leave a rule targeted by `hostname` alone. */
+function applyTransportMatcherRefinement<S extends z.ZodTypeAny>(schema: S): S {
+  return applyMatcherMutualExclusion(schema, transportMatcherInlineFieldNames);
 }
 
 const buildNetworkFailure = (p: Policy) =>
@@ -231,42 +259,48 @@ const buildUiConfig = (p: Policy) =>
 const webSocketDirection = z.enum(['inbound', 'outbound', 'both']);
 
 const buildWsDrop = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      direction: webSocketDirection,
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        direction: webSocketDirection,
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildWsDelay = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      direction: webSocketDirection,
-      delayMs: z.number().min(0, 'delayMs must be >= 0'),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        direction: webSocketDirection,
+        delayMs: z.number().min(0, 'delayMs must be >= 0'),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildWsCorrupt = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      direction: webSocketDirection,
-      strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        direction: webSocketDirection,
+        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const webSocketCloseCode = z.number().int().refine(
   (code) => code === 1000 || (code >= 3000 && code <= 4999),
@@ -279,18 +313,20 @@ const webSocketCloseReason = z.string().refine(
 );
 
 const buildWsClose = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      code: webSocketCloseCode.optional(),
-      reason: webSocketCloseReason.optional(),
-      afterMs: z.number().min(0, 'afterMs must be >= 0').optional(),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        code: webSocketCloseCode.optional(),
+        reason: webSocketCloseReason.optional(),
+        afterMs: z.number().min(0, 'afterMs must be >= 0').optional(),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildWebSocketConfig = (p: Policy) =>
   withPolicy(
@@ -306,54 +342,62 @@ const buildWebSocketConfig = (p: Policy) =>
 const sseEventType = z.string().min(1, 'eventType must not be empty');
 
 const buildSseDrop = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      eventType: sseEventType.optional(),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        eventType: sseEventType.optional(),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildSseDelay = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      eventType: sseEventType.optional(),
-      delayMs: z.number().min(0, 'delayMs must be >= 0'),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        eventType: sseEventType.optional(),
+        delayMs: z.number().min(0, 'delayMs must be >= 0'),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildSseCorrupt = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      eventType: sseEventType.optional(),
-      strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        eventType: sseEventType.optional(),
+        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildSseClose = (p: Policy) =>
-  withPolicy(
-    z.object({
-      urlPattern: z.string().min(1, 'urlPattern must not be empty'),
-      afterMs: z.number().min(0, 'afterMs must be >= 0').optional(),
-      probability,
-      ...countingFields,
-      ...groupField,
-    }),
-    p,
-  ).refine(...countingRefinement);
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        afterMs: z.number().min(0, 'afterMs must be >= 0').optional(),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
 
 const buildSseConfig = (p: Policy) =>
   withPolicy(
