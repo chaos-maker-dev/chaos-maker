@@ -319,6 +319,9 @@ export { Logger } from '@chaos-maker/core';
 // Re-export the structured validation surface so adapter consumers
 // can validate on demand outside of injectChaos and import the error type.
 export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@chaos-maker/core';
+// Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
+// declaring a `matchers` entry of your own.
+export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
 // Reporting utilities — turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {

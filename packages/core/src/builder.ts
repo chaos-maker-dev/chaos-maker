@@ -341,8 +341,9 @@ export class ChaosConfigBuilder {
 
   /** Register a reusable named matcher on this builder.
    *  Equivalent to setting one key on `ChaosConfig.matchers`. Names normalize
-   *  via `trim()` and collide fail-fast within a single builder; collisions
-   *  against built-in or other custom matchers surface at engine init via the
+   *  via `trim()` and collide fail-fast within a single builder. A name that
+   *  matches a built-in matcher shadows it (built-ins are overridable);
+   *  collisions against other custom matchers surface at engine init via the
    *  `matcher_collision` validation code. */
   defineMatcher(name: string, matcher: NamedMatcher): this {
     const norm = normalizeMatcherNameForBuilder(name);

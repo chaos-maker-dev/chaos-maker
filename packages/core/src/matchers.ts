@@ -158,8 +158,58 @@ function normalizeMatcherName(name: string): string {
   return trimmed;
 }
 
-/** Per-instance registry of named matchers. Constructor takes no built-ins.
- *  Mirrors the surface of `ProfileRegistry` so the public ergonomics line up. */
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of Object.values(value as Record<string, unknown>)) deepFreeze(v);
+  }
+  return value;
+}
+
+// Hard-coded built-in matcher configs so reading the file shows exactly what
+// each built-in name resolves to. A built-in resolves through the same
+// `resolveNamedMatchers` path as a user matcher; a user entry of the same name
+// shadows the built-in (see `MatcherRegistry`).
+const GRAPHQL: NamedMatcher = { urlPattern: '/graphql' };
+const API_REQUESTS: NamedMatcher = { urlPattern: '/api' };
+const AUTH_REQUESTS: NamedMatcher = { requestHeaders: { authorization: true } };
+
+// Built-in configs are immutable. Mutating `registry.get('graphql').urlPattern`
+// is a no-op in sloppy mode and throws in strict mode. The resolver
+// deep-clones every entry at inline time, so the freeze never reaches a rule.
+[GRAPHQL, API_REQUESTS, AUTH_REQUESTS].forEach(deepFreeze);
+
+/** All built-in named matchers. A rule may reference any of these by name
+ *  (e.g. `matcher: 'graphql'`) without declaring a `matchers` entry.
+ *
+ *  Both the array AND each `{ name, config }` descriptor are frozen so that
+ *  `BUILT_IN_MATCHERS[0].config = {}` cannot poison future `MatcherRegistry`
+ *  lookups. Configs are already deep-frozen above.
+ *
+ *  `authRequests` carries only the network-only `requestHeaders` field, so a
+ *  WebSocket or SSE rule that references it has no transport-applicable
+ *  targeting and matches every stream — it is meaningful on network rules
+ *  only. `graphql` uses `urlPattern` (not `graphqlOperation`) so it does not
+ *  force request-body extraction. */
+export const BUILT_IN_MATCHERS: ReadonlyArray<MatcherEntry> = Object.freeze(
+  ([
+    { name: 'graphql',      config: GRAPHQL },
+    { name: 'apiRequests',  config: API_REQUESTS },
+    { name: 'authRequests', config: AUTH_REQUESTS },
+  ] as MatcherEntry[]).map((e) => Object.freeze(e)),
+);
+
+/** Internal O(1) lookup over `BUILT_IN_MATCHERS`, keyed by matcher name. */
+const BUILT_IN_MATCHER_MAP: ReadonlyMap<string, NamedMatcher> = new Map(
+  BUILT_IN_MATCHERS.map((e) => [e.name, e.config]),
+);
+
+/** Per-instance registry of named matchers. The constructor and `register`
+ *  hold only user-supplied entries; `BUILT_IN_MATCHERS` is consulted as a
+ *  read-only fallback by `has`, `get`, and `list`. A user entry shadows a
+ *  built-in of the same name (`get` checks the user map first), so built-ins
+ *  are overridable without a collision error. Mirrors the surface of
+ *  `ProfileRegistry` so the public ergonomics line up. */
 export class MatcherRegistry {
   private map = new Map<string, NamedMatcher>();
 
@@ -183,12 +233,16 @@ export class MatcherRegistry {
   }
 
   has(name: string): boolean {
-    return this.map.has(normalizeMatcherName(name));
+    const norm = normalizeMatcherName(name);
+    return this.map.has(norm) || BUILT_IN_MATCHER_MAP.has(norm);
   }
 
+  /** Resolve a matcher by name. A user entry takes precedence over a built-in
+   *  of the same name; falls back to `BUILT_IN_MATCHERS` when the user map has
+   *  no entry. */
   get(name: string): NamedMatcher {
     const norm = normalizeMatcherName(name);
-    const cfg = this.map.get(norm);
+    const cfg = this.map.get(norm) ?? BUILT_IN_MATCHER_MAP.get(norm);
     if (!cfg) {
       throw new Error(
         `[chaos-maker] matcher '${norm}' is not registered. Known: ${this.list().join(', ')}`,
@@ -197,8 +251,15 @@ export class MatcherRegistry {
     return cfg;
   }
 
+  /** Every resolvable matcher name: user entries plus built-in fallbacks,
+   *  deduplicated so a user override of a built-in appears once. */
   list(): string[] {
-    return [...this.map.keys()];
+    return [...new Set([...this.map.keys(), ...BUILT_IN_MATCHER_MAP.keys()])];
+  }
+
+  /** Built-in matcher names only, excluding user-registered entries. */
+  listBuiltIns(): string[] {
+    return [...BUILT_IN_MATCHER_MAP.keys()];
   }
 }
 

@@ -79,6 +79,20 @@ await injectChaos(page, {
 
 See the [Advanced matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/) for the full surface, the four validation issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`), and the matcher attribution on debug events.
 
+### Built-in matchers
+
+Three matchers ship built in, so the most common targets need no `matchers` entry:
+
+```typescript
+await injectChaos(page, {
+  network: {
+    latencies: [{ matcher: 'graphql', delayMs: 1200, probability: 1 }],
+  },
+});
+```
+
+`graphql` (`/graphql`), `apiRequests` (`/api`), and `authRequests` (any request with an `Authorization` header) resolve by name and behave exactly like a matcher you define. A `matchers` entry of the same name overrides one. `authRequests` is meaningful for network rules only: it matches on a request header, which WebSocket and SSE rules cannot target, so a stream rule referencing it matches every connection.
+
 ## Reporting and timeline
 
 After a chaos run, turn the event log into a structured `ChaosReport` and serialize it as JSON, Markdown, or a self-contained HTML timeline. The core package returns strings; your test writes them to disk or attaches them as CI artifacts.

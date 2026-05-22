@@ -417,6 +417,10 @@ export interface ChaosConfig {
    * `methods`, `queryParams`, `headers`, `resourceTypes`, `graphqlOperation`)
    * shared across multiple rules via `matcher: 'name'`.
    *
+   * Built-in matchers (`BUILT_IN_MATCHERS`: `graphql`, `apiRequests`,
+   * `authRequests`) resolve by name without an entry here. An entry that
+   * reuses a built-in name shadows that built-in.
+   *
    * Names normalize via `String.prototype.trim()`; collisions throw
    * `ChaosConfigError` with `code: 'matcher_collision'` at construction.
    * Unknown references throw `code: 'matcher_not_found'`. A rule that mixes

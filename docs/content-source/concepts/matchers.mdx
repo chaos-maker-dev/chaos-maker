@@ -103,6 +103,49 @@ const config = new ChaosConfigBuilder()
 
 Rules that reference the matcher set the `matcher` field on the literal rule object; the builder rule helpers stay positional and unchanged in this release.
 
+## Built-in matchers
+
+A few matcher definitions get rewritten project after project: the GraphQL endpoint, API traffic, authenticated requests. Chaos Maker ships these as built-in named matchers. A rule references one by name with no `matchers` entry of its own.
+
+```typescript
+await injectChaos(page, {
+  network: {
+    latencies: [
+      { matcher: 'graphql', delayMs: 1200, probability: 1 },
+    ],
+  },
+});
+```
+
+| Name | Targets | Definition |
+| ---- | ------- | ---------- |
+| `graphql` | GraphQL endpoints | `urlPattern: '/graphql'` |
+| `apiRequests` | API traffic | `urlPattern: '/api'` |
+| `authRequests` | Requests carrying an `Authorization` header | `requestHeaders: { authorization: true }` |
+
+A built-in resolves through the same path as a user matcher: its fields inline into the rule, the `matcher` reference is stripped, and debug events carry `detail.matcherName`. There is no separate runtime and no new rule shape.
+
+### Overriding a built-in
+
+Declare a `matchers` entry (or call `.defineMatcher`) with the same name to replace a built-in for that config. The user entry wins and no collision is raised, so a project can keep the familiar name while pointing it at its own endpoint.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    graphql: { urlPattern: '/internal/graphql' },
+  },
+  network: {
+    failures: [{ matcher: 'graphql', statusCode: 503, probability: 1 }],
+  },
+});
+```
+
+### Built-ins across transports
+
+`graphql` and `apiRequests` target on `urlPattern`, so they apply to network, WebSocket, and SSE rules alike.
+
+`authRequests` is meaningful on network rules only. Its single field, `requestHeaders`, is not evaluated on WebSocket or SSE rules, because those transports do not expose request headers. A WebSocket or SSE rule that references `matcher: 'authRequests'` therefore carries no transport-applicable targeting and matches every stream. For WebSocket and SSE, target with `graphql`, `apiRequests`, or an inline `urlPattern` / `hostname` / `queryParams`.
+
 ## Validation issue codes
 
 Failures surface through the existing `ChaosConfigError` aggregator. Codes specific to advanced matchers:
@@ -184,7 +227,6 @@ The TypeScript shape `TransportRuleMatchers` is a discriminated union: a rule ei
 
 ## Out of scope (deferred)
 
-- Built-in matchers. The `matchers` registry is intentionally user-owned. There is no `BUILT_IN_MATCHERS`.
 - Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.
 - Response matchers (status code, response headers). Matchers operate on the request only.
 - Disjunctive (any-of) matchers. A rule's matcher block is conjunctive: every field must pass.
