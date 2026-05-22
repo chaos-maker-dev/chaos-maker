@@ -91,7 +91,7 @@ await injectChaos(page, {
 });
 ```
 
-`graphql` (`/graphql`), `apiRequests` (`/api`), and `authRequests` (any request with an `Authorization` header) resolve by name and behave exactly like a matcher you define. A `matchers` entry of the same name overrides one.
+`graphql` (`/graphql`), `apiRequests` (`/api`), and `authRequests` (any request with an `Authorization` header) resolve by name and behave exactly like a matcher you define. A `matchers` entry of the same name overrides one. `authRequests` is meaningful for network rules only: it matches on a request header, which WebSocket and SSE rules cannot target, so a stream rule referencing it matches every connection.
 
 ## Reporting and timeline
 
