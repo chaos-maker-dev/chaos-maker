@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- Bump transitive `qs` to 6.15.2 and `uuid` to 11.1.1 via workspace overrides to clear Dependabot alerts #67 and #66. Also bump transitive `brace-expansion` to 5.0.6 so `pnpm audit` stays clean. These dependencies are used through developer tooling, so published package runtime surfaces are unchanged.
+
 ### Added
 
 - **Cross-transport matchers**: every WebSocket and SSE rule now accepts the same matcher targeting surface as network rules. Inline `hostname`, `queryParams`, and `matcher: 'name'` references (into the existing top-level `matchers` registry) work on every WS and SSE rule type. The network-only fields (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined on a WS/SSE rule and silently ignored when carried by a referenced named matcher, so one matcher can target network, WebSocket, and SSE without per-transport duplication. Matcher resolution now walks every transport's rule arrays; the existing `matcher_inline_conflict`, `matcher_not_found`, `matcher_collision`, and `matcher_cycle` validation codes extend to WS and SSE rules. WS and SSE debug events now carry `detail.matcherName`, `detail.matchedBy`, and `detail.skippedAt` exactly as network events do. The gate runs `urlPattern → direction (WS) / eventType (SSE) → hostname → queryParams` before counting and probability so a matcher mismatch never consumes counting state. New public type `TransportRuleMatchers` re-exported from `@chaos-maker/core` and every framework adapter package. New `concepts/websocket-chaos.mdx` documentation page mirrors the existing SSE concept doc and covers the cross-transport matcher surface inline.
