@@ -225,6 +225,20 @@ The transport gate runs `urlPattern → direction (WS) / eventType (SSE) → hos
 
 The TypeScript shape `TransportRuleMatchers` is a discriminated union: a rule either declares one or more inline fields (`urlPattern`, `hostname`, `queryParams`) or declares `matcher: 'name'`, never both. This mirrors the inline-versus-named split on network rules; `urlPattern` is optional as long as `hostname` or `queryParams` already targets the rule. At runtime, validation rejects rules that supply neither a `matcher` reference nor at least one inline field, so a rule always carries some targeting.
 
+## Parity coverage
+
+Matcher behavior is parity-tested across all four supported adapters.
+Playwright, Cypress, WebdriverIO, and Puppeteer each run an identical set of
+scenarios from a shared declarative catalog, so a matcher field that fires on
+one adapter fires on every adapter, with the same chaos log, the same
+matchedBy attribution, and the same observable outcome. The catalog covers
+hostname, query parameter, header, and resource-type matching on network
+rules, the three built-in matchers and their user-override behavior, and the
+WebSocket and SSE matcher subset (`urlPattern`, `hostname`, `queryParams`,
+`matcher`) plus debug `matchedBy` attribution. New matcher coverage gets
+added once to the shared catalog rather than copied into each adapter's
+E2E suite.
+
 ## Out of scope (deferred)
 
 - Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.

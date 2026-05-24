@@ -9,5 +9,10 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["tests/**/*.ts", "support/**/*.ts", "cypress.config.ts"]
+  "include": [
+    "tests/**/*.ts",
+    "support/**/*.ts",
+    "cypress.config.ts",
+    "../fixtures/parity/**/*.ts"
+  ]
 }

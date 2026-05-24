@@ -114,6 +114,35 @@ A new chaos type touches every layer of the stack. Follow this order:
 8. Update docs: `docs/content-source/concepts/`, `docs/content-source/api/`, and any relevant getting-started example.
 9. Update `CHANGELOG.md` under `[Unreleased]`. Use the same scope conventions as existing entries.
 
+## Matcher parity tests
+
+Matcher behavior is exercised by a shared declarative catalog at
+`e2e-tests/fixtures/parity/` instead of per-adapter spec duplicates. The
+catalog is the single source of truth: each scenario is a `{ id, title,
+transport, config, steps, check }` value where `steps` is an ordered list of
+generic actions (`click`, `waitForText`, `waitForCount`, `expectText`,
+`request`, `settle`) and `check` is a pure assertion over the chaos log plus
+any response statuses recorded by `request` steps. Every adapter has a thin
+`_parity-runner.ts` interpreter that maps the generic steps onto its own
+primitives, plus a one-file `matchers-parity.<spec|cy|test>.ts` that loops
+the catalog.
+
+When adding or changing a matcher behavior:
+
+1. Add one scenario to the appropriate group file (`network.ts`,
+   `built-in.ts`, `websocket.ts`, `sse.ts`) and re-export it through
+   `catalog.ts`. The new title appears on all four adapters automatically.
+2. Keep scenarios deterministic: pin `seed`, use `probability: 1` or `0`,
+   and prefer same-origin requests so the response is fully readable. For
+   negative network cases, vary the matcher's rule (for example, an
+   unreachable `hostname` value) rather than the request URL.
+3. Run each adapter's parity spec locally to confirm the new scenario
+   passes identically on Playwright, Cypress, WebdriverIO, and Puppeteer.
+
+Step 7 of "Adding a new chaos type" above still applies for new chaos types
+that are not matcher-related: each chaos type ships with its own per-adapter
+E2E spec because chaos-type semantics often diverge per browser API.
+
 ## Before submitting
 
 ```bash

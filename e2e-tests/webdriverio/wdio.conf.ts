@@ -10,6 +10,13 @@ const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 
 const browserName = process.env.WDIO_BROWSER || 'chrome';
 
+// Strip NODE_OPTIONS from spawned-fixture child processes. ts-node's ESM
+// loader registers itself via NODE_OPTIONS so child Node processes inherit
+// it; the http-server bin script has no `.ts`/`.js` extension and ts-node's
+// `getFormat` returns null on it, crashing the child before it can listen.
+// Fixture servers do not need any TypeScript handling, so unset the variable.
+const fixtureEnv = (): NodeJS.ProcessEnv => ({ ...process.env, NODE_OPTIONS: '' });
+
 let httpServer: ChildProcess | null = null;
 let wsServer: ChildProcess | null = null;
 let sseServer: ChildProcess | null = null;
@@ -105,28 +112,28 @@ export const config: WebdriverIO.Config = {
       httpServer = spawn(
         PNPM_BIN,
         ['exec', 'http-server', FIXTURES, '-p', '8080', '-s'],
-        { stdio: 'inherit' },
+        { stdio: 'inherit', env: fixtureEnv() },
       );
     }
     if (!wsReady) {
       wsServer = spawn(
         'node',
         [resolve(FIXTURES, 'ws-echo-server.cjs')],
-        { stdio: 'inherit' },
+        { stdio: 'inherit', env: fixtureEnv() },
       );
     }
     if (!sseReady) {
       sseServer = spawn(
         'node',
         [resolve(FIXTURES, 'sse-server.cjs')],
-        { stdio: 'inherit' },
+        { stdio: 'inherit', env: fixtureEnv() },
       );
     }
     if (!graphqlReady) {
       graphqlServer = spawn(
         'node',
         [resolve(FIXTURES, 'graphql-server.cjs')],
-        { stdio: 'inherit' },
+        { stdio: 'inherit', env: fixtureEnv() },
       );
     }
     if (!httpReady) await waitForHttp('http://127.0.0.1:8080');

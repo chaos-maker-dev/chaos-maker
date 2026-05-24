@@ -10,5 +10,13 @@
     "resolveJsonModule": true,
     "types": ["node", "@wdio/globals/types", "expect-webdriverio", "@wdio/mocha-framework"]
   },
-  "include": ["wdio.conf.ts", "tests/**/*.ts", "scripts/**/*.ts"]
+  "ts-node": {
+    "experimentalSpecifierResolution": "node"
+  },
+  "include": [
+    "wdio.conf.ts",
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "../fixtures/parity/**/*.ts"
+  ]
 }
