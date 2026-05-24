@@ -184,4 +184,37 @@ export const networkScenarios: Scenario[] = [
       assert.ok(hasApplied(ctx.log, 'network:failure'));
     },
   },
+  {
+    // Companion to `net-named-inline`. Re-uses the same named matcher
+    // definition but references it from `network.latencies` instead of
+    // `network.failures`, proving the matcher resolves and inlines
+    // consistently across distinct rule arrays. A failure rule cannot
+    // share this scenario because a synthetic-response rule short-circuits
+    // the interceptor before the latency event can record.
+    id: 'net-named-latency',
+    title: 'network named matcher inlines into a latency rule',
+    transport: 'network',
+    config: {
+      seed: 42,
+      matchers: {
+        customers: { urlPattern: '/api/data.json', queryParams: { type: 'customer' } },
+      },
+      network: {
+        latencies: [{ matcher: 'customers', delayMs: 25, probability: 1 }],
+      },
+    },
+    steps: [
+      request('fetch', '/api/data.json?type=customer', 'matched'),
+      request('fetch', '/api/data.json?type=product', 'missed'),
+    ],
+    check: (ctx, assert) => {
+      // Latency does not change the status code, so both requests succeed.
+      assert.equal(ctx.captured.matched, 200);
+      assert.equal(ctx.captured.missed, 200);
+      assert.ok(
+        hasApplied(ctx.log, 'network:latency'),
+        'latency rule should apply via the named matcher',
+      );
+    },
+  },
 ];

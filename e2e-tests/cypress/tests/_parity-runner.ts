@@ -39,13 +39,41 @@ export function registerScenario(scenario: Scenario): void {
     for (const step of scenario.steps) {
       if (step.kind === 'click') {
         cy.get(step.selector).click();
-      } else if (step.kind === 'waitForText' || step.kind === 'expectText') {
+      } else if (step.kind === 'waitForText') {
+        // Retrying assertion: Cypress polls until the text matches or the
+        // command times out. Used when the value is still settling.
         cy.get(step.selector).should('have.text', step.text);
+      } else if (step.kind === 'expectText') {
+        // Immediate assertion: read the element once and check the current
+        // text exactly. `cy.get(...)` still retries for element existence,
+        // but `.then` runs the body once with the resolved element and does
+        // not re-evaluate on mismatch, preserving the catalog's intent that
+        // the value should already be settled at this point.
+        const expected = step.text;
+        cy.get(step.selector).then(($el) => {
+          const actual = $el.text();
+          if (actual !== expected) {
+            throw new Error(
+              `${step.selector} text expected "${expected}", got "${actual}"`,
+            );
+          }
+        });
       } else if (step.kind === 'waitForCount') {
         const min = step.min;
         cy.get(step.selector, { timeout: 10_000 }).should((el) => {
-          if (Number(el.text()) < min) {
-            throw new Error(`${step.selector} count stayed below ${min}`);
+          const text = el.text();
+          const parsed = Number(text);
+          if (Number.isNaN(parsed)) {
+            // `Number('abc') < min` is `false`, so without a NaN guard a
+            // non-numeric value would silently satisfy the assertion.
+            throw new Error(
+              `${step.selector} text "${text}" is not numeric; expected count >= ${min}`,
+            );
+          }
+          if (parsed < min) {
+            throw new Error(
+              `${step.selector} count ${parsed} stayed below ${min}`,
+            );
           }
         });
       } else if (step.kind === 'settle') {

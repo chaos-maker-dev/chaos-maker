@@ -82,7 +82,11 @@ export const webSocketScenarios: Scenario[] = [
       click('#ws-connect-beta'),
       waitForText('#ws-status', 'open'),
       click('#ws-send'),
+      // First wait for the echo to arrive (count >= 1), then assert the
+      // count is exactly `1`. A `>= 1` check alone would mask a duplicate-
+      // message regression where the echo arrives twice.
       waitForCount('#ws-inbound-count', 1),
+      expectText('#ws-inbound-count', '1'),
     ],
     check: (ctx, assert) =>
       assert.ok(

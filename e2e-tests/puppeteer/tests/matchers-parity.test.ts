@@ -18,13 +18,28 @@ describe('Matcher parity', () => {
     browser = await launchBrowser();
   });
   afterAll(async () => {
-    await browser.close();
+    // Guard so a failed `beforeAll` (browser still undefined or already
+    // disconnected) does not mask the original setup error with a
+    // teardown-side TypeError.
+    if (browser && browser.isConnected()) {
+      try {
+        await browser.close();
+      } catch (err) {
+        console.warn('browser.close() during afterAll failed:', err);
+      }
+    }
   });
   beforeEach(async () => {
     page = await browser.newPage();
   });
   afterEach(async () => {
-    await page.close();
+    if (page && !page.isClosed()) {
+      try {
+        await page.close();
+      } catch (err) {
+        console.warn('page.close() during afterEach failed:', err);
+      }
+    }
   });
 
   for (const scenario of catalog) {

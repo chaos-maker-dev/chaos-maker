@@ -56,6 +56,12 @@ export async function runScenario(page: Page, scenario: Scenario): Promise<void>
       await new Promise((r) => setTimeout(r, step.ms));
     } else if (step.kind === 'request') {
       captured[step.capture] = await runRequest(page, step);
+    } else {
+      // Fail fast if the catalog grows a new step kind without an
+      // interpreter handler; silent fallthrough would let scenarios pass
+      // without exercising the new step at all.
+      const drifted = step as Step;
+      throw new Error(`Unknown parity step kind: ${drifted.kind}`);
     }
   }
 
