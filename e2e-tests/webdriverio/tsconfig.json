@@ -10,6 +10,9 @@
     "resolveJsonModule": true,
     "types": ["node", "@wdio/globals/types", "expect-webdriverio", "@wdio/mocha-framework"]
   },
+  "ts-node": {
+    "experimentalSpecifierResolution": "node"
+  },
   "include": [
     "wdio.conf.ts",
     "tests/**/*.ts",
