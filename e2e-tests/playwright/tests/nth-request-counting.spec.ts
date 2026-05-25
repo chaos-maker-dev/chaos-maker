@@ -12,7 +12,7 @@ async function makeRequest(page: Page, buttonId = '#fetch-data', statusId = '#st
 }
 
 // ---------------------------------------------------------------------------
-// onNth — failure fires only on the Nth request
+// onNth  -  failure fires only on the Nth request
 // ---------------------------------------------------------------------------
 test.describe('onNth counting', () => {
   test('fetch: fails only on the 3rd request', async ({ page }) => {
@@ -76,7 +76,7 @@ test.describe('onNth counting', () => {
 });
 
 // ---------------------------------------------------------------------------
-// everyNth — failure fires on every Nth request
+// everyNth  -  failure fires on every Nth request
 // ---------------------------------------------------------------------------
 test.describe('everyNth counting', () => {
   test('fetch: fails on every 2nd request', async ({ page }) => {
@@ -159,7 +159,7 @@ test.describe('everyNth counting', () => {
 });
 
 // ---------------------------------------------------------------------------
-// afterN — failure fires only after the first N requests pass through
+// afterN  -  failure fires only after the first N requests pass through
 // ---------------------------------------------------------------------------
 test.describe('afterN counting', () => {
   test('fetch: first 2 requests succeed, all subsequent fail', async ({ page }) => {
@@ -175,14 +175,14 @@ test.describe('afterN counting', () => {
       results.push(await makeRequest(page) as string);
     }
 
-    expect(results[0]).toBe('Success!'); // 1 — before N
-    expect(results[1]).toBe('Success!'); // 2 — before N (count = N, not > N)
-    expect(results[2]).toBe('Error!');   // 3 — after N
+    expect(results[0]).toBe('Success!'); // 1  -  before N
+    expect(results[1]).toBe('Success!'); // 2  -  before N (count = N, not > N)
+    expect(results[2]).toBe('Error!');   // 3  -  after N
     expect(results[3]).toBe('Error!');   // 4
     expect(results[4]).toBe('Error!');   // 5
   });
 
-  test('fetch: afterN 0 — every request fails', async ({ page }) => {
+  test('fetch: afterN 0  -  every request fails', async ({ page }) => {
     await injectChaos(page, {
       network: {
         failures: [{ urlPattern: API_PATTERN, statusCode: 503, probability: 1.0, afterN: 0 }],

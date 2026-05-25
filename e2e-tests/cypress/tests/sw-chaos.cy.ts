@@ -1,6 +1,6 @@
 const SW_BASE = '/sw-app/';
 
-// SW registration needs a real cross-nav — Cypress AUT caches window between
+// SW registration needs a real cross-nav  -  Cypress AUT caches window between
 // `cy.visit()`s in the same spec, so we unregister in afterEach to guarantee a
 // clean slate.
 
@@ -24,7 +24,7 @@ function unregisterSW(): void {
   });
 }
 
-describe('SW chaos — network failure', () => {
+describe('SW chaos  -  network failure', () => {
   afterEach(() => {
     cy.removeSWChaos();
     unregisterSW();
@@ -64,7 +64,7 @@ describe('SW chaos — network failure', () => {
   });
 });
 
-describe('SW chaos — stop restores fetch', () => {
+describe('SW chaos  -  stop restores fetch', () => {
   afterEach(() => {
     unregisterSW();
   });

@@ -1,7 +1,7 @@
 import { loadCoreUmdSource } from './umd-loader';
 
 /**
- * Minimal shape of Cypress's `on` callback that we need — a function that
+ * Minimal shape of Cypress's `on` callback that we need  -  a function that
  * registers task handlers. Declared locally so this module does not have to
  * import from `cypress` (which pulls browser types into the Node-side plugin).
  */
@@ -26,7 +26,7 @@ type PluginOn = (event: 'task', tasks: Record<string, (arg?: unknown) => unknown
  * ```
  *
  * Registered tasks:
- * - `chaos:getUmdSource` — returns the `@chaos-maker/core` UMD bundle as a
+ * - `chaos:getUmdSource`  -  returns the `@chaos-maker/core` UMD bundle as a
  *   string. The support-side `cy.injectChaos` command calls this once per
  *   spec, caches the result, and evaluates it inside the AUT window.
  */

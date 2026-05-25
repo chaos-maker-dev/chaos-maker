@@ -10,7 +10,7 @@ describe('forEachRule', () => {
   });
 
   it('visits every rule across all 14 arrays exactly once', () => {
-    // Single rule per array — count assertion guards future rule-array
+    // Single rule per array  -  count assertion guards future rule-array
     // additions to ChaosConfig that forget to register in forEachRule.
     const cfg: ChaosConfig = {
       network: {

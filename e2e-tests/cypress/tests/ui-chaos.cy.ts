@@ -1,9 +1,9 @@
 import type { ChaosConfig } from '@chaos-maker/core';
 
 // UI chaos assaults the DOM after page load. Strategy:
-//   1. cy.injectChaos({}) in beforeEach — loads the UMD bundle with an empty
+//   1. cy.injectChaos({}) in beforeEach  -  loads the UMD bundle with an empty
 //      config so window.chaosUtils is available immediately after page load.
-//   2. cy.visit('/') in each test — page loads, bundle runs, chaosUtils ready.
+//   2. cy.visit('/') in each test  -  page loads, bundle runs, chaosUtils ready.
 //   3. startUiChaos() calls chaosUtils.start() with the real UI config so the
 //      assailant can scan and observe the live DOM.
 beforeEach(() => {

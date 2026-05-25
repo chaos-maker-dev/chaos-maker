@@ -13,7 +13,7 @@ async function visitAndInject(config: Parameters<WebdriverIO.Browser['injectChao
  *  records `console.debug` calls and stash the lines on a DOM `<script>` holder.
  *  We read the holder via `browser.execute` because Firefox/geckodriver runs
  *  executeScript bodies inside a sandbox whose globals don't share state with
- *  the real page-realm `window` — so the DOM is the only reliable cross-realm
+ *  the real page-realm `window`  -  so the DOM is the only reliable cross-realm
  *  channel. */
 async function readChaosDebugLines(): Promise<string[]> {
   return browser.execute(() => {

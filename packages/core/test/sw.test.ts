@@ -3,7 +3,7 @@ import type { ChaosConfig, ChaosEvent } from '../src';
 
 /**
  * Service-worker-context simulation. jsdom exposes `self === window`, so we
- * can't just import `../src/sw` and call `installChaosSW()` — the module's
+ * can't just import `../src/sw` and call `installChaosSW()`  -  the module's
  * auto-install gate (`typeof importScripts === 'function'`) is false here, but
  * we need to drive the message handler directly to assert behavior.
  *
@@ -95,7 +95,7 @@ describe('installChaosSW', () => {
     handle.uninstall();
   });
 
-  it('is idempotent — second call returns the same handle', async () => {
+  it('is idempotent  -  second call returns the same handle', async () => {
     const target = makeSWTarget([makeFakeClient('a')]);
     const { installChaosSW } = await importSwWithTarget(target);
     const h1 = installChaosSW();
@@ -329,7 +329,7 @@ describe('installChaosSW', () => {
     const r2 = await target.fetch('/api/2');
     expect(r2.status).toBe(500);
 
-    // Reconfigure — counter must reset so the new onNth=2 still fires on the
+    // Reconfigure  -  counter must reset so the new onNth=2 still fires on the
     // 2nd *post-reconfigure* request, not the 2nd request overall.
     target.dispatchMessage({
       __chaosMakerConfig: {

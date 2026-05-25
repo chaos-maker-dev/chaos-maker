@@ -7,7 +7,7 @@ import { serializeForTransport, validateChaosConfig } from '@chaos-maker/core';
 
 /**
  * Minimal structural type for a Puppeteer `Page` object. Typed this way so we
- * don't force a hard dependency on puppeteer's internal types — any object
+ * don't force a hard dependency on puppeteer's internal types  -  any object
  * exposing these methods works (covers both `puppeteer` and `puppeteer-core`).
  */
 export interface ChaosPage {
@@ -25,7 +25,7 @@ let cachedUmdPath: string | null = null;
 
 // Track init-script identifiers per page so removeChaos can tear them down.
 // Without this, evaluateOnNewDocument scripts persist across navigations and
-// re-inject chaos after removeChaos on subsequent page.goto() calls — breaks
+// re-inject chaos after removeChaos on subsequent page.goto() calls  -  breaks
 // test frameworks that pool pages across cases.
 const registeredInitScripts = new WeakMap<ChaosPage, string[]>();
 
@@ -70,7 +70,7 @@ export interface InjectChaosOptions {
 }
 
 /**
- * Inject chaos into a Puppeteer page. Call **before** `page.goto()` — uses
+ * Inject chaos into a Puppeteer page. Call **before** `page.goto()`  -  uses
  * `evaluateOnNewDocument` to patch `fetch`, `XMLHttpRequest`, and `WebSocket`
  * before any page script runs.
  *
@@ -102,7 +102,7 @@ export async function injectChaos(
   const umdSource = loadCoreUmdSource();
 
   // Remove any previously registered init scripts for this page so a repeat
-  // injectChaos call replaces — rather than stacks on top of — the prior pair.
+  // injectChaos call replaces  -  rather than stacks on top of  -  the prior pair.
   const previousIds = registeredInitScripts.get(page) ?? [];
   const removeScript = page.removeScriptToEvaluateOnNewDocument?.bind(page);
   if (removeScript && previousIds.length > 0) {
@@ -111,14 +111,14 @@ export async function injectChaos(
 
   // Set config in the page realm before the UMD loads so the auto-bootstrap
   // picks it up. Puppeteer JSON-encodes the argument, which would drop RegExp
-  // matchers — pre-serialize to a transport-safe form. The in-page
+  // matchers  -  pre-serialize to a transport-safe form. The in-page
   // chaosUtils.start auto-deserializes via deserializeForTransport.
   const serialized = serializeForTransport(validated);
   const configHandle = await page.evaluateOnNewDocument((cfg: unknown) => {
     (globalThis as unknown as Record<string, unknown>)['__CHAOS_CONFIG__'] = cfg;
   }, serialized as unknown);
 
-  // Inject UMD source as a raw script string — fires before any navigation
+  // Inject UMD source as a raw script string  -  fires before any navigation
   // script so all patching happens at document creation time.
   const umdHandle = await page.evaluateOnNewDocument(umdSource);
 
@@ -152,7 +152,7 @@ export async function removeChaos(page: ChaosPage): Promise<void> {
       w.chaosUtils.stop();
     }
   }) as Promise<void>).catch(() => {
-    // Page already closed during teardown — not a real error.
+    // Page already closed during teardown  -  not a real error.
   });
 }
 
@@ -191,7 +191,7 @@ export async function enableGroup(page: ChaosPage, name: string): Promise<void> 
       };
     }).chaosUtils;
     if (!utils || !utils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof utils.enableGroup !== 'function') {
       throw new Error('[chaos-maker] enableGroup API unavailable');
@@ -220,7 +220,7 @@ export async function disableGroup(page: ChaosPage, name: string): Promise<void>
       };
     }).chaosUtils;
     if (!utils || !utils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof utils.disableGroup !== 'function') {
       throw new Error('[chaos-maker] disableGroup API unavailable');
@@ -248,7 +248,7 @@ export async function getChaosSeed(page: ChaosPage): Promise<number | null> {
 
 /**
  * Helper for test frameworks that use `afterEach`/`afterAll` hooks. Injects
- * chaos and returns an async teardown function — call the teardown in your
+ * chaos and returns an async teardown function  -  call the teardown in your
  * cleanup hook to restore normal browser behavior.
  *
  * @example
@@ -331,7 +331,7 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
-// Reporting utilities — turn an event log into a structured report and
+// Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
   buildChaosReport,

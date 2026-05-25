@@ -9,7 +9,7 @@ import {
 const BASE_URL = 'http://127.0.0.1:8080/sw-app/';
 
 /**
- * WebKit's Playwright Service-Worker support is partial — `navigator.serviceWorker`
+ * WebKit's Playwright Service-Worker support is partial  -  `navigator.serviceWorker`
  * exists but SW-intercepted fetches behave differently enough that the chaos
  * harness can hang. Tests run on chromium/firefox/edge; keep webkit skipped
  * until Playwright fully supports it. Re-enable by removing the skip guard.
@@ -50,7 +50,7 @@ async function unregisterAll(page: Page): Promise<void> {
   }).catch(() => { /* page may be closed */ });
 }
 
-test.describe('SW chaos — network failure', () => {
+test.describe('SW chaos  -  network failure', () => {
   test.beforeEach(async ({ page, browserName }) => {
     test.skip(skipWebkit({ browserName }), 'webkit SW support is partial in Playwright');
     await registerClassicSW(page);
@@ -85,7 +85,7 @@ test.describe('SW chaos — network failure', () => {
     });
     await page.click('#sw-fetch');
     await expect(page.locator('#sw-fetch-status')).toHaveText('418');
-    // Poll until the local (broadcast) log has caught the 418 event — avoids
+    // Poll until the local (broadcast) log has caught the 418 event  -  avoids
     // racing a fixed waitForTimeout against the final postMessage flush.
     await expect
       .poll(async () => (await getSWChaosLog(page)).some(
@@ -105,7 +105,7 @@ test.describe('SW chaos — network failure', () => {
   });
 });
 
-test.describe('SW chaos — latency', () => {
+test.describe('SW chaos  -  latency', () => {
   test.beforeEach(async ({ page, browserName }) => {
     test.skip(skipWebkit({ browserName }), 'webkit SW support is partial in Playwright');
     await registerClassicSW(page);
@@ -134,7 +134,7 @@ test.describe('SW chaos — latency', () => {
   });
 });
 
-test.describe('SW chaos — module SW', () => {
+test.describe('SW chaos  -  module SW', () => {
   test.beforeEach(async ({ page, browserName }) => {
     test.skip(skipWebkit({ browserName }), 'webkit SW support is partial in Playwright');
     test.skip(
@@ -160,7 +160,7 @@ test.describe('SW chaos — module SW', () => {
   });
 });
 
-test.describe('SW chaos — stop restores fetch', () => {
+test.describe('SW chaos  -  stop restores fetch', () => {
   test.beforeEach(async ({ page, browserName }) => {
     test.skip(skipWebkit({ browserName }), 'webkit SW support is partial in Playwright');
     await registerClassicSW(page);

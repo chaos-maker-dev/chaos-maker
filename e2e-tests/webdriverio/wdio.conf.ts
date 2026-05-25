@@ -6,7 +6,7 @@ import { registerChaosCommands, registerSWChaosCommands } from '@chaos-maker/web
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, '../fixtures');
-const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const BUNX_BIN = process.platform === 'win32' ? 'bunx.cmd' : 'bunx';
 
 const browserName = process.env.WDIO_BROWSER || 'chrome';
 
@@ -110,8 +110,8 @@ export const config: WebdriverIO.Config = {
 
     if (!httpReady) {
       httpServer = spawn(
-        PNPM_BIN,
-        ['exec', 'http-server', FIXTURES, '-p', '8080', '-s'],
+        BUNX_BIN,
+        ['http-server', FIXTURES, '-p', '8080', '-s'],
         { stdio: 'inherit', env: fixtureEnv() },
       );
     }
@@ -166,7 +166,7 @@ export const config: WebdriverIO.Config = {
         }
       });
     } catch {
-      /* page may already be navigating — fine */
+      /* page may already be navigating  -  fine */
     }
   },
 };

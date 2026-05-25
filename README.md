@@ -266,12 +266,12 @@ await injectChaos(page, {
 ## Development
 
 ```bash
-pnpm install        # install all workspace dependencies
-pnpm build          # build all packages
-pnpm test           # unit tests
-pnpm lint           # eslint
-pnpm dev:docs                 # local docs dev server
-pnpm build:docs               # build docs for production
+bun install        # install all workspace dependencies
+bun run build      # build all packages
+bun run test       # unit tests
+bun run lint       # eslint
+bun run dev:docs   # local docs dev server
+bun run build:docs # build docs for production
 ```
 
 ## Contributing
@@ -281,8 +281,8 @@ Pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 Run the full check before submitting:
 
 ```bash
-pnpm lint && pnpm test && pnpm build
-pnpm --filter e2e-tests-playwright exec playwright test --reporter=line --project=chromium
+bun run lint && bun run test && bun run build
+bun run test:playwright -- --project=chromium
 ```
 
 ## License

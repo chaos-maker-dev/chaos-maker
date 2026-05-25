@@ -305,7 +305,7 @@ describe('patchFetch', () => {
         body: JSON.stringify({ operationName: 'GetUser', query: 'query GetUser { user { id } }' }),
       });
 
-      // Original fetch passed through — chaos rule didn't match.
+      // Original fetch passed through  -  chaos rule didn't match.
       expect(originalFetch).toHaveBeenCalledTimes(1);
     });
 
@@ -322,7 +322,7 @@ describe('patchFetch', () => {
       };
       const patchedFetch = patchFetch(originalFetch, config, deterministicRandom, emitter);
 
-      // Wrong op: GetProducts — should pass through.
+      // Wrong op: GetProducts  -  should pass through.
       await patchedFetch('/graphql', {
         method: 'POST',
         body: JSON.stringify({ operationName: 'GetProducts' }),
@@ -366,7 +366,7 @@ describe('patchFetch', () => {
 
       await patchedFetch('/graphql', { method: 'POST', body: form });
 
-      // Chaos must NOT have applied — body unparseable.
+      // Chaos must NOT have applied  -  body unparseable.
       expect(originalFetch).toHaveBeenCalledTimes(1);
       const diag = emitter.getLog().find(e => e.detail.reason === 'graphql-body-unparseable');
       expect(diag).toBeDefined();
@@ -454,7 +454,7 @@ describe('patchFetch', () => {
     });
 
     it('skips body extraction entirely when no rule has graphqlOperation (fast path)', async () => {
-      // The body extractor would call .clone() on a Request — this test passes
+      // The body extractor would call .clone() on a Request  -  this test passes
       // a Request and asserts the body wasn't read by chaos when no rule
       // declares a graphqlOperation matcher. URL-only chaos still fires.
       const config: NetworkConfig = {
@@ -476,7 +476,7 @@ describe('patchFetch', () => {
     it('skips rules whose graphqlOperation does not match without consuming the request body for downstream', async () => {
       // Body must remain readable by the original fetch when chaos doesn't apply.
       // We assert the request reaches originalFetch with a body the consumer
-      // can clone and re-read — i.e. patchFetch must not lock the stream.
+      // can clone and re-read  -  i.e. patchFetch must not lock the stream.
       const config: NetworkConfig = {
         failures: [{ urlPattern: '/graphql', statusCode: 500, probability: 1, graphqlOperation: 'WrongOp' }],
       };

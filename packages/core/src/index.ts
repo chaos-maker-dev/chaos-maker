@@ -30,7 +30,7 @@ import {
  *  deprecation / customValidators layers; useful in advanced flows that
  *  manage their own re-validation cadence.
  *
- *  `validateConfig` is the schema-only primitive — does NOT expand presets.
+ *  `validateConfig` is the schema-only primitive  -  does NOT expand presets.
  *  Use only for unit-test structural assertions. */
 export { ChaosMaker, ChaosConfigError, validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, ChaosEventEmitter, ChaosConfigBuilder, presets, PresetRegistry, BUILT_IN_PRESETS, expandPresets, ProfileRegistry, BUILT_IN_PROFILES, applyProfile, MatcherRegistry, resolveNamedMatchers, BUILT_IN_MATCHERS, createPrng, generateSeed, formatStepTitle, shouldEmitStep, formatSeedReproduction, buildChaosReport, formatReportJson, formatReportMarkdown, formatReportHtml, classifyTransport, filterEventsByTransport };
 export type {
@@ -48,7 +48,7 @@ export type {
 } from './reporting';
 /** Internal: prebuilt Zod schema variants. Exported so the JSON-schema build
  *  script can serialize the canonical strict variant. Application code should
- *  call `validateChaosConfig` instead — the schemas are not the public
+ *  call `validateChaosConfig` instead  -  the schemas are not the public
  *  validation surface and may evolve without a version bump. */
 export { chaosConfigSchemaStrict, chaosConfigSchemaPassthrough } from './validation';
 export type { ValidateChaosConfigOptions, PrepareChaosConfigOptions };

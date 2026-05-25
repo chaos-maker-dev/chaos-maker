@@ -26,7 +26,7 @@ const DEFAULT_SW_TOGGLE_TIMEOUT = 2_000;
  *
  * Call **after** `browser.url(...)` so the SW has registered and claimed the
  * page. The target SW must `importScripts('/chaos-maker-sw.js')` (classic) or
- * call `installChaosSW()` (module) — see README for fixture examples.
+ * call `installChaosSW()` (module)  -  see README for fixture examples.
  *
  * @example
  * ```ts
@@ -46,7 +46,7 @@ export async function injectSWChaos(
 
   // Install bridge source via `execute` (sync eval + inline <script> tag),
   // then invoke `apply` via a second `execute` using async/await. WDIO v8
-  // deprecated `executeAsync` — async callbacks work natively in `execute`.
+  // deprecated `executeAsync`  -  async callbacks work natively in `execute`.
   await browser.execute((src: string) => {
     const w = window as unknown as { __chaosMakerSWBridgeInstalled?: boolean };
     if (w.__chaosMakerSWBridgeInstalled) return;
@@ -62,7 +62,7 @@ export async function injectSWChaos(
         apply: (c: ChaosConfig, t: number) => Promise<{ seed: number | null }>;
       };
     }).__chaosMakerSWBridge;
-    if (!bridge) throw new Error('[chaos-maker] SW bridge missing — install failed');
+    if (!bridge) throw new Error('[chaos-maker] SW bridge missing  -  install failed');
     return await bridge.apply(cfg, t);
   }, validated, timeoutMs);
 
@@ -74,7 +74,7 @@ export async function injectSWChaos(
  */
 export async function removeSWChaos(browser: ChaosBrowser, opts: SWChaosOptions = {}): Promise<void> {
   const timeoutMs = opts.timeoutMs ?? 5_000;
-  // Session may already be torn down when this runs from `afterTest` — a
+  // Session may already be torn down when this runs from `afterTest`  -  a
   // transient browser error here would otherwise mask the failing assertion.
   try {
     await browser.execute(async (t: number) => {
@@ -94,7 +94,7 @@ export async function removeSWChaos(browser: ChaosBrowser, opts: SWChaosOptions 
       }
     }, timeoutMs);
   } catch {
-    // Session closed mid-teardown — nothing left to clean up.
+    // Session closed mid-teardown  -  nothing left to clean up.
   }
 }
 
@@ -157,7 +157,7 @@ async function toggleSWGroup(
           toggleGroup: (n: string, e: boolean, t: number) => Promise<unknown>;
         };
       }).__chaosMakerSWBridge;
-      if (!bridge) throw new Error('[chaos-maker] SW bridge missing — install failed');
+      if (!bridge) throw new Error('[chaos-maker] SW bridge missing  -  install failed');
       await bridge.toggleGroup(n, e, t);
     },
     name,

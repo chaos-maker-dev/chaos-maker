@@ -1,0 +1,3660 @@
+# Chaos Maker - Full Documentation
+
+This file contains the complete documentation for Chaos Maker, concatenated into a single file for easy AI consumption.
+
+Latest stable release: v0.7.1
+
+---
+
+# Page: Chaos Maker
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/
+
+First-class support for **Playwright**, **Cypress**, **WebdriverIO**, and **Puppeteer**. One-line injection, no config files.
+  
+  
+    Seeded PRNG makes probability-driven chaos decisions replayable. Log the seed on failure and run the same interaction sequence again.
+  
+  
+    Page requests, Service Worker fetches, WebSocket messages, Server-Sent Events, and GraphQL operations share one config model.
+  
+  
+    Apply chaos on the 3rd request (`onNth`), every 5th (`everyNth`), or only after the first 10 pass through (`afterN`).
+  
+  
+    Structured event log for every chaos decision. Playwright trace integration surfaces chaos inline in the trace viewer.
+  
+  
+    Patches browser APIs in the test context and records every decision as a structured event. Your API is untouched.
+  
+
+
+## Quickstart
+
+```typescript
+
+test('checkout shows error banner on payment API failure', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 42,
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1.0 }],
+    },
+  });
+  await page.goto('/checkout');
+  await page.click('#pay-now');
+
+  await expect(page.locator('[data-testid="error-banner"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  expect(log.some(e => e.type === 'network:failure' && e.applied)).toBe(true);
+});
+```
+
+## Install
+
+```bash
+npm install @chaos-maker/core @chaos-maker/playwright
+npm install @chaos-maker/core @chaos-maker/cypress
+npm install @chaos-maker/core @chaos-maker/webdriverio
+npm install @chaos-maker/core @chaos-maker/puppeteer
+```
+
+## Where to go next
+
+- [Install by framework](/chaos-maker/latest/getting-started/install/)
+- [Chaos types](/chaos-maker/latest/concepts/chaos-types/)
+- [Recipes](/chaos-maker/latest/recipes/slow-checkout/)
+- [Config reference](/chaos-maker/latest/api/config-reference/)
+
+---
+
+# Page: Cypress Adapter
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/adapters/cypress/
+
+Use `@chaos-maker/cypress` to inject chaos into the next `cy.visit()` and inspect decisions through Cypress commands.
+
+## Register
+
+```typescript
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `cy.injectChaos(config, options?)` | Injects chaos into the next visit. |
+| `cy.removeChaos()` | Stops chaos in the current AUT window. |
+| `cy.getChaosLog()` | Yields `ChaosEvent[]`. |
+| `cy.getChaosSeed()` | Yields the active seed or `null`. |
+| `cy.injectSWChaos(config, options?)` | Sends config to the active Service Worker. |
+| `cy.removeSWChaos(options?)` | Stops Service Worker chaos. |
+| `cy.getSWChaosLog()` | Yields Service Worker chaos events buffered on the page. |
+| `cy.getSWChaosLogFromSW(options?)` | Yields chaos events pulled directly from the Service Worker. |
+
+## Persistence
+
+By default, chaos persists across navigations until `cy.removeChaos()` runs. Pass `{ persistAcrossNavigations: false }` to limit chaos to the next visit.
+
+```typescript
+cy.injectChaos(config, { persistAcrossNavigations: false });
+cy.visit('/checkout');
+```
+
+## Timing
+
+Call `cy.injectChaos()` before `cy.visit()` so Cypress can install the bundle before app code executes.
+
+For Service Worker chaos, call `cy.visit()` first, wait until `navigator.serviceWorker.controller` is present, then call `cy.injectSWChaos()` before the action that triggers SW fetches.
+
+SSE chaos and GraphQL operation matching use the same `cy.injectChaos()` command as network, UI, and WebSocket chaos.
+
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the command forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+cy.injectChaos({
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/chaos-maker/latest/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
+## Debug Mode
+
+Pass `debug: true` to `cy.injectChaos()` to enable [Debug Mode](/chaos-maker/latest/api/debug/). It does not affect Cypress's own `--browser` debugger or the `DEBUG=cypress:*` env var - Chaos Maker never reads them. Capture console mirrors with `cy.spy(win.console, 'debug')` inside `onBeforeLoad`; debug events also surface in `cy.getChaosLog()`.
+
+## Validation
+
+`cy.injectChaos` validates the config synchronously inside the command body. A malformed config throws `ChaosConfigError` and fails the step before `cy.visit()` runs.
+
+```typescript
+cy.injectChaos(config, {
+  validation: { unknownFields: 'warn' },
+});
+```
+
+Pass `validation` to relax unknown-field handling, hook deprecation events, or run custom per-`RuleType` validators. See [Rule Validation](/chaos-maker/latest/concepts/validation/).
+
+---
+
+# Page: Playwright Adapter
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/adapters/playwright/
+
+Use `@chaos-maker/playwright` when you need pre-navigation interception and optional trace annotations.
+
+## API
+
+```typescript
+  injectChaos,
+  removeChaos,
+  getChaosLog,
+  getChaosSeed,
+  injectSWChaos,
+  removeSWChaos,
+  getSWChaosLog,
+} from '@chaos-maker/playwright';
+```
+
+| Function | Purpose |
+| --- | --- |
+| `injectChaos(page, config, options?)` | Registers config and core UMD as init scripts. Call before `page.goto()`. |
+| `removeChaos(page)` | Stops chaos and flushes trace attachments when tracing is active. |
+| `getChaosLog(page)` | Returns every emitted `ChaosEvent`. |
+| `getChaosSeed(page)` | Returns the seed for replay. |
+| `injectSWChaos(page, config, options?)` | Sends config to the active Service Worker after it controls the page. |
+| `removeSWChaos(page, options?)` | Stops chaos inside the active Service Worker. |
+| `getSWChaosLog(page)` | Returns Service Worker chaos events buffered on the page. |
+
+## Trace options
+
+```typescript
+await injectChaos(page, config, {
+  tracing: true,
+  testInfo,
+});
+```
+
+Trace output includes named chaos steps and a `chaos-log.json` attachment. Direct `injectChaos()` calls default tracing to off; fixture-based setup can opt into automatic trace handling.
+
+## Timing
+
+Call `injectChaos()` before navigation. The adapter uses Playwright `addInitScript()`, so app code observes patched browser APIs from the first script.
+
+For Service Worker chaos, navigate to the app, wait for `navigator.serviceWorker.controller`, then call `injectSWChaos()` before the user action that triggers SW fetches.
+
+SSE chaos and GraphQL operation matching need no extra adapter API. Pass `sse` rules or `graphqlOperation` network matchers to `injectChaos()`.
+
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the adapter forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/chaos-maker/latest/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
+## Debug Mode
+
+Set `debug: true` on the config passed to `injectChaos()` to enable [Debug Mode](/chaos-maker/latest/api/debug/). It is independent of Playwright's own `--debug` mode and `PWDEBUG` env var - Chaos Maker never reads them. Console mirrors land on `page.on('console', …)` with `msg.type() === 'debug'` and a `[Chaos] ...` body. Debug events ride into the `chaos-log.json` attachment but never as inline `test.step` entries.
+
+## Validation
+
+`injectChaos` validates the config from Node before any page touch. A malformed config throws `ChaosConfigError` synchronously from the test runner - the page never sees a bad rule.
+
+```typescript
+
+await injectChaos(page, config, {
+  validation: { unknownFields: 'warn' },
+});
+```
+
+Pass `validation` to relax unknown-field handling, hook deprecation events, or run custom per-`RuleType` validators. See [Rule Validation](/chaos-maker/latest/concepts/validation/).
+
+---
+
+# Page: Puppeteer Adapter
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/adapters/puppeteer/
+
+Use `@chaos-maker/puppeteer` for headless Chromium suites that need a small adapter around Puppeteer pages.
+
+## API
+
+```typescript
+  injectChaos,
+  removeChaos,
+  getChaosLog,
+  getChaosSeed,
+  useChaos,
+  injectSWChaos,
+  removeSWChaos,
+  getSWChaosLog,
+} from '@chaos-maker/puppeteer';
+```
+
+| Function | Purpose |
+| --- | --- |
+| `injectChaos(page, config)` | Registers config and UMD source with `evaluateOnNewDocument()`. |
+| `removeChaos(page)` | Stops chaos and removes registered init scripts where Puppeteer exposes script IDs. |
+| `getChaosLog(page)` | Returns `ChaosEvent[]`. |
+| `getChaosSeed(page)` | Returns the active seed or `null`. |
+| `useChaos(page, config)` | Injects chaos and returns an async teardown function. |
+| `injectSWChaos(page, config, options?)` | Sends config to the active Service Worker after it controls the page. |
+| `removeSWChaos(page, options?)` | Stops chaos inside the active Service Worker. |
+| `getSWChaosLog(page)` | Returns Service Worker chaos events buffered on the page. |
+
+## Timing
+
+Call before `page.goto()` for network, WebSocket, SSE, and GraphQL chaos. Puppeteer v21+ headless Chromium is the supported mode for v0.5.0.
+
+SSE chaos and GraphQL operation matching also use `injectChaos()` before navigation. For Service Worker chaos, navigate first, wait for `navigator.serviceWorker.controller`, then call `injectSWChaos()` before the user action that triggers SW fetches.
+
+UI chaos requires the DOM to exist, so do **not** pass a `ui` config into the pre-navigation `injectChaos()` call - the auto-bootstrap would run before `document.body` is available. Instead:
+
+1. Call `injectChaos(page, { network, websocket })` (or `injectChaos(page, {})`) before `page.goto()` to load the UMD bundle and install network/WebSocket interceptors.
+2. Navigate with `page.goto()`.
+3. Start UI chaos after navigation with `page.evaluate((cfg) => (window as any).chaosUtils.start(cfg), uiConfig)` - pass `uiConfig` as an explicit argument because the callback runs in the browser context.
+
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the adapter forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/chaos-maker/latest/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
+## Debug Mode
+
+Pass `debug: true` to `injectChaos()` to enable [Debug Mode](/chaos-maker/latest/api/debug/). It does not interact with `puppeteer.launch({ devtools: true })` or `DEBUG=puppeteer:*` - Chaos Maker never reads them. Capture console mirrors with `page.on('console', msg => …)` filtering on `msg.type() === 'debug'`; structured events ride into `getChaosLog()`.
+
+## Validation
+
+`injectChaos` validates the config from Node before `evaluateOnNewDocument` runs. A malformed config throws `ChaosConfigError` synchronously from the test runner.
+
+```typescript
+
+await injectChaos(page, config, {
+  validation: { unknownFields: 'warn' },
+});
+```
+
+Pass `validation` to relax unknown-field handling, hook deprecation events, or run custom per-`RuleType` validators. See [Rule Validation](/chaos-maker/latest/concepts/validation/).
+
+---
+
+# Page: WebdriverIO Adapter
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/adapters/webdriverio/
+
+Use `@chaos-maker/webdriverio` for WDIO suites that can inject chaos after navigation.
+
+## API
+
+```typescript
+  injectChaos,
+  removeChaos,
+  getChaosLog,
+  getChaosSeed,
+  registerChaosCommands,
+  registerSWChaosCommands,
+} from '@chaos-maker/webdriverio';
+```
+
+| Function | Purpose |
+| --- | --- |
+| `injectChaos(browser, config)` | Injects the core UMD into the current page. |
+| `removeChaos(browser)` | Stops chaos in the current page. |
+| `getChaosLog(browser)` | Returns `ChaosEvent[]`. |
+| `getChaosSeed(browser)` | Returns the active seed or `null`. |
+| `registerChaosCommands(browser)` | Adds `browser.injectChaos()`, `browser.removeChaos()`, `browser.getChaosLog()`, and `browser.getChaosSeed()`. |
+| `registerSWChaosCommands(browser)` | Adds `browser.injectSWChaos(config, options?)`, `browser.removeSWChaos(options?)`, `browser.getSWChaosLog()`, and `browser.getSWChaosLogFromSW(options?)`. |
+
+## Timing
+
+Call after `browser.url()`. WebDriver does not expose a reliable cross-browser pre-navigation hook, so initial page-load requests are outside this adapter's reach.
+
+```typescript
+await browser.url('/dashboard');
+await injectChaos(browser, config);
+await $('#reload').click();
+```
+
+For first-load interception, use Playwright or Cypress.
+
+SSE chaos and GraphQL operation matching work when the EventSource or request is created after injection. For Service Worker chaos, call `browser.url()`, wait for `navigator.serviceWorker.controller`, then call `browser.injectSWChaos(config)`.
+
+## Scenario profiles and runtime overrides
+
+Pass `profile` (and optionally `profileOverrides` and `customProfiles`) on the config object - the adapter forwards them through to core's resolution pipeline unchanged.
+
+```typescript
+await browser.injectChaos({
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  },
+  seed: 42,
+});
+```
+
+See [Scenario profiles](/chaos-maker/latest/concepts/profiles/) for the resolution rules, the singular built-in `mobileCheckout` demo profile, the runtime override precedence, and the validation errors that surface as `ChaosConfigError`.
+
+## Debug Mode
+
+Pass `debug: true` to `injectChaos()` (or `browser.injectChaos()`) to enable [Debug Mode](/chaos-maker/latest/api/debug/). It does not affect WDIO's `logLevel` config or `DEBUG=wdio:*` - Chaos Maker never reads them. WDIO has no first-class console-message stream, so capture mirrors by installing a `console.debug` tap inside `browser.execute()` before the action under test. Structured debug events ride into `browser.getChaosLog()`.
+
+```typescript
+
+await browser.url('/checkout');
+
+// Install the tap BEFORE injectChaos so the very first lifecycle line is
+// captured. Stash the captured lines on a known global so a follow-up
+// browser.execute() call can read them back into the test process.
+await browser.execute(() => {
+  (window as { __chaosDebug?: string[] }).__chaosDebug = [];
+  const original = console.debug;
+  console.debug = (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && args[0].startsWith('[Chaos] ')) {
+      (window as { __chaosDebug?: string[] }).__chaosDebug!.push(args[0]);
+    }
+    return original.apply(console, args as []);
+  };
+});
+
+await browser.injectChaos({
+  debug: true,
+  network: { failures: [{ urlPattern: '/api/pay', statusCode: 503, probability: 1 }] },
+});
+await browser.$('#submit').click();
+
+const consoleLines = await browser.execute(
+  () => (window as { __chaosDebug?: string[] }).__chaosDebug ?? [],
+);
+const log = await browser.getChaosLog();
+const debugEvents = log.filter((e) => e.type === 'debug');
+```
+
+Cross-realm note: in some Firefox/geckodriver setups `browser.execute`'s body runs in a sandbox whose `console.debug` reassignment never reaches the page realm. If you observe `consoleLines` empty on Firefox, inject the tap via an inline `<script>` tag instead and stash captured lines on a DOM holder element you can read back from a separate `browser.execute()`.
+
+## Validation
+
+`injectChaos` validates the config from Node before `browser.execute` touches the page. A malformed config throws `ChaosConfigError` synchronously from the test runner.
+
+```typescript
+
+await injectChaos(browser, config, {
+  validation: { unknownFields: 'warn' },
+});
+```
+
+Pass `validation` to relax unknown-field handling, hook deprecation events, or run custom per-`RuleType` validators. See [Rule Validation](/chaos-maker/latest/concepts/validation/).
+
+---
+
+# Page: Config Reference
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/api/config-reference/
+
+## ChaosConfig
+
+```typescript
+interface ChaosConfig {
+  schemaVersion?: 1;
+  network?: NetworkConfig;
+  ui?: UiConfig;
+  websocket?: WebSocketConfig;
+  sse?: SSEConfig;
+  groups?: RuleGroupConfig[];
+  presets?: string[];
+  customPresets?: Record<string, PresetConfigSlice>;
+  seed?: number;
+  debug?: boolean | { enabled: boolean };
+  profile?: string;
+  profileOverrides?: ProfileOverrideSlice;
+  customProfiles?: Record<string, ProfileConfigSlice>;
+  matchers?: Record<string, NamedMatcher>;
+}
+```
+
+`schemaVersion` is reserved for forward-compatibility. Default is `1`; unknown values reject with `code: 'unknown_schema_version'`. See [Rule Validation](/chaos-maker/latest/concepts/validation/).
+
+`seed` controls probability-driven chaos decisions. The same seed plus the same interaction sequence produces the same normalized event sequence.
+
+`debug` toggles [Debug Mode](/chaos-maker/latest/api/debug/) - every rule decision emits a `type: 'debug'` event and mirrors a `[Chaos] ...` line to `console.debug`. Off by default; framework-agnostic, so it does not interact with Playwright's `PWDEBUG`, Cypress's `--browser` debugger, Puppeteer's `devtools: true`, or WDIO's `logLevel`.
+
+`profile`, `profileOverrides`, and `customProfiles` drive scenario profile resolution. The full surface lives on [Scenario profiles](/chaos-maker/latest/concepts/profiles/); the field shapes are:
+
+```typescript
+type ProfileConfigSlice = Omit<
+  ChaosConfig,
+  'customPresets' | 'customProfiles' | 'profile' | 'profileOverrides' | 'schemaVersion'
+>;
+
+type ProfileOverrideSlice = ProfileConfigSlice;
+
+interface Profile {
+  readonly name: string;
+  readonly config: ProfileConfigSlice;
+}
+```
+
+Scalar precedence (highest wins): `profileOverrides.{seed,debug}` > top-level `{seed,debug}` > the profile's own `{seed,debug}`. Rule arrays append in the order: profile rules, top-level rules, override rules.
+
+## NetworkConfig
+
+```typescript
+interface NetworkConfig {
+  failures?: NetworkFailureConfig[];
+  latencies?: NetworkLatencyConfig[];
+  aborts?: NetworkAbortConfig[];
+  corruptions?: NetworkCorruptionConfig[];
+  cors?: NetworkCorsConfig[];
+}
+```
+
+Each network rule supports `urlPattern`, optional `methods`, `probability`, optional request counting, optional GraphQL operation matching, plus the [advanced matcher](/chaos-maker/latest/concepts/matchers/) fields.
+
+```typescript
+interface RequestCountingOptions {
+  onNth?: number;
+  everyNth?: number;
+  afterN?: number;
+}
+
+type HostnameMatcher = string | RegExp;
+type RequestKvMatcher = string | RegExp | boolean;
+type RequestResourceType = 'fetch' | 'xhr';
+
+interface NetworkRuleMatchers {
+  urlPattern?: string;
+  methods?: string[];
+  graphqlOperation?: string | RegExp;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+  matcher?: string;
+}
+```
+
+A rule MUST use either a `matcher` reference (with no inline matcher fields) OR one or more inline matcher fields - never both. Mixing surfaces `matcher_inline_conflict` at validation time.
+
+`graphqlOperation` is an additional matcher. It matches an `operationName` field, a named `query` / `mutation` / `subscription`, or a persisted-query GET parameter. Anonymous operations do not match a non-null matcher. If a request body cannot be parsed for GraphQL operation detection (for example multipart, streaming, or XHR `Blob` bodies), Chaos Maker emits a diagnostic event with `reason: 'graphql-body-unparseable'` and `applied: false`.
+
+`requestHeaders` matches against the request's headers (key comparison case-insensitive). The field is named `requestHeaders` (not `headers`) so it does not collide with the response-synthesis `headers` field on `NetworkFailureConfig`. `string`, `RegExp`, `true`, and `false` value matchers carry the same semantics as `queryParams`.
+
+`resourceTypes` is a non-empty subset of `'fetch' | 'xhr'`. WebSocket and SSE rules already live in their own categories and are not addressable here.
+
+## Named matchers
+
+```typescript
+interface NamedMatcher {
+  urlPattern?: string;
+  methods?: string[];
+  graphqlOperation?: string | RegExp;
+  hostname?: HostnameMatcher;
+  queryParams?: Record<string, RequestKvMatcher>;
+  requestHeaders?: Record<string, RequestKvMatcher>;
+  resourceTypes?: RequestResourceType[];
+}
+```
+
+The top-level `matchers` registry holds reusable `NamedMatcher` entries. Rules reference one via `matcher: 'name'`. The resolver runs after preset and profile expansion, inlines the registered fields, and strips both the `matcher` reference and the `matchers` registry from the resolved config. See [Advanced matchers](/chaos-maker/latest/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`).
+
+## UI
+
+```typescript
+interface UiConfig {
+  assaults?: UiAssaultConfig[];
+}
+
+interface UiAssaultConfig {
+  selector: string;
+  action: 'disable' | 'hide' | 'remove';
+  probability: number;
+}
+```
+
+## WebSocket
+
+```typescript
+interface WebSocketConfig {
+  drops?: WebSocketDropConfig[];
+  delays?: WebSocketDelayConfig[];
+  corruptions?: WebSocketCorruptConfig[];
+  closes?: WebSocketCloseConfig[];
+}
+
+type WebSocketDirection = 'inbound' | 'outbound' | 'both';
+type WebSocketCorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-type';
+```
+
+## Server-Sent Events
+
+```typescript
+interface SSEConfig {
+  drops?: SSEDropConfig[];
+  delays?: SSEDelayConfig[];
+  corruptions?: SSECorruptConfig[];
+  closes?: SSECloseConfig[];
+}
+
+type SSEEventTypeMatcher = string | '*';
+type SSECorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-type';
+```
+
+Drop, delay, and corruption rules accept optional `eventType`. The default is `message`; use a named event like `token` or the `'*'` wildcard for all data events.
+
+## ChaosEvent
+
+```typescript
+interface ChaosEvent {
+  type: ChaosEventType;
+  timestamp: number;
+  applied: boolean;
+  detail: Record<string, unknown>;
+}
+```
+
+Use `applied` to distinguish "matched and rolled false" from "chaos actually changed browser behavior". `sse:drop`, `sse:delay`, and `sse:corrupt` events include `detail.eventType`; `sse:close` includes `detail.reason` instead. GraphQL-aware network events include `detail.operationName` when one was identified.
+
+---
+
+# Page: Core API
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/api/core/
+
+The core package owns config validation, the seeded PRNG, event emission, presets, and the browser-side chaos engine used by every adapter.
+
+## Main exports
+
+```typescript
+export {
+  ChaosMaker,
+  ChaosConfigError,
+  validateChaosConfig,
+  validateConfig,
+  prepareChaosConfig,
+  VALIDATOR_BRAND_VERSION,
+  ChaosEventEmitter,
+  ChaosConfigBuilder,
+  presets,
+  PresetRegistry,
+  BUILT_IN_PRESETS,
+  expandPresets,
+  ProfileRegistry,
+  BUILT_IN_PROFILES,
+  applyProfile,
+  MatcherRegistry,
+  resolveNamedMatchers,
+  createPrng,
+  generateSeed,
+  formatSeedReproduction,
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+  classifyTransport,
+  filterEventsByTransport,
+  SW_BRIDGE_SOURCE,
+};
+```
+
+`validateChaosConfig(input, opts?)` is the canonical structured validation entry - see [Rule Validation](/chaos-maker/latest/concepts/validation/) for the full pipeline. `validateConfig` (schema-only, no preset or profile resolution) and `prepareChaosConfig` (Zod pass 1 + profile resolution + preset expansion + Zod pass 2, no brand or custom validators) remain available for advanced use.
+
+## ChaosMaker
+
+```typescript
+class ChaosMaker {
+  constructor(config: ChaosConfig);
+  start(): void;
+  stop(): void;
+  getSeed(): number;
+  getLog(): ChaosEvent[];
+  clearLog(): void;
+  on(type: ChaosEventType | '*', listener: ChaosEventListener): void;
+  off(type: ChaosEventType | '*', listener: ChaosEventListener): void;
+}
+```
+
+Most users should call a framework adapter instead of constructing `ChaosMaker` directly.
+
+## PRNG helpers
+
+```typescript
+function createPrng(seed?: number): { random: () => number; seed: number };
+function generateSeed(): number;
+```
+
+`generateSeed()` is the only intentional `Math.random()` use in core. All chaos decisions use `createPrng(seed).random`.
+
+## Builder
+
+```typescript
+const config = new ChaosConfigBuilder()
+  .failRequests('/api/orders', 503, 1)
+  .withSeed(42)
+  .withDebug()           // toggle Debug Mode on this config
+  .build();
+```
+
+`withDebug(enabled = true)` flips `ChaosConfig.debug`. See [Debug Mode](/chaos-maker/latest/api/debug/) for the event taxonomy and console output format.
+
+## Scenario profiles
+
+```typescript
+class ProfileRegistry {
+  constructor(initial?: Iterable<Profile>);
+  register(profile: Profile): void;
+  registerAll(entries: Record<string, ProfileConfigSlice> | undefined): void;
+  has(name: string): boolean;
+  get(name: string): ProfileConfigSlice;
+  list(): string[];
+}
+
+function applyProfile(config: ChaosConfig, registry: ProfileRegistry): ChaosConfig;
+
+const BUILT_IN_PROFILES: ReadonlyArray<Profile>;  // length 2: mobileCheckout + mobile-checkout alias
+```
+
+The registry is seeded by default with the single built-in `mobileCheckout` demo profile (plus its kebab alias `mobile-checkout`). `applyProfile()` is pure functional - same `(config, registry)` produces the same flattened output. `prepareChaosConfig` runs it between Zod pass 1 and preset expansion; the returned config has `profile`, `profileOverrides`, and `customProfiles` stripped.
+
+Builder chain methods:
+
+```typescript
+const config = new ChaosConfigBuilder()
+  .defineProfile('team-saturday-deploy', {
+    presets: ['flaky-api'],
+    network: { failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }] },
+  })
+  .useProfile('team-saturday-deploy')
+  .overrideProfile({ seed: 42 })
+  .build();
+```
+
+`.useProfile(name)` is singular - a second call replaces the previously set name. `.defineProfile(name, slice)` rejects duplicate names within the builder. `.overrideProfile(slice)` accumulates across calls: rule arrays append, scalars (`seed`, `debug`) use last-write-wins. See [Scenario profiles](/chaos-maker/latest/concepts/profiles/) for the precedence table and the full surface.
+
+## Named matchers
+
+```typescript
+interface MatcherEntry {
+  readonly name: string;
+  readonly config: NamedMatcher;
+}
+
+class MatcherRegistry {
+  constructor(initial?: Iterable<MatcherEntry>);
+  register(entry: MatcherEntry): void;
+  registerAll(entries: Record<string, NamedMatcher> | undefined): void;
+  has(name: string): boolean;
+  get(name: string): NamedMatcher;
+  list(): string[];
+}
+
+function resolveNamedMatchers(config: ChaosConfig, registry: MatcherRegistry): ChaosConfig;
+```
+
+`MatcherEntry` is the seed shape for `MatcherRegistry`: `name` normalizes via `trim()`, `config` is a `NamedMatcher`. The same shape is what `register(entry)` accepts. `registerAll(record)` is a convenience over a `Record<string, NamedMatcher>` (used by `prepareChaosConfig` to seed from `ChaosConfig.matchers`). `ChaosConfigBuilder.defineMatcher(name, matcher)` lands on the same registry path.
+
+The registry seeds from `ChaosConfig.matchers` (no built-ins). `resolveNamedMatchers()` walks every network rule, inlines the registered fields into rules with a `matcher` reference, deletes the reference, and stamps the matcher name onto an internal `WeakMap` so `buildRuleIdMap` can surface `matcherName` on debug events. `prepareChaosConfig` runs the resolver last, after Zod pass 2.
+
+Builder chain method:
+
+```typescript
+const config = new ChaosConfigBuilder()
+  .defineMatcher('customers', { urlPattern: '/api/customers', methods: ['GET'] })
+  .build();
+```
+
+`.defineMatcher(name, matcher)` rejects duplicate names within the builder. Collisions against entries registered through `ChaosConfig.matchers` surface as `matcher_collision` at engine init. See [Advanced matchers](/chaos-maker/latest/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`) and the matcher attribution carried on debug events.
+
+## Service Worker subpath
+
+```typescript
+
+installChaosSW({ source: 'message' });
+```
+
+The main package also exports `SW_BRIDGE_SOURCE` for adapters. Most users should prefer adapter helpers such as `injectSWChaos()` instead of calling the bridge directly.
+
+---
+
+# Page: Debug Mode
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/api/debug/
+
+Debug Mode is the second-line tool for diagnosing rules that don't fire. Toggle it with the `debug` field on `ChaosConfig`.
+
+## Quickstart
+
+```typescript
+
+await injectChaos(page, {
+  debug: true,
+  network: {
+    failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1 }],
+  },
+});
+```
+
+Or via the builder:
+
+```typescript
+
+const config = new ChaosConfigBuilder()
+  .failRequests('/api/payments', 503, 1)
+  .withDebug()
+  .build();
+```
+
+## DebugOptions
+
+The public type accepts a boolean. Internally Chaos Maker carries a `DebugOptions` object so future fields can land non-breaking.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Toggles the dual-sink Logger. |
+
+The fields below are **reserved** and not yet shipped - included only so you can plan ahead:
+
+| Reserved | Planned use |
+|---|---|
+| `level` | Filter stage emission (`'verbose' \| 'decisions' \| 'lifecycle'`). |
+| `prefix` | Override the `[Chaos] ` console prefix. |
+| `console` | Disable the console sink while keeping structured events. |
+| `sink` | Custom sink for off-loading debug events. |
+
+## Stage taxonomy
+
+`type: 'debug'` events carry the concrete stage on `detail.stage`. The eight stages cover the full rule decision pipeline plus engine lifecycle.
+
+| Stage | Meaning |
+|---|---|
+| `rule-evaluating` | Entered the rule's matcher gate. |
+| `rule-matched` | `urlPattern` + `methods` + `graphqlOperation` all passed. |
+| `rule-skip-match` | The matcher gate rejected. |
+| `rule-skip-counting` | Counting condition (`onNth` / `everyNth` / `afterN`) not met. |
+| `rule-skip-group` | Rule's group is currently disabled. |
+| `rule-skip-probability` | Matched, but the probability roll missed. |
+| `rule-applied` | Chaos applied. |
+| `lifecycle` | Engine start, stop, group toggle, or SW config swap. |
+
+## Lifecycle phases
+
+When `detail.stage === 'lifecycle'`, the concrete moment is on `detail.phase`:
+
+| Phase | Origin |
+|---|---|
+| `engine:start` | `ChaosMaker.start()` |
+| `engine:stop` | `ChaosMaker.stop()` |
+| `engine:group-toggled` | `enableGroup()` / `disableGroup()` |
+| `sw:install` | First SW install (reserved) |
+| `sw:config-applied` | SW received a `__chaosMakerConfig` message |
+| `sw:config-stopped` | SW received a `__chaosMakerStop` message |
+| `sw:group-toggled` | SW received a `__chaosMakerToggleGroup` message |
+
+WebSocket / SSE direction stays on `detail.direction` - `phase` is intentionally lifecycle-only.
+
+## Debug event payload
+
+```typescript
+interface ChaosEvent {
+  type: 'debug';
+  timestamp: number;
+  applied: false;
+  detail: {
+    stage: ChaosDebugStage;
+    // Lifecycle-only:
+    phase?: ChaosLifecyclePhase;
+    // Rule context:
+    ruleType?: string;       // 'failure' | 'latency' | 'abort' | 'corruption' | 'cors' | 'ui-assault' | 'ws-drop' | 'ws-delay' | 'ws-corrupt' | 'ws-close' | 'sse-drop' | 'sse-delay' | 'sse-corrupt' | 'sse-close'
+    ruleId?: string;         // e.g. 'failure#0' - positional within the current config snapshot
+    ruleName?: string;       // reserved for a future builder field
+    groupName?: string;
+    // Inherited per rule type (url, method, statusCode, delayMs, strategy, …)
+    [key: string]: unknown;
+  };
+}
+```
+
+`applied` is always `false` on debug events - they describe decisions, not chaos. The structured event mirrors a `[Chaos] <stage>: ...` line (or `[Chaos SW] <stage>: ...` from inside a Service Worker) to `console.debug` at emit time. The formatted string is **not** stored on the payload, and the prefix is owned by the Logger so the page and SW prefixes are mutually exclusive.
+
+## Rule identifiers
+
+`ruleId` is a **positional** identifier derived from `<ruleType>#<index>` within the current config. Reordering rules between runs changes the IDs - that's acceptable for in-test diagnostics. Persistent IDs across config evolution remain out of scope.
+
+`ruleName` is reserved for a future builder field (e.g. `.failRequests({ ..., name: 'slow-api' })`). It is undefined today.
+
+## Subscribing programmatically
+
+```typescript
+instance.on('debug', (event) => {
+  // event.type === 'debug' always; route on stage.
+  switch (event.detail.stage) {
+    case 'rule-applied':
+      myReporter.record(event);
+      break;
+    case 'rule-skip-probability':
+      myMetrics.incr('chaos.skip.probability', { ruleId: event.detail.ruleId });
+      break;
+    case 'lifecycle':
+      myReporter.lifecycle(event.detail.phase!);
+      break;
+  }
+});
+```
+
+The `'*'` wildcard listener also receives debug events, alongside every other chaos event.
+
+## See also
+
+- [`ChaosConfigBuilder.withDebug()`](/chaos-maker/latest/api/core/) on the builder
+- [`debug` field on ChaosConfig](/chaos-maker/latest/api/config-reference/)
+- [Observability concepts](/chaos-maker/latest/concepts/observability/)
+- [Timeline and reporting concepts](/chaos-maker/latest/concepts/timeline-and-reporting/) — debug events feed `ruleHits` and `skipReasons` on the structured report
+- [Reporting API reference](/chaos-maker/latest/api/reporting/)
+
+---
+
+# Page: Reporting API
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/api/reporting/
+
+The reporting utilities convert a `ChaosEvent[]` log into a structured `ChaosReport` and serialize it as JSON, Markdown, or self-contained HTML. They live in `@chaos-maker/core` and are re-exported from every framework adapter.
+
+For the conceptual overview, the CI patterns, and the worked example, see [Timeline and reporting](/chaos-maker/latest/concepts/timeline-and-reporting/).
+
+## Exports
+
+```typescript
+export {
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+  classifyTransport,
+  filterEventsByTransport,
+};
+
+export type {
+  BuildChaosReportOptions,
+  ChaosReport,
+  ChaosReportMeta,
+  FailureSummary,
+  FormatReportHtmlOptions,
+  FormatReportJsonOptions,
+  RuleHitSummary,
+  SkipReasonSummary,
+  TimelineEntry,
+  TransportKind,
+  TransportSummary,
+};
+```
+
+## buildChaosReport
+
+```typescript
+function buildChaosReport(
+  events: ChaosEvent[],
+  opts?: BuildChaosReportOptions,
+): ChaosReport;
+```
+
+Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page — the summary:
+
+- `meta.appliedCount` counts outcome events with `applied === true`.
+- `meta.skippedCount` counts debug events with stage in `{rule-skip-match, rule-skip-counting, rule-skip-group, rule-skip-probability}`. `rule-group:gated` is not double-counted.
+- `ruleHits[]` sources from the debug stream (requires `debug: true` for per-rule attribution). Sorted by `applied` desc, `skipped` desc, `ruleId` asc.
+- `transports[]` collapses every `network:*` subtype into one `'network'` row. Sorted by `events` desc, `kind` asc.
+- `skipReasons[]` groups by `{stage, skippedAt}`. Sorted by `count` desc, `stage` asc, `skippedAt` asc.
+- `failures[]` includes applied outcome events with `statusCode >= 500` or types `network:failure | network:abort | network:cors | network:corruption`. Sorted by `count` desc, `ruleId` asc, `type` asc, `statusCode` asc.
+- `timeline[]` is every event in emission order with `offsetMs` computed from the first event.
+
+### Options
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `seed` | `number \| null` | `null` | Echoes into `meta.seed` and feeds `formatSeedReproduction` for `meta.replaySnippet`. |
+| `now` | `number` | `Date.now()` | Used for `meta.generatedAt`. Pin to a constant in tests for byte-identical snapshots. |
+| `title` | `string` | `undefined` | Echoed into `meta.title` and used as the default HTML `<title>`. |
+
+## formatReportJson
+
+```typescript
+function formatReportJson(
+  report: ChaosReport,
+  opts?: FormatReportJsonOptions,
+): string;
+```
+
+`opts.pretty` defaults to `true` (two-space indent + trailing newline). Pass `{ pretty: false }` for a single-line output. Output round-trips through `JSON.parse`.
+
+## formatReportMarkdown
+
+```typescript
+function formatReportMarkdown(report: ChaosReport): string;
+```
+
+GitHub-flavored. Renders one `##` section per area, falls back to `_No X._` placeholders when a section is empty, and escapes `|` inside table cells (including inside inline code spans) so rows stay well-formed.
+
+## formatReportHtml
+
+```typescript
+function formatReportHtml(
+  report: ChaosReport,
+  opts?: FormatReportHtmlOptions,
+): string;
+```
+
+Returns a complete `<!doctype html>` document. CSS is inlined via a single `<style>` block. Each section is wrapped in `<details open>` for collapsibility. There is no `<script>` tag and no external URL: open the file from `file://`, attach it as a CI artifact, or serve it; behavior is identical.
+
+`opts.title` overrides the title used in `<title>` and the `<h1>`. When omitted, the formatter uses `report.meta.title ?? 'Chaos run'`.
+
+## filterEventsByTransport
+
+```typescript
+function filterEventsByTransport(
+  events: ChaosEvent[],
+  transport: TransportKind,
+): ChaosEvent[];
+```
+
+`TransportKind` is `'network' | 'websocket' | 'sse' | 'ui' | 'rule-group'`. `'debug'` events are excluded from every bucket because they belong to the diagnostic stream, not a transport. The returned array preserves input order and does not mutate the input.
+
+## classifyTransport
+
+```typescript
+function classifyTransport(event: ChaosEvent): TransportKind | null;
+```
+
+Returns `null` for `type: 'debug'` and any unrecognized prefix. Useful when you need to bucket events yourself without the convenience of `filterEventsByTransport`.
+
+## Types
+
+```typescript
+interface ChaosReport {
+  meta: ChaosReportMeta;
+  ruleHits: RuleHitSummary[];
+  transports: TransportSummary[];
+  skipReasons: SkipReasonSummary[];
+  failures: FailureSummary[];
+  timeline: TimelineEntry[];
+}
+
+interface ChaosReportMeta {
+  title: string | null;
+  generatedAt: number;
+  seed: number | null;
+  eventCount: number;
+  appliedCount: number;
+  skippedCount: number;
+  durationMs: number | null;
+  replaySnippet: string;
+}
+
+interface RuleHitSummary {
+  ruleId: string;
+  ruleName: string | null;
+  applied: number;
+  skipped: number;
+  total: number;
+  types: string[];
+}
+
+interface TransportSummary {
+  kind: TransportKind;
+  events: number;
+  applied: number;
+}
+
+interface SkipReasonSummary {
+  stage: ChaosDebugStage;
+  skippedAt: string | null;
+  count: number;
+}
+
+interface FailureSummary {
+  ruleId: string | null;
+  type: string;
+  statusCode: number | null;
+  count: number;
+  sampleUrl: string | null;
+}
+
+interface TimelineEntry {
+  offsetMs: number;
+  type: string;
+  applied: boolean;
+  ruleId: string | null;
+  ruleType: string | null;
+  matcherName: string | null;
+  title: string;
+}
+```
+
+## See also
+
+- [Timeline and reporting](/chaos-maker/latest/concepts/timeline-and-reporting/) for end-to-end usage.
+- [Observability](/chaos-maker/latest/concepts/observability/) for the `ChaosEvent` taxonomy that feeds the report.
+- [Debug Mode](/chaos-maker/latest/api/debug/) for the stages that populate `ruleHits` and `skipReasons`.
+
+---
+
+# Page: Builder
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/builder/
+
+`ChaosConfigBuilder` creates readable configs for larger scenarios.
+
+```typescript
+
+const config = new ChaosConfigBuilder()
+  .failRequests('/api/checkout', 503, 0.5)
+  .addLatency('/api/', 1500, 0.3)
+  .corruptResponses('/api/cart', 'malformed-json', 0.2)
+  .failGraphQLOperation('GetUser', 503, 1, '/graphql')
+  .delaySSE('/events', 500, 1, 'token')
+  .assaultUi('button[type="submit"]', 'disable', 0.1)
+  .build();
+```
+
+Builder output is a normal `ChaosConfig`. You can still add `seed` at the root:
+
+```typescript
+const config = {
+  ...new ChaosConfigBuilder().failRequests('/api/payments', 503, 1).build(),
+  seed: 42,
+};
+```
+
+Prefer plain objects for small tests and the builder when a scenario spans several chaos primitives.
+
+GraphQL shortcuts default `urlPattern` to `'*'` when you omit the fourth argument. SSE shortcuts accept an optional `eventType` after the probability.
+
+---
+
+# Page: Chaos Types
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/chaos-types/
+
+Chaos Maker applies browser-side chaos to APIs your frontend already uses.
+
+## Network
+
+| Type | Config key | Effect |
+| --- | --- | --- |
+| Failure | `network.failures` | Returns a configured HTTP status and body. |
+| Latency | `network.latencies` | Delays matched requests by `delayMs`. |
+| Abort | `network.aborts` | Aborts immediately or after `timeout`. |
+| Corruption | `network.corruptions` | Rewrites response text with `truncate`, `malformed-json`, `empty`, or `wrong-type`. |
+| CORS | `network.cors` | Simulates a browser network/CORS failure. |
+
+Network rules match by `urlPattern` substring and optional `methods`.
+
+GraphQL operations can be matched inside the same network rules with `graphqlOperation`.
+
+```typescript
+network: {
+  failures: [{
+    urlPattern: '/graphql',
+    graphqlOperation: 'GetUser',
+    statusCode: 503,
+    probability: 1,
+  }],
+}
+```
+
+## UI
+
+`ui.assaults` targets DOM nodes by CSS selector and applies `disable`, `hide`, or `remove`.
+
+```typescript
+ui: {
+  assaults: [{ selector: 'button[type="submit"]', action: 'disable', probability: 0.5 }],
+}
+```
+
+## WebSocket
+
+| Type | Config key | Effect |
+| --- | --- | --- |
+| Drop | `websocket.drops` | Drops inbound, outbound, or both directions. |
+| Delay | `websocket.delays` | Delays matched messages. |
+| Corrupt | `websocket.corruptions` | Rewrites text/binary payloads where supported. |
+| Close | `websocket.closes` | Closes a matched socket with code, reason, and optional delay. |
+
+All probability-driven decisions use the seeded PRNG.
+
+## Service Worker
+
+Service Worker chaos applies the same network rules inside `self.fetch`. Add the SW bundle to the worker, then send config from your adapter with `injectSWChaos`.
+
+```js
+// classic sw.js
+importScripts('/chaos-maker-sw.js');
+```
+
+See [Service Worker Chaos](/chaos-maker/latest/concepts/service-worker-chaos/) for adapter-specific setup and limitations.
+
+## Server-Sent Events
+
+| Type | Config key | Effect |
+| --- | --- | --- |
+| Drop | `sse.drops` | Skips inbound EventSource events. |
+| Delay | `sse.delays` | Delays inbound events by `delayMs`. |
+| Corrupt | `sse.corruptions` | Rewrites `event.data`. |
+| Close | `sse.closes` | Closes the EventSource after optional `afterMs`. |
+
+SSE rules match by `urlPattern`; drop, delay, and corruption rules can also target `eventType`.
+
+---
+
+# Page: Advanced matchers
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/matchers/
+
+Chaos Maker rules historically matched on `urlPattern` plus optional `methods` and `graphqlOperation`. Advanced matchers extend the targeting surface so a single rule can express "the customers API on the production host, GET only, when the bearer token is set, fetch traffic only" without hand-crafting URL substrings. A separate named matcher registry lets multiple rules share one definition.
+
+## New matcher fields
+
+Every network rule (`failures`, `latencies`, `aborts`, `corruptions`, `cors`) accepts these optional fields alongside the existing ones:
+
+- **`hostname`** - `string | RegExp`. String compares case-insensitively against `new URL(url).hostname`. RegExp uses `.test()`. The `g` and `y` flags are rejected at validation time, matching `graphqlOperation`.
+- **`queryParams`** - `Record<string, string | RegExp | boolean>`. Every entry must pass. `true` requires the key to be present (any value). `false` requires absence. A string matches the decoded value exactly. A RegExp tests the value.
+- **`requestHeaders`** - `Record<string, string | RegExp | boolean>`. Same value semantics as `queryParams`. Key comparison is case-insensitive. The field is named `requestHeaders` (not `headers`) so it does not collide with the response-synthesis `headers` field on failure rules.
+- **`resourceTypes`** - `Array<'fetch' | 'xhr'>`. Non-empty. Rule fires only when the originating interceptor is in the list. WebSocket and SSE rules already live in their own categories and are not addressable here.
+
+The matchers are evaluated in order: `urlPattern` → `methods` → `resourceTypes` → `hostname` → `queryParams` → `requestHeaders` → `graphqlOperation`. The first one that fails skips the rule.
+
+```typescript
+await injectChaos(page, {
+  network: {
+    failures: [
+      {
+        urlPattern: '/api',
+        hostname: 'api.example.com',
+        methods: ['POST'],
+        queryParams: { tenant: 'acme', debug: false },
+        requestHeaders: { authorization: /^Bearer / },
+        resourceTypes: ['fetch'],
+        statusCode: 503,
+        probability: 1,
+      },
+    ],
+  },
+});
+```
+
+## Named matcher registry
+
+Repeating the same matcher block across multiple rules bloats the config and obscures intent. A named matcher is a reusable bundle stored on the top-level `matchers` field. Rules reference one by name via the `matcher` field instead of inlining the matcher fields.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    customers: {
+      urlPattern: '/api/customers',
+      hostname: 'api.example.com',
+      methods: ['GET'],
+    },
+  },
+  network: {
+    failures: [
+      { matcher: 'customers', statusCode: 503, probability: 1 },
+    ],
+    latencies: [
+      { matcher: 'customers', delayMs: 500, probability: 1 },
+    ],
+  },
+});
+```
+
+At engine init, the resolver inlines the registered fields into every referencing rule and strips the `matchers` field from the resolved config. The `matcher` reference disappears too; downstream interceptors see flat rules identical to the inline form.
+
+### Mutual exclusion
+
+A rule MUST use either `matcher: 'name'` alone OR one or more inline matcher fields, never both. Mixing the two surfaces a `matcher_inline_conflict` validation issue:
+
+```typescript
+// Throws ChaosConfigError with code: 'matcher_inline_conflict'
+{
+  matcher: 'customers',
+  urlPattern: '/api/anything', // forbidden alongside `matcher`
+  statusCode: 503,
+  probability: 1,
+}
+```
+
+This keeps the mental model simple: a rule is either a named-matcher reference or a self-contained inline rule. There is no "merge with overrides" precedence to reason about.
+
+### Resolution order
+
+Resolution runs as the last step inside `prepareChaosConfig`:
+
+1. Zod pass 1 (schema validation).
+2. `applyProfile` resolves `profile` and `profileOverrides`.
+3. `expandPresets` expands the `presets[]` array.
+4. Zod pass 2 (post-merge re-validation).
+5. **`resolveNamedMatchers`** inlines `matcher` references against the per-instance `MatcherRegistry`.
+
+Running last means rules brought in by presets or profiles can reference matchers defined at the top level. Named matchers themselves cannot reference other matchers; carrying a `matcher` field inside a registry entry surfaces a `matcher_cycle` validation issue. This code path is reserved now and will catch real cycles when matcher composition is added in a future release.
+
+### Builder method
+
+The `ChaosConfigBuilder` exposes `.defineMatcher(name, matcher)` to register entries fluently:
+
+```typescript
+
+const config = new ChaosConfigBuilder()
+  .defineMatcher('customers', { urlPattern: '/api/customers', methods: ['GET'] })
+  .build();
+```
+
+Rules that reference the matcher set the `matcher` field on the literal rule object; the builder rule helpers stay positional and unchanged in this release.
+
+## Validation issue codes
+
+Failures surface through the existing `ChaosConfigError` aggregator. Codes specific to advanced matchers:
+
+- **`matcher_not_found`** - rule references a name that is not in `matchers` (after preset and profile expansion). Path: `matchers.<name>`.
+- **`matcher_collision`** - two entries collide after `trim()` normalization. Path: `matchers.<name>`.
+- **`matcher_inline_conflict`** - rule mixes `matcher` with inline matcher fields. Path: `<rule-array>.[<index>].matcher`.
+- **`matcher_cycle`** - registry entry carries its own `matcher` field. Reserved for future composition; observable today via untyped configs. Path: `matchers.<name>.matcher`.
+
+## Debug attribution
+
+Rules originating from a named matcher are attributed in debug events. Every `type: 'debug'` event from a matcher-resolved rule carries `detail.matcherName: 'customers'` (or whatever name fired). The `rule-matched` stage additionally carries `detail.matchedBy: string[]` listing which non-URL matchers fired (`'hostname' | 'queryParams' | 'requestHeaders' | 'resourceTypes' | 'graphqlOperation'`), and `rule-skip-match` carries `detail.skippedAt: string` naming the matcher field that failed.
+
+```typescript
+{
+  type: 'debug',
+  detail: {
+    stage: 'rule-matched',
+    ruleId: 'failure#0',
+    matcherName: 'customers',
+    matchedBy: ['hostname', 'queryParams'],
+    url: '/api/customers?tenant=acme',
+    method: 'GET',
+  },
+}
+```
+
+This makes the answer to "why did this rule fire?" and "why did this rule skip?" trivially readable in dashboards.
+
+## Out of scope (deferred)
+
+- WebSocket, SSE, and UI rules do not accept named matchers in this release. Each rule shape differs in the matcher dimensions it cares about; named matchers are network-only for now.
+- Built-in matchers. The `matchers` registry is intentionally user-owned. There is no `BUILT_IN_MATCHERS`.
+- Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.
+- Response matchers (status code, response headers). Matchers operate on the request only.
+- Disjunctive (any-of) matchers. A rule's matcher block is conjunctive: every field must pass.
+
+See also: [Scenario profiles](./profiles), [Presets](./presets), [Validation](./validation).
+
+---
+
+# Page: Nth Counting
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/nth-counting/
+
+Network and WebSocket rules can include one counting selector.
+
+| Field | Meaning |
+| --- | --- |
+| `onNth` | Apply only on the Nth matching request or message. |
+| `everyNth` | Apply on every Nth matching request or message. |
+| `afterN` | Apply after the first N matches have passed. |
+
+```typescript
+network: {
+  failures: [
+    { urlPattern: '/api/orders', statusCode: 503, probability: 1, onNth: 3 },
+  ],
+}
+```
+
+Counting is per rule object and shared across fetch and XHR for the same config entry. Set at most one of `onNth`, `everyNth`, or `afterN` on a rule.
+
+---
+
+# Page: Observability
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/observability/
+
+Every chaos decision emits a `ChaosEvent`.
+
+```typescript
+type ChaosEvent = {
+  type: string;
+  timestamp: number;
+  applied: boolean;
+  detail: Record<string, unknown>;
+};
+```
+
+Use the adapter log helpers to assert that chaos happened and to diagnose skipped decisions.
+
+```typescript
+const log = await getChaosLog(page);
+expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+```
+
+## Event taxonomy
+
+| Event type | Fires when | Detail keys | Example assertion |
+| --- | --- | --- | --- |
+| `network:failure` | A matching failure rule returns or skips a configured HTTP status. | `url`, `method`, `statusCode`, optional `operationName`, `reason` | `log.some((e) => e.type === 'network:failure' && e.detail.statusCode === 503)` |
+| `network:latency` | A matching latency rule delays or skips a request. | `url`, `method`, `delayMs`, optional `operationName`, `reason` | `log.some((e) => e.type === 'network:latency' && e.detail.delayMs === 800)` |
+| `network:abort` | A matching abort rule aborts, skips, or loses the race to a completed request. | `url`, `method`, `timeoutMs`, optional `operationName`, `reason` | `log.some((e) => e.type === 'network:abort' && e.applied)` |
+| `network:corruption` | A matching corruption rule changes, skips, or cannot change a response body. | `url`, `method`, `strategy`, optional `operationName`, `reason` | `log.some((e) => e.type === 'network:corruption' && e.detail.strategy === 'truncate')` |
+| `network:cors` | A matching CORS rule simulates a browser network failure or skips by probability. | `url`, `method`, optional `operationName`, `reason` | `log.some((e) => e.type === 'network:cors' && e.applied)` |
+| `ui:assault` | A DOM assault rule sees a matching element and applies or skips the action. | `selector`, `action`, optional `groupName` | `log.some((e) => e.type === 'ui:assault' && e.detail.action === 'disable')` |
+| `websocket:drop` | A WebSocket drop rule drops an inbound or outbound frame. | `url`, `direction`, `payloadType`, optional `reason` | `log.some((e) => e.type === 'websocket:drop' && e.detail.direction === 'inbound')` |
+| `websocket:delay` | A WebSocket delay rule delays an inbound or outbound frame. | `url`, `direction`, `payloadType`, `delayMs` | `log.some((e) => e.type === 'websocket:delay' && e.detail.delayMs === 500)` |
+| `websocket:corrupt` | A WebSocket corruption rule changes a compatible frame or records why it could not. | `url`, `direction`, `payloadType`, `strategy`, optional `reason` | `log.some((e) => e.type === 'websocket:corrupt' && e.detail.strategy === 'truncate')` |
+| `websocket:close` | A WebSocket close rule closes the socket. | `url`, `closeCode`, `closeReason` | `log.some((e) => e.type === 'websocket:close' && e.detail.closeCode === 1011)` |
+| `sse:drop` | An SSE drop rule drops a matching event. | `url`, `eventType`, optional `reason` | `log.some((e) => e.type === 'sse:drop' && e.detail.eventType === 'token')` |
+| `sse:delay` | An SSE delay rule delays a matching event. | `url`, `eventType`, `delayMs` | `log.some((e) => e.type === 'sse:delay' && e.detail.delayMs === 800)` |
+| `sse:corrupt` | An SSE corruption rule changes a matching event payload. | `url`, `eventType`, `strategy` | `log.some((e) => e.type === 'sse:corrupt' && e.detail.strategy === 'malformed-json')` |
+| `sse:close` | An SSE close rule closes the stream. | `url`, `reason` | `log.some((e) => e.type === 'sse:close')` |
+| `rule-group:enabled` | `enableGroup()` or an adapter group helper enables a group. | `groupName` | `log.some((e) => e.type === 'rule-group:enabled' && e.detail.groupName === 'payments')` |
+| `rule-group:disabled` | `disableGroup()` or an adapter group helper disables a group. | `groupName` | `log.some((e) => e.type === 'rule-group:disabled' && e.detail.groupName === 'payments')` |
+| `rule-group:gated` | A rule is skipped because its group is disabled. | `groupName`, plus the rule context such as `url`, `method`, `selector`, or `action` | `log.some((e) => e.type === 'rule-group:gated' && e.detail.groupName === 'payments')` |
+| `debug` | `debug: true` records each rule-decision stage and lifecycle event. | `stage`, optional `phase`, `ruleType`, `ruleId`, `ruleName`, `url`, `method`, `selector`, `action`, `groupName`, `enabled` | `log.some((e) => e.type === 'debug' && e.detail.stage === 'rule-skip-probability')` |
+
+## Seeds
+
+Always log `getChaosSeed()` when a test fails. The seed plus the chaos log gives you the replay input and the observed decision sequence.
+
+```typescript
+
+console.error(formatSeedReproduction(await getChaosSeed(page)));
+```
+
+For a complete loop, see [Reproduce a flaky failure](/chaos-maker/latest/recipes/reproduce-flaky-failure/).
+
+## Debug Mode
+
+When chaos does not fire, set `debug: true` on your config to make Chaos Maker log every step of its rule decision pipeline.
+
+```typescript
+await injectChaos(page, {
+  debug: true,
+  network: {
+    failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1 }],
+  },
+});
+```
+
+Two sinks fire on rule decisions and lifecycle events (e.g. `engine:start`, `sw:config-applied`):
+
+1. **Console mirror**: a single line per stage to `console.debug`. Open browser DevTools to see them; CI loggers hide `console.debug` by default.
+2. **Structured event**: a `type: 'debug'` event through the existing emitter. Lands in `getChaosLog()`, the Playwright `chaos-log.json` attachment, and the Service Worker broadcast bridge.
+
+Sample console output:
+
+```text
+[Chaos] rule-evaluating: rule=failure#0 GET /api/payments -> 503
+[Chaos] rule-matched: rule=failure#0 GET /api/payments -> 503
+[Chaos] rule-applied: rule=failure#0 GET /api/payments -> 503
+[Chaos] lifecycle: engine:start
+```
+
+Service Worker chaos uses a distinct prefix so you can split the streams when both sinks log to the same console:
+
+```text
+[Chaos SW] lifecycle: sw:config-applied
+[Chaos SW] rule-applied: rule=failure#0 GET /api/payments -> 503
+```
+
+The structured event keeps the stage on `detail.stage`. Subscribe with one listener and switch on the stage:
+
+```typescript
+instance.on('debug', (event) => {
+  if (event.detail.stage === 'rule-applied') {
+    myReporter.record(event);
+  }
+});
+```
+
+The full stage taxonomy is documented on the [Debug API reference](/chaos-maker/latest/api/debug/).
+
+### Why did chaos not fire?
+
+Start from the `applied: false` events:
+
+```typescript
+const misses = log.filter((event) => event.applied === false);
+```
+
+`type: 'rule-group:gated'` means the rule matched, but its group was disabled. Check `detail.groupName`, then call the matching page or Service Worker group helper before the triggering action.
+
+`detail.reason === 'graphql-body-unparseable'` means a rule with `graphqlOperation` needed the request body, but the body could not be parsed. Match by URL only, remove the GraphQL constraint, or send JSON that contains `operationName` or a parseable `query`.
+
+`detail.reason === 'incompatible-payload-type'` means a corruption strategy expected text, but the WebSocket frame was binary. Use a text payload or choose a rule that supports binary frames.
+
+`type: 'debug'` gives the exact stage:
+
+| Stage | Meaning | Typical fix |
+| --- | --- | --- |
+| `rule-skip-match` | URL, method, selector, event type, direction, or GraphQL operation did not match. | Compare the rule matcher with the emitted `detail` fields. |
+| `rule-skip-counting` | `onNth`, `everyNth`, or `afterN` has not reached an active count. | Trigger the action enough times or adjust the counter. |
+| `rule-skip-group` | The rule's group is disabled. | Enable the group before the action. |
+| `rule-skip-probability` | The seeded probability roll missed. | Replay with the same seed to confirm, or raise `probability`. |
+
+For a step-by-step workflow, see [Diagnose no chaos](/chaos-maker/latest/recipes/diagnose-no-chaos/).
+
+### Framework-agnostic by design
+
+Debug Mode is independent of your test runner's debug flags. It does not read `PWDEBUG`, `--debug`, `DEBUG=cypress:*`, `DEBUG=puppeteer:*`, `DEBUG=wdio:*`, `localStorage.debug`, or any other framework-owned signal. The only switch is `debug` on `ChaosConfig`.
+
+### CI guidance
+
+`console.debug` is filtered out by default in Playwright, Cypress, Puppeteer, and Vitest reporters. Even so, prefer to omit `debug` in CI configs unless you are deliberately collecting decision logs. Debug events also ride through `getChaosLog()` and inflate the log buffer.
+
+### Matcher attribution
+
+Every `type: 'debug'` event emitted for a rule that came from a named matcher (see [Advanced matchers](./matchers)) carries `detail.matcherName: '<name>'`. The `rule-matched` stage additionally carries `detail.matchedBy: string[]` listing which non-URL matchers fired - one of `'hostname'`, `'queryParams'`, `'requestHeaders'`, `'resourceTypes'`, `'graphqlOperation'`. The `rule-skip-match` stage carries `detail.skippedAt: string` naming the first matcher field that failed. These three fields make "why did this rule fire?" and "why did this rule skip?" trivially readable from the structured log.
+
+## Playwright traces
+
+The Playwright adapter can add chaos events to the trace viewer and attach `chaos-log.json` at test end. `type: 'debug'` events land in the JSON attachment but never render as inline `test.step` entries, so the action timeline stays focused on real chaos decisions.
+
+## Timeline and reporting artifacts
+
+For a structured, file-shaped view of a run, hand the same event log to `buildChaosReport()` and pick a serializer. See [Timeline and reporting](./timeline-and-reporting) for the full output shape and CI integration patterns.
+
+---
+
+# Page: Presets
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/presets/
+
+Presets are the recommended quick-start path. They wrap realistic scenarios - flaky backend, mobile-3g, degraded checkout - into named bundles you drop into a config:
+
+```typescript
+
+await injectChaos(page, {
+  presets: ['mobile-3g', 'checkout-degraded'],
+  seed: 1234,
+});
+```
+
+Layer presets for compound scenarios (mobile network + checkout instability), or mix a preset with explicit rules when a single endpoint needs tighter control:
+
+```typescript
+await injectChaos(page, {
+  presets: ['mobile-3g'],
+  network: {
+    failures: [{ urlPattern: '/api/checkout', statusCode: 500, probability: 1 }],
+  },
+});
+```
+
+## When to use presets
+
+Lead with presets for onboarding, smoke coverage, and exploratory resilience tests. Drop down to explicit configs for product-critical flows where the exact status code, selector, message direction, and probability matter.
+
+## Built-in catalog
+
+Pick presets the way engineers describe scenarios - flaky backend, bad mobile network, checkout degradation, lossy realtime. Layer multiple presets when a scenario spans transports.
+
+| camelCase name          | Kebab aliases                       | Transports        | Intent                                                                  |
+| ----------------------- | ----------------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| `slowNetwork`           | `slow-api`                          | network           | Every request is delayed by 2000ms. Smoke-test loading states.          |
+| `flakyConnection`       | `flaky-api`, `api-flaky`            | network           | Rare aborts (5%) and latency (10% @ 3000ms) on every request.           |
+| `offlineMode`           | `offline-mode`                      | network           | Block all requests like an offline browser.                             |
+| `unstableApi`           | `high-latency`                      | network           | 10% 500s and 20% latency (1000ms) scoped to `/api/`.                    |
+| `mobileThreeG`          | `mobile-3g`                         | network           | All requests get 1500ms latency plus 2% aborts. Approximates 3G round-trip; does not throttle bytes. |
+| `checkoutDegraded`      | `checkout-degraded`                 | network           | Payment instability scoped to `/checkout` and `/api/payments` - 30% latency at 800ms, occasional 503/500. |
+| `degradedUi`            |                                     | ui                | Disable buttons (20%) and hide links (10%).                             |
+| `unreliableWebSocket`   | `websocket-instability`             | websocket         | 10% drops, 500ms inbound delays, 5% truncations.                        |
+| `unreliableEventStream` | `realtime-lag`                      | sse               | 5% drops, 200ms delays, 2% close-after-2s on every stream.              |
+
+### Suggested assertions
+
+The presets fire deterministically given a fixed `seed`. Existence-check, not rate, keeps tests stable across browsers:
+
+- `mobile-3g` - observed elapsed time on a fetch should exceed 1000ms (well below the 1500ms target).
+- `checkout-degraded` - every rule on `/checkout` and `/api/payments` is probabilistic (30% latency, 5% / 10% failure), so a single request is not enough to assert against. Issue a small fixed batch (e.g. 20 sequential requests across `/checkout` and `/api/payments`) under a fixed `seed`, then call `getChaosLog()` and assert at least one event whose `detail.url` matches `/checkout` or `/api/payments` (any of `network:latency`, `network:failure`).
+- `unreliableWebSocket` - chaos log should contain at least one `websocket:delay` event with `applied: true`.
+- `unreliableEventStream` - chaos log should contain at least one `sse:delay` or `sse:close` event.
+
+Kebab-case aliases (`slow-api`, `flaky-api`, `api-flaky`, `offline-mode`, `high-latency`, `mobile-3g`, `checkout-degraded`, `websocket-instability`, `realtime-lag`) are registry-only. They resolve via `presets: ['mobile-3g']` and `new PresetRegistry().get('mobile-3g')`. They are NOT keys on the legacy `presets` record export - `presets['mobile-3g']` is `undefined` by design. Use the camelCase key (`presets.mobileThreeG`) when reading from the record.
+
+## Custom presets
+
+Register your own bundle inline via `customPresets`. Names collide fail-fast against built-ins and against each other.
+
+```typescript
+await injectChaos(page, {
+  customPresets: {
+    'team-flow': {
+      network: {
+        failures: [{ urlPattern: '/checkout', statusCode: 503, probability: 1 }],
+      },
+    },
+  },
+  presets: ['team-flow'],
+});
+```
+
+Custom preset values may carry only rule arrays plus the optional `groups` field. `presets`, `customPresets`, `seed`, and `debug` are rejected at validation. Dependency chains are out of scope.
+
+## Builder helper
+
+```typescript
+
+const config = new ChaosConfigBuilder()
+  .usePreset('slow-api')
+  .failRequests('/api/checkout', 500, 1)
+  .build();
+```
+
+`.usePreset()` silently dedupes within the builder while preserving insertion order. Empty / whitespace-only names throw, matching the schema and registry rules.
+
+## Validation errors
+
+Every failure mode surfaces as a `ChaosConfigError` at construction time, never at runtime:
+
+- Unknown preset name in `presets[]` - message names the offending name and lists the registered ones.
+- Custom preset value carrying `presets`, `customPresets`, `seed`, or `debug` - strict-key rejection.
+- Empty or whitespace-only preset name (in either `presets[]` or `customPresets` keys).
+- Custom preset whose name collides with a built-in (`slowNetwork`, `slow-api`, etc.) or with another custom preset.
+- Group name collision between a preset's `groups` and the user's `groups`. Workaround: copy the preset locally via `customPresets` and rename the colliding group.
+
+## Mutability
+
+Built-in preset configs are deep-frozen. Attempts to mutate them via `presets.slowNetwork` or `registry.get(...)` throw in strict mode (and are no-ops in sloppy mode). Custom presets passed via `customPresets` are NOT frozen on input - your own preset literals stay mutable in your code. The engine takes a deep clone at expansion time, so any post-construction tweaks you make are not observed.
+
+## Profiles vs presets
+
+Presets are the primitive resilience bundles. **Scenario profiles** are the layer above - one named entry that composes presets, seed, debug, and rule slices into a single identifier you reach for from many tests. See the [scenario profiles concept](./profiles) for the full surface, including the runtime override block applied at the inject site.
+
+## Legacy spread
+
+```typescript
+
+await injectChaos(page, {
+  ...presets.unstableApi,
+  seed: 42,
+});
+```
+
+Still supported for migration. The seed belongs at the root config level, so it can be added to any preset before injection. Prefer the declarative `presets:` field for new code.
+
+## Sharing targeting across preset rules
+
+When a preset's rules all hit the same API surface, register the shared targeting on the top-level [`matchers`](./matchers) registry and reference it from each rule with `matcher: 'name'`. Named matcher resolution runs after preset expansion, so rules brought in by a preset can reference top-level matchers without duplicating matcher fields.
+
+---
+
+# Page: Scenario profiles
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/profiles/
+
+A **scenario profile** is one named entry that composes presets, a seed pin, debug toggle, and rule slices into a single identifier. Multiple tests reach for the same profile name; one place owns the definition. Runtime overrides layer on top of the resolved profile so a CI run, a single test, or a parameterized matrix can tune one parameter without forking the profile.
+
+```typescript
+
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  seed: 1234,
+});
+```
+
+## When to reach for a profile vs a preset
+
+- A **preset** is a primitive bundle of rules for one resilience situation (`mobile-3g`, `checkout-degraded`, `offline-mode`).
+- A **profile** is the named scenario tests check against ("mobileCheckout", "team-saturday-deploy"). It can carry one or more preset names plus its own rule slices, seed, debug, and groups.
+
+Reach for presets when the test cares about the primitive (a slow API, a flaky stream). Reach for a profile when several tests should share the same named scenario, or when the scenario combines presets with seed pinning and rule slices that belong together.
+
+## The single built-in profile
+
+Chaos Maker ships **one** built-in profile, `mobileCheckout`, as a wiring demo. It composes the two presets that the canonical "mobile user under checkout instability" scenario already covers:
+
+```typescript
+// Equivalent to:
+//   { presets: ['mobile-3g', 'checkout-degraded'] }
+await injectChaos(page, { profile: 'mobile-checkout' });
+```
+
+| camelCase name   | Kebab alias        | Composes                              | Intent                                                                       |
+| ---------------- | ------------------ | ------------------------------------- | ---------------------------------------------------------------------------- |
+| `mobileCheckout` | `mobile-checkout`  | `mobile-3g`, `checkout-degraded`      | Wiring demo. Mobile network plus checkout-route instability.                 |
+
+That's the entire built-in list. Profiles are intentionally user-owned beyond this single demo - this is not an open catalog. Define the scenarios that match your product via `customProfiles` (or `defineProfile()` on the builder).
+
+The kebab alias shares object identity with its camelCase entry inside `ProfileRegistry`, mirroring the preset alias contract. `mobile-checkout` and `mobileCheckout` resolve to the exact same slice.
+
+## Custom profiles
+
+Register your own scenarios inline:
+
+```typescript
+await injectChaos(page, {
+  customProfiles: {
+    'team-saturday-deploy': {
+      presets: ['flaky-api'],
+      network: {
+        failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+      },
+      seed: 42,
+    },
+  },
+  profile: 'team-saturday-deploy',
+});
+```
+
+A profile slice may carry: `presets`, `seed`, `debug`, `groups`, plus the four rule categories (`network`, `ui`, `websocket`, `sse`). It may NOT carry `customPresets`, `customProfiles`, `profile`, `profileOverrides`, or `schemaVersion` - profile inheritance chains are out of scope. The validator rejects them with `code: 'profile_chain'` (or `unknown_field` from the strict schema, whichever fires first).
+
+Names fail-fast against the built-in `mobileCheckout` entry and against other custom profiles.
+
+## Runtime overrides
+
+`profileOverrides` is a slice applied at inject-time on top of a resolved profile. Rule arrays append; scalars (`seed`, `debug`) use last-write-wins precedence with the override layer on top:
+
+```typescript
+await injectChaos(page, {
+  profile: 'mobile-checkout',
+  profileOverrides: {
+    network: {
+      latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }],
+    },
+    seed: 9999,           // wins over any top-level or profile seed
+  },
+});
+```
+
+Use overrides to:
+- Pin a seed for one test without editing the profile definition.
+- Append an extra rule on a specific endpoint for a single test.
+- Force a clean run by switching debug on at the call site.
+
+`profileOverrides` may be passed without a `profile`. In that case it just appends extra rules onto the top-level config.
+
+## Precedence at a glance
+
+| Layer                                        | Rule arrays              | Scalars (`seed`, `debug`)        |
+| -------------------------------------------- | ------------------------ | -------------------------------- |
+| Profile slice (resolved from the registry)   | Appended first           | Lowest priority                  |
+| Top-level config fields                      | Appended second          | Beats profile, loses to overrides |
+| `profileOverrides`                           | Appended last            | Highest priority                 |
+
+`presets[]` from each layer merge in the same order and deduplicate by trimmed name, first-occurrence preserved.
+
+The full resolution pipeline inside `prepareChaosConfig` is:
+
+1. Zod pass 1 (strict, or passthrough + strip when `unknownFields: 'warn' | 'ignore'`).
+2. Build a per-instance `ProfileRegistry` seeded with the built-in `mobileCheckout` entry and any `customProfiles`; resolve `profile` + `profileOverrides` into a flat config via `applyProfile()`.
+3. Build a per-instance `PresetRegistry` and run `expandPresets()` against the resolved presets.
+4. Zod pass 2 (strict, on the fully expanded config).
+
+After step 2 the output has `profile`, `profileOverrides`, and `customProfiles` stripped. Steps 3 and 4 do not see profile fields at all - existing preset and validation semantics are unchanged.
+
+## Builder helper
+
+```typescript
+
+const config = new ChaosConfigBuilder()
+  .defineProfile('team-saturday-deploy', {
+    presets: ['flaky-api'],
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  })
+  .useProfile('team-saturday-deploy')
+  .overrideProfile({
+    network: { latencies: [{ urlPattern: '/api/extra', delayMs: 999, probability: 1 }] },
+  })
+  .withSeed(42)
+  .build();
+```
+
+`.useProfile()` is singular - calling it again replaces the previously set name. `.defineProfile()` rejects duplicate names within the builder. `.overrideProfile()` accumulates across calls: rule arrays append, scalars (`seed`, `debug`) use last-write-wins.
+
+## Determinism
+
+`applyProfile()` is pure functional. Same input, same registry, same output. Same resolved config plus the same seed produces an identical `ChaosEvent` sequence under PRNG - replay continues to work exactly as it does with presets.
+
+The brand cache short-circuits a re-validation only when validator options are empty (no `customValidators`, no `onDeprecation`, no `unknownFields`). Two distinct inputs whose `applyProfile` results match still get their own brand stamp - the cache key is the input object identity, not the resolved-shape equivalence.
+
+## Validation errors
+
+Every failure surfaces as a `ChaosConfigError` at construction:
+
+- `unknown_profile` - the name in `profile` is not registered.
+- `profile_collision` - a `customProfiles` name shadows the built-in `mobileCheckout` (or another custom profile).
+- `profile_chain` - a profile or override slice carries one of the forbidden coordination fields (`profile`, `profileOverrides`, `customProfiles`, `customPresets`, `schemaVersion`). The strict schema rejects most of these as `unknown_field` first; the dedicated code fires when slices reach `applyProfile` via the `warn` or `ignore` paths.
+- Empty or whitespace-only profile name in `profile`, `customProfiles` keys, or `defineProfile()`.
+
+## Mutability
+
+The built-in `mobileCheckout` slice is deep-frozen. `customProfiles` values are not frozen - your literals stay mutable. `applyProfile()` deep-clones before any append, so post-construction tweaks to your custom slices never leak into a running engine.
+
+## Sharing matcher targeting across rules
+
+When a profile ships several rules that should target the same surface, register the shared targeting on [`matchers`](./matchers) and reference it from each rule via `matcher: 'name'`. Named matcher resolution runs after profile expansion, so rules inside a profile slice can reference top-level matchers without re-declaring fields.
+
+---
+
+# Page: Seeded Reproducibility
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/seeded-reproducibility/
+
+Every probability roll inside Chaos Maker flows through a seeded PRNG. With the same `seed` and the same interaction sequence, Chaos Maker emits the same sequence of `ChaosEvent` decisions.
+
+```typescript
+await injectChaos(page, {
+  seed: 12345,
+  network: {
+    failures: [{ urlPattern: '/api/orders', statusCode: 503, probability: 0.5 }],
+  },
+});
+```
+
+## Auto-generated seeds
+
+When `seed` is omitted, Chaos Maker auto-generates a 32-bit seed during instance creation. Read it from the adapter and print it on failure.
+
+```typescript
+
+const seed = await getChaosSeed(page);
+console.error(formatSeedReproduction(seed));
+```
+
+See [Reproduce a flaky failure](/chaos-maker/latest/recipes/reproduce-flaky-failure/) for complete `afterEach` examples.
+
+## Replay boundaries
+
+The seed freezes Chaos Maker decisions:
+
+- Which matching rule wins each probability roll.
+- Whether `probability` applies or misses.
+- Which `onNth`, `everyNth`, and `afterN` counter checks pass for the same action order.
+- Which corruption strategy applies when the selected rule has one.
+- The emitted chaos event sequence, ignoring wall-clock `timestamp` values.
+
+The seed does not freeze the rest of the world:
+
+- Browser scheduling and task timing.
+- Wall-clock timestamps.
+- App-side state from storage, caches, or previous tests.
+- Network ordering created by the application under test.
+- Third-party services or real backend responses.
+- Assertions that depend on elapsed time instead of observable UI or log state.
+
+For replay, drive the same user actions in the same order and assert the chaos log shape, not exact timestamps. When a rule still does not fire, turn on `debug: true` and follow [Diagnose no chaos](/chaos-maker/latest/recipes/diagnose-no-chaos/).
+
+To capture the seed plus the full decision sequence as a single shareable artifact, see [Timeline and reporting](./timeline-and-reporting). `formatReportHtml` includes the same `formatSeedReproduction` line in `meta.replaySnippet` so the report doubles as a replay handle.
+
+---
+
+# Page: Service Worker Chaos
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/service-worker-chaos/
+
+Service Worker fetches run outside the page. Page-side `fetch` and `XMLHttpRequest` patches cannot see them, so Chaos Maker ships a small `@chaos-maker/core/sw` bundle plus adapter helpers that send config to the active worker.
+
+## Worker setup
+
+Classic workers can load the IIFE bundle with `importScripts`.
+
+```js
+// sw.js
+importScripts('/chaos-maker-sw.js');
+```
+
+Module workers can import the subpath directly.
+
+```js
+// sw-module.js
+
+installChaosSW({ source: 'message' });
+```
+
+Serve `node_modules/@chaos-maker/core/dist/sw.js` or `sw.mjs` from a URL inside the worker scope. The page-side helpers validate config, wait for a controller, send it over `postMessage`, and return only after the worker acknowledges it.
+
+## Adapter usage
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+
+await page.goto('/app-with-sw/');
+await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+await injectSWChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/data', statusCode: 503, probability: 1 }] },
+});
+
+await page.click('#refresh');
+const log = await getSWChaosLog(page);
+expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+await removeSWChaos(page);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.visit('/app-with-sw/');
+cy.window().should((win) => {
+  expect(win.navigator.serviceWorker.controller).to.not.be.null;
+});
+
+cy.injectSWChaos({
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/data', statusCode: 503, probability: 1 }] },
+});
+
+cy.get('#refresh').click();
+cy.getSWChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'network:failure' && event.applied)).to.equal(true);
+});
+cy.removeSWChaos();
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/app-with-sw/');
+await browser.waitUntil(() =>
+  browser.execute(() => !!navigator.serviceWorker.controller),
+);
+
+await browser.injectSWChaos({
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/data', statusCode: 503, probability: 1 }] },
+});
+
+await $('#refresh').click();
+const log = await browser.getSWChaosLog();
+expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+await browser.removeSWChaos();
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+
+await page.goto('http://localhost:3000/app-with-sw/');
+await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+
+await injectSWChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/data', statusCode: 503, probability: 1 }] },
+});
+
+await page.click('#refresh');
+const log = await getSWChaosLog(page);
+if (!log.some((event) => event.type === 'network:failure' && event.applied)) {
+  throw new Error('Expected SW chaos');
+}
+await removeSWChaos(page);
+```
+
+  </TabItem>
+</Tabs>
+
+## Logs and updates
+
+`getSWChaosLog()` reads events buffered in the page. `getSWChaosLogFromSW()` asks the worker for its in-memory log and is useful when debugging a race where the page listener missed an early broadcast.
+
+The bridge reapplies the last config after `controllerchange`, so an updated worker keeps the same chaos settings once it controls the page.
+
+## Limitations
+
+- `caches.match()` hits bypass `self.fetch`, so cached responses are not intercepted in v0.5.0.
+- Push and background sync events are outside this release.
+- Cross-origin workers for third-party widgets are not supported.
+
+---
+
+# Page: SSE Chaos
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/sse-chaos/
+
+Server-Sent Events use `EventSource`, not `fetch`, so streaming UI needs a separate chaos surface. Chaos Maker wraps `globalThis.EventSource` and intercepts inbound `MessageEvent`s before app listeners see them.
+
+## Config shape
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  sse: {
+    drops: [{ urlPattern: '/events', probability: 0.1 }],
+    delays: [{ urlPattern: '/events', delayMs: 500, probability: 1 }],
+    corruptions: [{ urlPattern: '/events', strategy: 'truncate', probability: 0.05 }],
+    closes: [{ urlPattern: '/events', afterMs: 2000, probability: 0.02 }],
+  },
+});
+```
+
+All SSE rules support `urlPattern`, `probability`, and request counting with `onNth`, `everyNth`, or `afterN`. Drop, delay, and corruption rules also support `eventType`.
+
+## Event types
+
+```typescript
+sse: {
+  drops: [
+    { urlPattern: '/events', eventType: 'token', probability: 0.2 },
+    { urlPattern: '/events', eventType: '*', probability: 0.05 },
+  ],
+}
+```
+
+`eventType: 'message'` targets unnamed default events. A named value targets `event:` frames with that name. `eventType: '*'` applies to every data event and automatically attaches when the app subscribes to new named events.
+
+## Events
+
+Chaos Maker emits:
+
+| Event | Meaning |
+| --- | --- |
+| `sse:drop` | An inbound SSE event was skipped. |
+| `sse:delay` | An inbound event was scheduled for later delivery. |
+| `sse:corrupt` | `event.data` was rewritten. |
+| `sse:close` | The `EventSource` was closed by chaos. |
+
+Each SSE event includes `detail.url`. Drop, delay, and corruption events include `detail.eventType`, and corruption events also include `detail.strategy`. Close events include `detail.reason` instead of `detail.eventType`.
+
+## Preset
+
+```typescript
+
+await injectChaos(page, {
+  ...presets.unreliableEventStream,
+  seed: 42,
+});
+```
+
+`unreliableEventStream` combines low-probability drops, a 200 ms delay, and occasional closes.
+
+---
+
+# Page: Timeline and reporting
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/timeline-and-reporting/
+
+`getChaosLog()` returns the full structured event stream. The reporting utilities turn that stream into a stable, file-shaped artifact you can attach to CI, drop into a PR comment, or open locally as a self-contained HTML timeline.
+
+```typescript
+  buildChaosReport,
+  formatReportHtml,
+  getChaosLog,
+  getChaosSeed,
+} from '@chaos-maker/playwright';
+
+const events = await getChaosLog(page);
+const seed = await getChaosSeed(page);
+
+const report = buildChaosReport(events, { seed, title: 'checkout flow' });
+writeFileSync('chaos-report.html', formatReportHtml(report));
+```
+
+The same surface is re-exported from `@chaos-maker/cypress`, `@chaos-maker/puppeteer`, and `@chaos-maker/webdriverio`.
+
+## What the report contains
+
+| Section | Source | What it answers |
+| --- | --- | --- |
+| `meta` | Aggregate of the full event array | Seed, title, generated-at, event count, applied/skipped totals, run duration, ready-to-copy replay snippet |
+| `ruleHits` | Debug stream attribution | Which rules applied or skipped, grouped by `ruleId`. Requires `debug: true` (see below) |
+| `transports` | Event `type` prefix | Network vs WebSocket vs SSE vs UI vs rule-group volume, with applied counts |
+| `skipReasons` | Debug stream skip stages | Why rules skipped, grouped by `{stage, skippedAt}` so you can see the dominant blocker at a glance |
+| `failures` | Outcome events | Every applied failure-class event (`network:failure`, `network:abort`, `network:cors`, `network:corruption`, or any `statusCode >= 500`), grouped by rule, type, and status |
+| `timeline` | Every event in emission order | Chronological audit trail with relative `+Nms` offsets and `formatStepTitle()` labels |
+
+`meta`, `transports`, `failures`, and `timeline` populate from outcome events alone and work on any run. `ruleHits` and `skipReasons` source from the debug stream, so add `debug: true` to your config when you want per-rule attribution and structured skip reasons in the report.
+
+## Output formats
+
+`formatReportJson`, `formatReportMarkdown`, and `formatReportHtml` all consume the same `ChaosReport` and emit strings. The core package never writes to disk; pass the string to `fs.writeFileSync` or `testInfo.attach` in your test.
+
+```typescript
+  buildChaosReport,
+  formatReportJson,
+  formatReportMarkdown,
+  formatReportHtml,
+} from '@chaos-maker/playwright';
+
+const report = buildChaosReport(events, { seed });
+
+const json = formatReportJson(report);            // pretty by default; { pretty: false } for one-liner
+const md = formatReportMarkdown(report);          // GitHub-flavored tables, drop into a PR comment
+const html = formatReportHtml(report);            // self-contained document, inline CSS, no <script>, no CDNs
+```
+
+The HTML output ships every section as a native `<details open>` block so reviewers can collapse what they do not need. There is no inline JavaScript and no external URL: opening the file from `file://` works the same as serving it.
+
+## Determinism
+
+`buildChaosReport(events, opts)` is a pure function. Given the same `events`, `seed`, `title`, and `now` it always produces the same report, and every formatter emits the same string for the same report. Two guards keep CI artifacts diff-friendly:
+
+- The timeline renders relative offsets (`+0ms`, `+125ms`), not absolute wall-clock times. Two runs that reproduce the same chaos sequence produce the same timeline rendering, even when the absolute `timestamp` values differ.
+- All aggregates have an explicit total ordering (counts desc, then names asc) so re-running a flaky test cannot reorder rows.
+
+In tests that snapshot the formatted output, pin `now` to a fixed value via `buildChaosReport(events, { now: 1_700_000_000_000 })`.
+
+## Filtering by transport
+
+`filterEventsByTransport(events, kind)` returns the subset of events whose `type` prefix maps to one bucket. The bucket taxonomy mirrors what `transports[]` reports.
+
+```typescript
+
+const wsEvents = filterEventsByTransport(events, 'websocket');
+```
+
+Valid kinds: `'network'`, `'websocket'`, `'sse'`, `'ui'`, `'rule-group'`. The single `'network'` bucket spans fetch and XHR because today's `ChaosEvent.detail` does not distinguish them.
+
+## CI patterns
+
+The Playwright adapter has the cleanest seam: write the report inside the same `afterEach` or test body that calls `getChaosLog`, then attach it with `testInfo.attach` so the HTML reporter renders a download link on failed runs.
+
+```typescript
+test('checkout survives slow API', async ({ page }, testInfo) => {
+  await injectChaos(page, { debug: true, network: { latencies: [/* … */] } });
+  // … run scenario …
+
+  const events = await getChaosLog(page);
+  const seed = await getChaosSeed(page);
+  const report = buildChaosReport(events, { seed, title: testInfo.title });
+  await testInfo.attach('chaos-report.html', {
+    body: formatReportHtml(report),
+    contentType: 'text/html',
+  });
+});
+```
+
+For Cypress, Puppeteer, and WebdriverIO, write the string to disk from the test process and upload it as a CI artifact using whatever your pipeline already does for screenshots.
+
+## Related
+
+- [Observability](./observability) for the underlying `ChaosEvent` taxonomy.
+- [Seeded reproducibility](./seeded-reproducibility) for how the replay snippet locks the run.
+- [Reporting API reference](/chaos-maker/latest/api/reporting/) for the full signature table.
+
+---
+
+# Page: Rule Validation
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/validation/
+
+Every adapter validates `ChaosConfig` from Node before it touches the page. Malformed configs throw `ChaosConfigError` with structured `ValidationIssue[]` so failures land in the test runner, not the browser console.
+
+## Where validation runs
+
+Adapters call `validateChaosConfig` immediately on entry to `injectChaos` (and `injectSWChaos`). Page-side `chaosUtils.start` also re-validates after deserialization, so the engine never trusts an unvalidated config. Validated configs carry a non-enumerable brand on a global `Symbol.for('chaos-maker.validated')` so subsequent calls short-circuit when no validation options change.
+
+## Strict by default
+
+`unknownFields` is `'reject'` by default. Pass `'warn'` or `'ignore'` only when you ship configs that intentionally carry extra metadata.
+
+| Mode | Throws? | Returned config | Console output |
+| --- | --- | --- | --- |
+| `'reject'` (default) | yes - `ChaosConfigError` listing every unknown path | n/a | n/a |
+| `'warn'` | no | parsed + unknowns stripped | one aggregated `console.warn` listing all unknown paths in deterministic sort order |
+| `'ignore'` | no | parsed + unknowns stripped | none |
+
+Both `'warn'` and `'ignore'` strip unknown fields from the returned config so they cannot leak into the engine, presets, or interceptors.
+
+```typescript
+
+const validated = validateChaosConfig(config, { unknownFields: 'warn' });
+```
+
+## Reading ChaosConfigError
+
+`ChaosConfigError.issues` is `ValidationIssue[]`. Issues are deterministically sorted by `path` then `code` and the rendered message caps at 50 entries with a `... and N more` summary line.
+
+```typescript
+
+try {
+  await injectChaos(page, config);
+} catch (e) {
+  if (e instanceof ChaosConfigError) {
+    for (const issue of e.issues) {
+      console.error(issue.path, issue.code, issue.ruleType, issue.message, issue.expected, issue.received);
+    }
+  }
+  throw e;
+}
+```
+
+`error.messages` returns the v0.4.x string array (`path: message`) for callers that grep stack traces.
+
+### Matcher issue codes
+
+The advanced matchers surface contributes four issue codes alongside the existing set:
+
+- `matcher_not_found` - rule references a `matcher` name not in the `matchers` registry.
+- `matcher_collision` - two `matchers` keys collide after `trim()`.
+- `matcher_inline_conflict` - rule mixes `matcher` with inline matcher fields.
+- `matcher_cycle` - registry entry carries its own `matcher` field. Reserved for future composition; observable today via untyped configs.
+
+A new `RuleType` value `matcher` carries these on the issue. See [Advanced matchers](./matchers) for the full surface.
+
+## Custom validators
+
+Run additional checks per `RuleType`. Validators receive each rule as `Readonly<unknown>`; narrow with a type guard. Mutating the rule arg is undefined behavior - Chaos Maker's engine deep-clones the canonical config at expansion time, so your mutations may not propagate.
+
+```typescript
+
+validateChaosConfig(config, {
+  customValidators: {
+    'network.failure': (rule, ctx) => {
+      const r = rule as { probability: number };
+      if (r.probability > 0.5) {
+        return [{
+          path: ctx.path,
+          code: 'custom',
+          ruleType: ctx.ruleType,
+          message: 'probability over 0.5 not allowed in CI',
+        }];
+      }
+      return [];
+    },
+  },
+});
+```
+
+## schemaVersion
+
+`ChaosConfig.schemaVersion?: 1` is reserved for forward-compat. Omit unless a future major release explicitly bumps it. Unknown values are rejected with `code: 'unknown_schema_version'` before any other Zod parsing runs, so the failure message is unambiguous.
+
+## Deprecation rails
+
+Pass `onDeprecation: (issue) => …` to receive a `ValidationIssue` whenever a deprecated field is set. The registry is empty for this release - the rails exist so the first deprecation is a one-line addition.
+
+## JSON Schema artifact
+
+`@chaos-maker/core` ships `dist/chaos-config.schema.json` plus a sidecar `dist/chaos-config.schema.notes.md`. Wire the JSON file as a `"$schema"` reference for IDE autocomplete:
+
+```json
+{
+  "$schema": "./node_modules/@chaos-maker/core/dist/chaos-config.schema.json",
+  "network": {
+    "failures": [
+      { "urlPattern": "/api", "statusCode": 503, "probability": 1 }
+    ]
+  }
+}
+```
+
+The artifact is a tooling approximation. Several Zod refinements do not translate:
+
+| Zod refinement | JSON Schema fate |
+| --- | --- |
+| Group-name dedup (`superRefine`) | dropped |
+| Mutually exclusive counting (`onNth` / `everyNth` / `afterN`) | weakly approximated |
+| WebSocket close-code range (`1000` or `3000-4999`) | translated as ranges; verify with the runtime validator |
+| WebSocket `reason` UTF-8 byte length `<= 123` | dropped (JSON Schema string length counts code points) |
+| GraphQL operation RegExp `/g` / `/y` flag rejection | dropped |
+| `graphqlOperation` accepting a `RegExp` instance | rendered as `string` |
+| Preset-name `.trim()` deduplication | dropped |
+
+Use the JSON Schema for IDE / external linters; use `validateChaosConfig` for actual gating in CI and at runtime. Treat divergence as expected - fix the runtime, not the artifact.
+
+## Brand short-circuit
+
+Validated configs carry a `Symbol.for('chaos-maker.validated')` brand carrying the validator's version number. A subsequent `validateChaosConfig` call with the same input and no options returns the input unchanged (referential equality). Stamping is the final step - a config that fails any layer is never branded.
+
+The brand is non-enumerable, non-writable, and non-configurable, so:
+
+- `JSON.parse(JSON.stringify(cfg))` strips it (re-validation on the page-side / SW boundary).
+- `serializeForTransport(cfg)` strips it (re-validation in the browser).
+- User code cannot forge a brand.
+
+## Migration from v0.4.x
+
+- v0.4.x configs validate unchanged - no new fields are required.
+- `ChaosConfigError.message` is enhanced with `code` and `expected` / `received`. Old test grep helpers can switch to `error.messages` to keep the v0.4.x string shape.
+- `injectChaos(page, config, { validation: { unknownFields: 'warn' } })` is the migration path if your configs carry intentional extra metadata.
+
+---
+
+# Page: Cypress
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/getting-started/cypress/
+
+Cypress injects Chaos Maker through custom commands. Register the Node-side task plus the browser-side support module once, then call `cy.injectChaos()` before `cy.visit()`.
+
+```bash
+npm install @chaos-maker/core @chaos-maker/cypress
+```
+
+In `cypress.config.ts`, register the `chaos:getUmdSource` task so `cy.injectChaos()` can load the core UMD bundle at runtime:
+
+```typescript
+
+export default defineConfig({
+  e2e: {
+    baseUrl: 'http://localhost:3000',
+    setupNodeEvents(on) {
+      registerChaosTasks(on);
+    },
+  },
+});
+```
+
+Then in `cypress/support/e2e.ts`, register the browser-side commands:
+
+```typescript
+```
+
+The fastest start is a named preset - drop a scenario into the config and run:
+
+```typescript
+describe('checkout', () => {
+  it('works under degraded mobile network', () => {
+    cy.injectChaos({ presets: ['mobile-3g', 'checkout-degraded'], seed: 42 });
+    cy.visit('/checkout');
+    cy.get('[data-testid="checkout-form"]').should('be.visible');
+  });
+});
+```
+
+See the [Presets catalog](/chaos-maker/latest/concepts/presets/) for the full list. When several tests should share the same named scenario, wrap it into a [scenario profile](/chaos-maker/latest/concepts/profiles/) - the one built-in demo profile composes both presets above into a single name:
+
+```typescript
+cy.injectChaos({ profile: 'mobile-checkout', seed: 42 });
+```
+
+Pass `profileOverrides` alongside `profile` to tune one parameter for this call without forking the profile. When you need precise control, drop down to explicit rules:
+
+```typescript
+describe('orders', () => {
+  it('shows error state when the API fails', () => {
+    cy.injectChaos({
+      seed: 42,
+      network: {
+        failures: [{ urlPattern: '/api/orders', statusCode: 503, probability: 1 }],
+      },
+    });
+
+    cy.visit('/orders');
+    cy.get('[data-testid="error-state"]').should('be.visible');
+    cy.getChaosLog().should((log) => {
+      expect(log.some((event) => event.type === 'network:failure' && event.applied)).to.equal(true);
+    });
+  });
+});
+```
+
+Log the replay seed only when a test fails:
+
+```typescript
+
+afterEach(function () {
+  if (this.currentTest?.state === 'failed') {
+    cy.getChaosSeed().then((seed) => {
+      console.error(formatSeedReproduction(seed));
+    });
+  }
+});
+```
+
+## Command log
+
+Cypress command log entries include the same event types returned by `cy.getChaosLog()`, so test output and assertions stay aligned.
+
+## Next steps
+
+- [Cypress adapter API](/chaos-maker/latest/adapters/cypress/)
+- [Flaky API with retries](/chaos-maker/latest/recipes/flaky-api-with-retries/)
+- [Observability](/chaos-maker/latest/concepts/observability/)
+
+---
+
+# Page: Install
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/getting-started/install/
+
+Chaos Maker has one shared core package and one adapter package per test framework. Install core plus the adapter used by your test suite.
+
+## Package installs
+
+```bash
+# Playwright
+npm install @chaos-maker/core @chaos-maker/playwright
+
+# Cypress
+npm install @chaos-maker/core @chaos-maker/cypress
+
+# WebdriverIO
+npm install @chaos-maker/core @chaos-maker/webdriverio
+
+# Puppeteer
+npm install @chaos-maker/core @chaos-maker/puppeteer
+```
+
+## Framework entry points
+
+| Framework | Package | Injection timing |
+| --- | --- | --- |
+| Playwright | `@chaos-maker/playwright` | Before `page.goto()` |
+| Cypress | `@chaos-maker/cypress` | Before `cy.visit()` |
+| WebdriverIO | `@chaos-maker/webdriverio` | After `browser.url()` |
+| Puppeteer | `@chaos-maker/puppeteer` | Before `page.goto()` for network and WebSocket chaos |
+
+## Verify install
+
+Build the package that owns your tests, then run one smoke test with a fixed `seed` and a `getChaosLog()` assertion. If a failure occurs, copy the seed into the test to replay the same probability decisions.
+
+---
+
+# Page: Playwright
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/getting-started/playwright/
+
+Playwright is the best fit when you need chaos from the first page load. The adapter registers Chaos Maker as an init script before `page.goto()`.
+
+```bash
+npm install @chaos-maker/core @chaos-maker/playwright
+```
+
+The fastest start is a named preset - drop a scenario into the config and run:
+
+```typescript
+
+test('checkout works under degraded mobile network', async ({ page }) => {
+  await injectChaos(page, { presets: ['mobile-3g', 'checkout-degraded'], seed: 42 });
+  await page.goto('/checkout');
+  await expect(page.locator('[data-testid="checkout-form"]')).toBeVisible();
+});
+```
+
+See the [Presets catalog](/chaos-maker/latest/concepts/presets/) for the full list. When several tests should share the same named scenario, wrap it into a [scenario profile](/chaos-maker/latest/concepts/profiles/) - the one built-in demo profile composes both presets above into a single name:
+
+```typescript
+await injectChaos(page, { profile: 'mobile-checkout', seed: 42 });
+```
+
+Pass `profileOverrides` alongside `profile` to tune one parameter for this call without forking the profile. When you need precise control, drop down to explicit rules:
+
+```typescript
+
+test('shows error state when the API fails', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 42,
+    network: {
+      failures: [{ urlPattern: '/api/orders', statusCode: 503, probability: 1 }],
+    },
+  });
+
+  await page.goto('/orders');
+  await expect(page.locator('[data-testid="error-state"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+  console.info('Chaos seed:', await getChaosSeed(page));
+});
+```
+
+Log the replay seed only when a test fails:
+
+```typescript
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) {
+    console.error(formatSeedReproduction(await getChaosSeed(page)));
+  }
+});
+```
+
+## Trace integration
+
+Pass `testInfo` with tracing enabled to annotate Playwright traces and attach the chaos log.
+
+```typescript
+await injectChaos(page, config, { tracing: true, testInfo });
+```
+
+The fixture entry point can also wire tracing automatically for suites that prefer shared setup.
+
+## Next steps
+
+- [Playwright adapter API](/chaos-maker/latest/adapters/playwright/)
+- [Slow checkout recipe](/chaos-maker/latest/recipes/slow-checkout/)
+- [Seeded reproducibility](/chaos-maker/latest/concepts/seeded-reproducibility/)
+
+---
+
+# Page: Puppeteer
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/getting-started/puppeteer/
+
+Puppeteer uses `page.evaluateOnNewDocument()` so network and WebSocket chaos are installed before app scripts run. Launch headless Chromium with `headless: true`.
+
+```bash
+npm install @chaos-maker/core @chaos-maker/puppeteer
+```
+
+The fastest start is a named preset - drop a scenario into the config and run:
+
+```typescript
+
+const browser = await puppeteer.launch({ headless: true });
+const page = await browser.newPage();
+
+await injectChaos(page, { presets: ['mobile-3g', 'checkout-degraded'], seed: 42 });
+await page.goto('http://localhost:3000/checkout');
+await page.waitForSelector('[data-testid="checkout-form"]');
+
+await browser.close();
+```
+
+See the [Presets catalog](/chaos-maker/latest/concepts/presets/) for the full list. When several tests should share the same named scenario, wrap it into a [scenario profile](/chaos-maker/latest/concepts/profiles/) - the one built-in demo profile composes both presets above into a single name:
+
+```typescript
+await injectChaos(page, { profile: 'mobile-checkout', seed: 42 });
+```
+
+Pass `profileOverrides` alongside `profile` to tune one parameter for this call without forking the profile. When you need precise control, drop down to explicit rules:
+
+```typescript
+
+const browser = await puppeteer.launch({ headless: true });
+const page = await browser.newPage();
+
+await injectChaos(page, {
+  seed: 42,
+  network: {
+    failures: [{ urlPattern: '/api/orders', statusCode: 503, probability: 1 }],
+  },
+});
+
+await page.goto('http://localhost:3000/orders');
+await page.waitForSelector('[data-testid="error-state"]');
+
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:failure' && event.applied)) {
+  throw new Error('Expected chaos to apply');
+}
+
+await removeChaos(page);
+await browser.close();
+```
+
+Log the replay seed in the failure path:
+
+```typescript
+
+try {
+  await page.waitForSelector('[data-testid="error-state"]');
+} catch (error) {
+  console.error(formatSeedReproduction(await getChaosSeed(page)));
+  throw error;
+}
+```
+
+## UI chaos timing
+
+DOM assaults need `document.body`. For UI chaos, load the bundle before navigation, then start the UI config after `page.goto()`.
+
+```typescript
+await injectChaos(page, {});
+await page.goto('http://localhost:3000/settings');
+await page.evaluate((config) => (window as any).chaosUtils.start(config), {
+  seed: 42,
+  ui: { assaults: [{ selector: 'button.save', action: 'disable', probability: 1 }] },
+});
+```
+
+## Next steps
+
+- [Puppeteer adapter API](/chaos-maker/latest/adapters/puppeteer/)
+- [Degraded UI buttons](/chaos-maker/latest/recipes/degraded-ui-buttons/)
+- [Chaos types](/chaos-maker/latest/concepts/chaos-types/)
+
+---
+
+# Page: WebdriverIO
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/getting-started/webdriverio/
+
+WebdriverIO has no cross-browser pre-navigation hook, so call `injectChaos()` after `browser.url()`. Initial-load requests are not intercepted in this adapter.
+
+```bash
+npm install @chaos-maker/core @chaos-maker/webdriverio
+```
+
+The fastest start is a named preset - drop a scenario into the config and run:
+
+```typescript
+
+describe('checkout', () => {
+  it('works under degraded mobile network', async () => {
+    await browser.url('/checkout');
+    await injectChaos(browser, { presets: ['mobile-3g', 'checkout-degraded'], seed: 42 });
+    await $('[data-testid="checkout-form"]').waitForDisplayed();
+  });
+});
+```
+
+See the [Presets catalog](/chaos-maker/latest/concepts/presets/) for the full list. When several tests should share the same named scenario, wrap it into a [scenario profile](/chaos-maker/latest/concepts/profiles/) - the one built-in demo profile composes both presets above into a single name:
+
+```typescript
+await injectChaos(browser, { profile: 'mobile-checkout', seed: 42 });
+```
+
+Pass `profileOverrides` alongside `profile` to tune one parameter for this call without forking the profile. When you need precise control, drop down to explicit rules:
+
+```typescript
+
+describe('orders', () => {
+  it('shows error state when the API fails', async () => {
+    await browser.url('/orders');
+    await injectChaos(browser, {
+      seed: 42,
+      network: {
+        failures: [{ urlPattern: '/api/orders', statusCode: 503, probability: 1 }],
+      },
+    });
+
+    await $('#reload-orders').click();
+    await expect($('[data-testid="error-state"]')).toBeDisplayed();
+
+    const log = await getChaosLog(browser);
+    expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+  });
+});
+```
+
+Log the replay seed only when a test fails. WDIO's `afterTest` runner hook (in `wdio.conf.ts`) is the reliable place: `passed` is supplied directly, with no Mocha-internal state to inspect.
+
+```typescript
+// wdio.conf.ts
+
+export const config = {
+  // …
+  async afterTest(_test, _context, { passed }) {
+    if (passed) return;
+    console.error(formatSeedReproduction(await getChaosSeed(browser)));
+  },
+};
+```
+
+## Custom commands
+
+Call `registerChaosCommands(browser)` in a WDIO setup hook if you prefer `browser.injectChaos(config)`, `browser.getChaosLog()`, and related commands.
+
+## Next steps
+
+- [WebdriverIO adapter API](/chaos-maker/latest/adapters/webdriverio/)
+- [Nth request fails](/chaos-maker/latest/recipes/nth-request-fails/)
+- [Adapter comparison](/chaos-maker/latest/adapters/playwright/)
+
+---
+
+# Page: Why Frontend Chaos?
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/rationale/why-frontend-chaos/
+
+Frontend apps are where users experience backend failures. A retry policy, skeleton state, disabled button, or WebSocket reconnect loop can be correct in code review and still fail when real browser APIs behave badly.
+
+Chaos Maker lets product teams test those failure paths inside the same E2E suites that already protect happy paths.
+
+## What this catches
+
+- Error states that never render because the app assumes JSON always parses.
+- Retry buttons that issue duplicate writes.
+- Loading states that block the user forever.
+- WebSocket UIs that silently stop updating after a disconnect.
+- Checkout and upload flows that have no abort recovery.
+
+## Why browser-side injection
+
+Browser-side chaos needs no backend changes, shared test environment, or proxy infrastructure. It patches standard APIs in the test page and records every decision as a `ChaosEvent`, which keeps the blast radius small and the assertions close to the UI behavior.
+
+## What comes later
+
+v0.3.0 added framework reach, docs, and deterministic replay. v0.4.0 closed protocol-level gaps (Service Worker, SSE, GraphQL). v0.5.0 sharpens the authoring surface with rule groups, presets, debug mode, and structured rule validation.
+
+---
+
+# Page: Abort Upload Midflight
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/abort-upload-midflight/
+
+Abort an upload request after it starts and assert that the UI exits the uploading state.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { aborts: [{ urlPattern: '/api/uploads', timeout: 500, probability: 1 }] },
+});
+await page.goto('/upload');
+await page.setInputFiles('input[type="file"]', 'fixtures/photo.png');
+await page.click('[data-testid="upload"]');
+await expect(page.locator('[data-testid="upload-error"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'network:abort' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: { aborts: [{ urlPattern: '/api/uploads', timeout: 500, probability: 1 }] },
+});
+cy.visit('/upload');
+cy.get('input[type="file"]').selectFile('cypress/fixtures/photo.png');
+cy.get('[data-testid="upload"]').click();
+cy.get('[data-testid="upload-error"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'network:abort' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/upload');
+await injectChaos(browser, {
+  seed: 42,
+  network: { aborts: [{ urlPattern: '/api/uploads', timeout: 500, probability: 1 }] },
+});
+await $('input[type="file"]').setValue('/absolute/path/to/photo.png');
+await $('[data-testid="upload"]').click();
+await expect($('[data-testid="upload-error"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'network:abort' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { aborts: [{ urlPattern: '/api/uploads', timeout: 500, probability: 1 }] },
+});
+await page.goto('http://localhost:3000/upload');
+const input = await page.$('input[type="file"]');
+await input!.uploadFile('/absolute/path/to/photo.png');
+await page.click('[data-testid="upload"]');
+await page.waitForSelector('[data-testid="upload-error"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:abort' && event.applied)) {
+  throw new Error('Expected upload abort');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: AI Chat Streaming Under Flaky SSE
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/ai-chat-streaming-sse/
+
+AI chat and notification screens often depend on one long-lived `EventSource`. Drop or delay named token events and assert that the UI stays recoverable.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  sse: {
+    drops: [{ urlPattern: '/chat/stream', eventType: 'token', probability: 0.15 }],
+    delays: [{ urlPattern: '/chat/stream', eventType: 'token', delayMs: 750, probability: 1 }],
+  },
+});
+
+await page.goto('/chat');
+await page.getByRole('textbox').fill('Summarize the incident');
+await page.getByRole('button', { name: 'Send' }).click();
+
+await expect(page.locator('[data-testid="streaming-indicator"]')).toBeVisible();
+await expect(page.locator('[data-testid="retry-stream"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'sse:drop' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  sse: {
+    drops: [{ urlPattern: '/chat/stream', eventType: 'token', probability: 0.15 }],
+    delays: [{ urlPattern: '/chat/stream', eventType: 'token', delayMs: 750, probability: 1 }],
+  },
+});
+
+cy.visit('/chat');
+cy.findByRole('textbox').type('Summarize the incident');
+cy.findByRole('button', { name: 'Send' }).click();
+
+cy.get('[data-testid="streaming-indicator"]').should('be.visible');
+cy.get('[data-testid="retry-stream"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'sse:drop' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/chat');
+await injectChaos(browser, {
+  seed: 42,
+  sse: {
+    drops: [{ urlPattern: '/chat/stream', eventType: 'token', probability: 0.15 }],
+    delays: [{ urlPattern: '/chat/stream', eventType: 'token', delayMs: 750, probability: 1 }],
+  },
+});
+
+await $('[data-testid="prompt"]').setValue('Summarize the incident');
+await $('[data-testid="send"]').click();
+
+await expect($('[data-testid="streaming-indicator"]')).toBeDisplayed();
+await expect($('[data-testid="retry-stream"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'sse:drop' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  sse: {
+    drops: [{ urlPattern: '/chat/stream', eventType: 'token', probability: 0.15 }],
+    delays: [{ urlPattern: '/chat/stream', eventType: 'token', delayMs: 750, probability: 1 }],
+  },
+});
+
+await page.goto('http://localhost:3000/chat');
+await page.type('[data-testid="prompt"]', 'Summarize the incident');
+await page.click('[data-testid="send"]');
+
+await page.waitForSelector('[data-testid="streaming-indicator"]');
+await page.waitForSelector('[data-testid="retry-stream"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'sse:drop' && event.applied)) {
+  throw new Error('Expected SSE drop');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Corrupt JSON Response
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/corrupt-json-response/
+
+Corrupt a JSON response and assert that the app renders a parse-safe error instead of crashing.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { corruptions: [{ urlPattern: '/api/profile', strategy: 'malformed-json', probability: 1 }] },
+});
+await page.goto('/profile');
+await expect(page.locator('[data-testid="parse-error"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'network:corruption' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: { corruptions: [{ urlPattern: '/api/profile', strategy: 'malformed-json', probability: 1 }] },
+});
+cy.visit('/profile');
+cy.get('[data-testid="parse-error"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'network:corruption' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/profile');
+await injectChaos(browser, {
+  seed: 42,
+  network: { corruptions: [{ urlPattern: '/api/profile', strategy: 'malformed-json', probability: 1 }] },
+});
+await $('#reload-profile').click();
+await expect($('[data-testid="parse-error"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'network:corruption' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { corruptions: [{ urlPattern: '/api/profile', strategy: 'malformed-json', probability: 1 }] },
+});
+await page.goto('http://localhost:3000/profile');
+await page.waitForSelector('[data-testid="parse-error"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:corruption' && event.applied)) {
+  throw new Error('Expected corrupt JSON chaos');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: CORS Preflight Block
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/cors-preflight-block/
+
+Simulate a browser-style CORS/network failure and assert that the UI explains the blocked integration.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { cors: [{ urlPattern: '/api/external-tax', methods: ['OPTIONS', 'POST'], probability: 1 }] },
+});
+await page.goto('/checkout');
+await page.click('#estimate-tax');
+await expect(page.locator('[data-testid="tax-service-error"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'network:cors' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: { cors: [{ urlPattern: '/api/external-tax', methods: ['OPTIONS', 'POST'], probability: 1 }] },
+});
+cy.visit('/checkout');
+cy.get('#estimate-tax').click();
+cy.get('[data-testid="tax-service-error"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'network:cors' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/checkout');
+await injectChaos(browser, {
+  seed: 42,
+  network: { cors: [{ urlPattern: '/api/external-tax', methods: ['OPTIONS', 'POST'], probability: 1 }] },
+});
+await $('#estimate-tax').click();
+await expect($('[data-testid="tax-service-error"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'network:cors' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { cors: [{ urlPattern: '/api/external-tax', methods: ['OPTIONS', 'POST'], probability: 1 }] },
+});
+await page.goto('http://localhost:3000/checkout');
+await page.click('#estimate-tax');
+await page.waitForSelector('[data-testid="tax-service-error"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:cors' && event.applied)) {
+  throw new Error('Expected CORS chaos');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Degraded UI Buttons
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/degraded-ui-buttons/
+
+Disable a critical button and assert that the page exposes an alternate path or an actionable message.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {});
+await page.goto('/settings');
+await page.evaluate((config) => (window as any).chaosUtils.start(config), {
+  seed: 42,
+  ui: { assaults: [{ selector: 'button.save', action: 'disable', probability: 1 }] },
+});
+await expect(page.locator('button.save')).toBeDisabled();
+await expect(page.locator('[data-testid="autosave-state"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'ui:assault' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({});
+cy.visit('/settings');
+cy.window().then((win) => {
+  (win as any).chaosUtils.start({
+    seed: 42,
+    ui: { assaults: [{ selector: 'button.save', action: 'disable', probability: 1 }] },
+  });
+});
+cy.get('button.save').should('be.disabled');
+cy.get('[data-testid="autosave-state"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'ui:assault' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/settings');
+await injectChaos(browser, {
+  seed: 42,
+  ui: { assaults: [{ selector: 'button.save', action: 'disable', probability: 1 }] },
+});
+await expect($('button.save')).toBeDisabled();
+await expect($('[data-testid="autosave-state"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'ui:assault' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {});
+await page.goto('http://localhost:3000/settings');
+await page.evaluate((config) => (window as any).chaosUtils.start(config), {
+  seed: 42,
+  ui: { assaults: [{ selector: 'button.save', action: 'disable', probability: 1 }] },
+});
+const disabled = await page.$eval('button.save', (button) => (button as HTMLButtonElement).disabled);
+if (!disabled) throw new Error('Expected save button to be disabled');
+await page.waitForSelector('[data-testid="autosave-state"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'ui:assault' && event.applied)) {
+  throw new Error('Expected UI assault chaos');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Diagnose No Chaos
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/diagnose-no-chaos/
+
+Turn on `debug: true`, collect the log, then read `applied: false` entries. A disabled group produces both `rule-group:gated` and a debug `rule-skip-group` stage.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+
+test('explains a disabled payment group', async ({ page }) => {
+  await injectChaos(page, {
+    debug: true,
+    groups: [{ name: 'payments', enabled: false }],
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1, group: 'payments' }],
+    },
+  });
+
+  await page.goto('/checkout');
+  await page.click('#pay-now');
+
+  const misses = (await getChaosLog(page)).filter((event) => event.applied === false);
+  expect(misses.some((event) => event.type === 'rule-group:gated' && event.detail.groupName === 'payments')).toBe(true);
+  expect(misses.some((event) => event.type === 'debug' && event.detail.stage === 'rule-skip-group')).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+it('explains a disabled payment group', () => {
+  cy.injectChaos({
+    debug: true,
+    groups: [{ name: 'payments', enabled: false }],
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1, group: 'payments' }],
+    },
+  });
+
+  cy.visit('/checkout');
+  cy.get('#pay-now').click();
+  cy.getChaosLog().should((log) => {
+    const misses = log.filter((event) => event.applied === false);
+    expect(misses.some((event) => event.type === 'rule-group:gated' && event.detail.groupName === 'payments')).to.equal(true);
+    expect(misses.some((event) => event.type === 'debug' && event.detail.stage === 'rule-skip-group')).to.equal(true);
+  });
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+
+it('explains a disabled payment group', async () => {
+  await browser.url('/checkout');
+  await injectChaos(browser, {
+    debug: true,
+    groups: [{ name: 'payments', enabled: false }],
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1, group: 'payments' }],
+    },
+  });
+
+  await $('#pay-now').click();
+  const misses = (await getChaosLog(browser)).filter((event) => event.applied === false);
+  expect(misses.some((event) => event.type === 'rule-group:gated' && event.detail.groupName === 'payments')).toBe(true);
+  expect(misses.some((event) => event.type === 'debug' && event.detail.stage === 'rule-skip-group')).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+
+await injectChaos(page, {
+  debug: true,
+  groups: [{ name: 'payments', enabled: false }],
+  network: {
+    failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 1, group: 'payments' }],
+  },
+});
+
+await page.goto('http://localhost:3000/checkout');
+await page.click('#pay-now');
+
+const misses = (await getChaosLog(page)).filter((event) => event.applied === false);
+if (!misses.some((event) => event.type === 'rule-group:gated' && event.detail.groupName === 'payments')) {
+  throw new Error('Expected a gated group event');
+}
+if (!misses.some((event) => event.type === 'debug' && event.detail.stage === 'rule-skip-group')) {
+  throw new Error('Expected a debug group skip event');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Fail One GraphQL Operation
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/fail-graphql-operation/
+
+GraphQL clients often send every operation to `/graphql`. Use `graphqlOperation` to fail one operation without breaking unrelated queries on the same URL.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: {
+    failures: [{
+      urlPattern: '/graphql',
+      graphqlOperation: 'GetUser',
+      statusCode: 503,
+      probability: 1,
+    }],
+  },
+});
+
+await page.goto('/profile');
+await expect(page.locator('[data-testid="profile-error"]')).toBeVisible();
+await page.getByRole('button', { name: 'Search products' }).click();
+await expect(page.locator('[data-testid="products"]')).toBeVisible();
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: {
+    failures: [{
+      urlPattern: '/graphql',
+      graphqlOperation: 'GetUser',
+      statusCode: 503,
+      probability: 1,
+    }],
+  },
+});
+
+cy.visit('/profile');
+cy.get('[data-testid="profile-error"]').should('be.visible');
+cy.findByRole('button', { name: 'Search products' }).click();
+cy.get('[data-testid="products"]').should('be.visible');
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/profile');
+await injectChaos(browser, {
+  seed: 42,
+  network: {
+    failures: [{
+      urlPattern: '/graphql',
+      graphqlOperation: 'GetUser',
+      statusCode: 503,
+      probability: 1,
+    }],
+  },
+});
+
+await $('#reload-profile').click();
+await expect($('[data-testid="profile-error"]')).toBeDisplayed();
+await $('[data-testid="search-products"]').click();
+await expect($('[data-testid="products"]')).toBeDisplayed();
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: {
+    failures: [{
+      urlPattern: '/graphql',
+      graphqlOperation: /^GetUser$/,
+      statusCode: 503,
+      probability: 1,
+    }],
+  },
+});
+
+await page.goto('http://localhost:3000/profile');
+await page.waitForSelector('[data-testid="profile-error"]');
+await page.click('[data-testid="search-products"]');
+await page.waitForSelector('[data-testid="products"]');
+```
+
+  </TabItem>
+</Tabs>
+
+`graphqlOperation` is an additional matcher. `urlPattern` and `methods` still apply, so a rule can target only `POST GetUser` or only persisted-query `GET GetUser` when needed.
+
+If a rule with `graphqlOperation` seems inactive, check the chaos log for a `reason: 'graphql-body-unparseable'` diagnostic. Multipart, streaming, and XHR `Blob` bodies cannot be inspected for an operation name and emit this event with `applied: false` instead of matching.
+
+---
+
+# Page: Flaky API With Retries
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/flaky-api-with-retries/
+
+Fail the first matching request and assert that the retry path recovers.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/dashboard', statusCode: 503, probability: 1, onNth: 1 }] },
+});
+await page.goto('/dashboard');
+await expect(page.locator('[data-testid="error-state"]')).toBeVisible();
+await page.click('[data-testid="retry-button"]');
+await expect(page.locator('[data-testid="dashboard-content"]')).toBeVisible();
+expect((await getChaosLog(page)).some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/dashboard', statusCode: 503, probability: 1, onNth: 1 }] },
+});
+cy.visit('/dashboard');
+cy.get('[data-testid="error-state"]').should('be.visible');
+cy.get('[data-testid="retry-button"]').click();
+cy.get('[data-testid="dashboard-content"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'network:failure' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/dashboard');
+await injectChaos(browser, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/dashboard', statusCode: 503, probability: 1, onNth: 1 }] },
+});
+await $('#reload-dashboard').click();
+await expect($('[data-testid="error-state"]')).toBeDisplayed();
+await $('[data-testid="retry-button"]').click();
+await expect($('[data-testid="dashboard-content"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/dashboard', statusCode: 503, probability: 1, onNth: 1 }] },
+});
+await page.goto('http://localhost:3000/dashboard');
+await page.waitForSelector('[data-testid="error-state"]');
+await page.click('[data-testid="retry-button"]');
+await page.waitForSelector('[data-testid="dashboard-content"]');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:failure' && event.applied)) {
+  throw new Error('Expected one failed dashboard request');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Nth Request Fails
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/nth-request-fails/
+
+Fail only the third matching request to exercise retry and partial-data behavior without making every request fail.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/search', statusCode: 503, probability: 1, onNth: 3 }] },
+});
+await page.goto('/search');
+for (const term of ['a', 'ab', 'abc']) await page.fill('[name="q"]', term);
+await expect(page.locator('[data-testid="retry-inline"]')).toBeVisible();
+expect((await getChaosLog(page)).filter((event) => event.type === 'network:failure' && event.applied)).toHaveLength(1);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/search', statusCode: 503, probability: 1, onNth: 3 }] },
+});
+cy.visit('/search');
+['a', 'ab', 'abc'].forEach((term) => cy.get('[name="q"]').clear().type(term));
+cy.get('[data-testid="retry-inline"]').should('be.visible');
+cy.getChaosLog().should((log) => {
+  expect(log.filter((event) => event.type === 'network:failure' && event.applied)).to.have.length(1);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/search');
+await injectChaos(browser, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/search', statusCode: 503, probability: 1, onNth: 3 }] },
+});
+for (const term of ['a', 'ab', 'abc']) await $('[name="q"]').setValue(term);
+await expect($('[data-testid="retry-inline"]')).toBeDisplayed();
+expect((await getChaosLog(browser)).filter((event) => event.type === 'network:failure' && event.applied)).toHaveLength(1);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  network: { failures: [{ urlPattern: '/api/search', statusCode: 503, probability: 1, onNth: 3 }] },
+});
+await page.goto('http://localhost:3000/search');
+for (const term of ['a', 'ab', 'abc']) {
+  await page.click('[name="q"]', { clickCount: 3 });
+  await page.type('[name="q"]', term);
+}
+await page.waitForSelector('[data-testid="retry-inline"]');
+const failures = (await getChaosLog(page)).filter((event) => event.type === 'network:failure' && event.applied);
+if (failures.length !== 1) throw new Error('Expected one nth failure');
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Reproduce a Flaky Failure
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/reproduce-flaky-failure/
+
+Use this loop when a test fails only sometimes:
+
+1. Log the chaos seed only on failure.
+2. Put that seed into the config.
+3. Re-run the same user actions.
+4. Assert the log shape so the replay proves the same chaos path.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+  formatSeedReproduction,
+  getChaosLog,
+  getChaosSeed,
+  injectChaos,
+} from '@chaos-maker/playwright';
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) {
+    console.error(formatSeedReproduction(await getChaosSeed(page)));
+  }
+});
+
+test('replays checkout failure', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 1234,
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  });
+
+  await page.goto('/checkout');
+  await page.click('#pay-now');
+  await expect(page.locator('[data-testid="payment-error"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+
+afterEach(function () {
+  if (this.currentTest?.state === 'failed') {
+    cy.getChaosSeed().then((seed) => {
+      console.error(formatSeedReproduction(seed));
+    });
+  }
+});
+
+it('replays checkout failure', () => {
+  cy.injectChaos({
+    seed: 1234,
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  });
+
+  cy.visit('/checkout');
+  cy.get('#pay-now').click();
+  cy.get('[data-testid="payment-error"]').should('be.visible');
+  cy.getChaosLog().should((log) => {
+    expect(log.some((event) => event.type === 'network:failure' && event.applied)).to.equal(true);
+  });
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+  formatSeedReproduction,
+  getChaosLog,
+  getChaosSeed,
+  injectChaos,
+} from '@chaos-maker/webdriverio';
+
+afterEach(async function () {
+  if (this.currentTest?.state === 'failed') {
+    console.error(formatSeedReproduction(await getChaosSeed(browser)));
+  }
+});
+
+it('replays checkout failure', async () => {
+  await browser.url('/checkout');
+  await injectChaos(browser, {
+    seed: 1234,
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  });
+
+  await $('#pay-now').click();
+  await expect($('[data-testid="payment-error"]')).toBeDisplayed();
+
+  const log = await getChaosLog(browser);
+  expect(log.some((event) => event.type === 'network:failure' && event.applied)).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+  formatSeedReproduction,
+  getChaosLog,
+  getChaosSeed,
+  injectChaos,
+} from '@chaos-maker/puppeteer';
+
+try {
+  await injectChaos(page, {
+    seed: 1234,
+    network: {
+      failures: [{ urlPattern: '/api/payments', statusCode: 503, probability: 0.3 }],
+    },
+  });
+
+  await page.goto('http://localhost:3000/checkout');
+  await page.click('#pay-now');
+  await page.waitForSelector('[data-testid="payment-error"]');
+
+  const log = await getChaosLog(page);
+  if (!log.some((event) => event.type === 'network:failure' && event.applied)) {
+    throw new Error('Expected payment failure chaos');
+  }
+} catch (error) {
+  console.error(formatSeedReproduction(await getChaosSeed(page)));
+  throw error;
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: Slow Checkout
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/slow-checkout/
+
+Simulate a slow payment endpoint and assert that the UI shows progress while preventing duplicate submits.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+
+test('checkout waits safely on slow payment API', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 42,
+    network: { latencies: [{ urlPattern: '/api/payments', delayMs: 8000, probability: 1 }] },
+  });
+  await page.goto('/checkout');
+  await page.click('#pay-now');
+  await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
+  await expect(page.locator('#pay-now')).toBeDisabled();
+  const log = await getChaosLog(page);
+  expect(log.some((event) => event.type === 'network:latency' && event.applied)).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+it('checkout waits safely on slow payment API', () => {
+  cy.injectChaos({
+    seed: 42,
+    network: { latencies: [{ urlPattern: '/api/payments', delayMs: 8000, probability: 1 }] },
+  });
+  cy.visit('/checkout');
+  cy.get('#pay-now').click();
+  cy.get('[data-testid="loading-spinner"]').should('be.visible');
+  cy.get('#pay-now').should('be.disabled');
+  cy.getChaosLog().should((log) => {
+    expect(log.some((event) => event.type === 'network:latency' && event.applied)).to.equal(true);
+  });
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+
+it('checkout waits safely on slow payment API', async () => {
+  await browser.url('/checkout');
+  await injectChaos(browser, {
+    seed: 42,
+    network: { latencies: [{ urlPattern: '/api/payments', delayMs: 8000, probability: 1 }] },
+  });
+  await $('#pay-now').click();
+  await expect($('[data-testid="loading-spinner"]')).toBeDisplayed();
+  await expect($('#pay-now')).toBeDisabled();
+  const log = await getChaosLog(browser);
+  expect(log.some((event) => event.type === 'network:latency' && event.applied)).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+
+await injectChaos(page, {
+  seed: 42,
+  network: { latencies: [{ urlPattern: '/api/payments', delayMs: 8000, probability: 1 }] },
+});
+await page.goto('http://localhost:3000/checkout');
+await page.click('#pay-now');
+await page.waitForSelector('[data-testid="loading-spinner"]');
+const disabled = await page.$eval('#pay-now', (button) => (button as HTMLButtonElement).disabled);
+if (!disabled) throw new Error('Expected pay button to be disabled');
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'network:latency' && event.applied)) {
+  throw new Error('Expected latency chaos');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+
+# Page: WebSocket Disconnect Storm
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/recipes/ws-disconnect-storm/
+
+Force-close the socket shortly after connection and assert that the app enters a reconnecting state.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  websocket: { closes: [{ urlPattern: '/realtime', code: 4000, reason: 'chaos', afterMs: 300, probability: 1 }] },
+});
+await page.goto('/messages');
+await expect(page.locator('[data-testid="ws-status"]')).toContainText('reconnecting');
+expect((await getChaosLog(page)).some((event) => event.type === 'websocket:close' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+cy.injectChaos({
+  seed: 42,
+  websocket: { closes: [{ urlPattern: '/realtime', code: 4000, reason: 'chaos', afterMs: 300, probability: 1 }] },
+});
+cy.visit('/messages');
+cy.get('[data-testid="ws-status"]').should('contain.text', 'reconnecting');
+cy.getChaosLog().should((log) => {
+  expect(log.some((event) => event.type === 'websocket:close' && event.applied)).to.equal(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+await browser.url('/messages');
+await injectChaos(browser, {
+  seed: 42,
+  websocket: { closes: [{ urlPattern: '/realtime', code: 4000, reason: 'chaos', afterMs: 300, probability: 1 }] },
+});
+await $('#connect').click();
+await expect($('[data-testid="ws-status"]')).toHaveText(expect.stringContaining('reconnecting'));
+expect((await getChaosLog(browser)).some((event) => event.type === 'websocket:close' && event.applied)).toBe(true);
+```
+
+  </TabItem>
+  <TabItem label="Puppeteer">
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  websocket: { closes: [{ urlPattern: '/realtime', code: 4000, reason: 'chaos', afterMs: 300, probability: 1 }] },
+});
+await page.goto('http://localhost:3000/messages');
+await page.waitForSelector('[data-testid="ws-status"]');
+await page.waitForFunction(() => document.querySelector('[data-testid="ws-status"]')?.textContent?.includes('reconnecting'));
+const log = await getChaosLog(page);
+if (!log.some((event) => event.type === 'websocket:close' && event.applied)) {
+  throw new Error('Expected websocket close');
+}
+```
+
+  </TabItem>
+</Tabs>
+
+---
+

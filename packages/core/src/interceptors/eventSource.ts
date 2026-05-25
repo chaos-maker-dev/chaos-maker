@@ -9,7 +9,7 @@
  * Design notes:
  * - SSE is inbound-only (the spec defines no client → server channel beyond
  *   the initial GET), so direction/payloadType fields are absent vs. WS.
- * - `event.data` is always a string per the spec — corruption strategies
+ * - `event.data` is always a string per the spec  -  corruption strategies
  *   reuse the four text strategies from network/WS chaos.
  * - Counting (onNth/everyNth/afterN) is per-rule, per-event, identical to WS.
  * - Per-rule ordering on a matched event: drop → corrupt → delay. A dropped
@@ -349,7 +349,7 @@ export function patchEventSource(
       clearSourceTimers(source, 'close-interrupt');
       emitClose(emitter, url, 'chaos-maker-close');
       // WHATWG SSE: on permanent failure, readyState must transition to
-      // CLOSED *before* the error dispatch — so app onerror handlers that
+      // CLOSED *before* the error dispatch  -  so app onerror handlers that
       // branch on `readyState === CLOSED` see the correct state.
       try {
         source.close();

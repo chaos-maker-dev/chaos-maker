@@ -7,7 +7,7 @@ function makeRequest(buttonId = '#fetch-data', statusId = '#status'): void {
 }
 
 // ---------------------------------------------------------------------------
-// onNth — failure fires only on the Nth request
+// onNth  -  failure fires only on the Nth request
 // ---------------------------------------------------------------------------
 describe('onNth counting', () => {
   it('fetch: fails only on the 3rd request', () => {
@@ -62,7 +62,7 @@ describe('onNth counting', () => {
 });
 
 // ---------------------------------------------------------------------------
-// everyNth — failure fires on every Nth request
+// everyNth  -  failure fires on every Nth request
 // ---------------------------------------------------------------------------
 describe('everyNth counting', () => {
   it('fetch: fails on every 2nd request', () => {
@@ -101,7 +101,7 @@ describe('everyNth counting', () => {
     });
     cy.visit('/');
 
-    // Request 1: no latency — record timing
+    // Request 1: no latency  -  record timing
     makeRequest();
     let t1 = 0;
     cy.get('#timing').invoke('text').then((txt) => { t1 = parseInt(txt); });
@@ -124,7 +124,7 @@ describe('everyNth counting', () => {
 });
 
 // ---------------------------------------------------------------------------
-// afterN — failure fires only after the first N requests pass through
+// afterN  -  failure fires only after the first N requests pass through
 // ---------------------------------------------------------------------------
 describe('afterN counting', () => {
   it('fetch: first 2 requests succeed, all subsequent fail', () => {
@@ -140,7 +140,7 @@ describe('afterN counting', () => {
     }
   });
 
-  it('fetch: afterN 0 — every request fails', () => {
+  it('fetch: afterN 0  -  every request fails', () => {
     cy.injectChaos({
       network: { failures: [{ urlPattern: API_PATTERN, statusCode: 503, probability: 1.0, afterN: 0 }] },
     });
@@ -167,7 +167,7 @@ describe('afterN counting', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-transport — fetch and XHR share the same counter
+// Cross-transport  -  fetch and XHR share the same counter
 // ---------------------------------------------------------------------------
 describe('cross-transport counting (fetch + XHR share counter)', () => {
   it('onNth=2: counter increments across fetch and XHR together', () => {

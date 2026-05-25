@@ -75,7 +75,7 @@ describe('ChaosConfigBuilder profile API', () => {
       expect(out.profileOverrides!.network!.latencies).toHaveLength(1);
     });
 
-    it('accumulates across calls — rule arrays append', () => {
+    it('accumulates across calls  -  rule arrays append', () => {
       const out = new ChaosConfigBuilder()
         .overrideProfile({ network: { latencies: [{ urlPattern: '/a', delayMs: 1, probability: 1 }] } })
         .overrideProfile({ network: { latencies: [{ urlPattern: '/b', delayMs: 2, probability: 1 }] } })
@@ -83,7 +83,7 @@ describe('ChaosConfigBuilder profile API', () => {
       expect(out.profileOverrides!.network!.latencies!.map((l) => l.urlPattern)).toEqual(['/a', '/b']);
     });
 
-    it('accumulates across calls — scalars (seed, debug) use last-write-wins', () => {
+    it('accumulates across calls  -  scalars (seed, debug) use last-write-wins', () => {
       const out = new ChaosConfigBuilder()
         .overrideProfile({ seed: 1, debug: false })
         .overrideProfile({ seed: 2 })

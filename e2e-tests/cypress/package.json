@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "test": "cypress run",
+    "test:chrome": "cypress run --browser chrome",
+    "test:electron": "cypress run --browser electron",
     "open": "cypress open"
   },
   "devDependencies": {

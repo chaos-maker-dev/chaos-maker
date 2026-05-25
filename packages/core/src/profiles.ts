@@ -16,7 +16,7 @@ export type ProfileConfigSlice = Omit<
 >;
 
 /** Runtime override slice applied at inject-time. Identical shape to a profile
- *  slice — same fields allowed, same fields forbidden. The override block is
+ *  slice  -  same fields allowed, same fields forbidden. The override block is
  *  the LAST writer in the resolution pipeline: its scalars (`seed`, `debug`)
  *  win over both the profile and the top-level config, and its rule arrays
  *  append after every other layer. */
@@ -48,7 +48,7 @@ function deepFreeze<T>(value: T): T {
 // Built-in slice is immutable. Mutating
 // `registry.get('mobile-checkout').presets!.push('x')` is a no-op in sloppy
 // mode and throws in strict mode. Custom profiles passed via `customProfiles`
-// are NOT frozen — users keep ownership of their literals.
+// are NOT frozen  -  users keep ownership of their literals.
 [MOBILE_CHECKOUT].forEach(deepFreeze);
 
 /** Built-in scenario profile registrations.
@@ -199,9 +199,9 @@ function mergePresetLists(
  *  - Scalar (`seed`, `debug`) precedence: `profileOverrides` > top-level >
  *    profile (the highest layer whose value is `!== undefined` wins).
  *  - Throws when `config.profile` is set but the name is not registered
- *    (plain `Error` — `prepareChaosConfig` wraps to `unknown_profile`).
+ *    (plain `Error`  -  `prepareChaosConfig` wraps to `unknown_profile`).
  *  - Throws when a resolved profile or override slice carries a forbidden
- *    profile-chain field (plain `Error` — wrapped to `profile_chain`). */
+ *    profile-chain field (plain `Error`  -  wrapped to `profile_chain`). */
 export function applyProfile(
   config: ChaosConfig,
   registry: ProfileRegistry,

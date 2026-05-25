@@ -20,7 +20,7 @@ export type ChaosEventType =
   /** Emitted once per `disableGroup()` call. `applied: true`. */
   | 'rule-group:disabled'
   /** Emitted once per group per toggle cycle when a rule is skipped because
-   *  its group is disabled. Deduped — at most one event per group between
+   *  its group is disabled. Deduped  -  at most one event per group between
    *  toggles to avoid log floods. `applied: false`. */
   | 'rule-group:gated'
   /** Single Debug Mode event type. The concrete stage of the rule
@@ -42,7 +42,7 @@ export type ChaosDebugStage =
 
 /** Lifecycle phases. Set on `detail.phase` only when
  *  `detail.stage === 'lifecycle'`. WS/SSE direction continues to live on
- *  the existing `detail.direction` field — `phase` is intentionally
+ *  the existing `detail.direction` field  -  `phase` is intentionally
  *  lifecycle-only to avoid overloading. */
 export type ChaosLifecyclePhase =
   | 'engine:start'
@@ -95,7 +95,7 @@ export interface ChaosEvent {
     stage?: ChaosDebugStage;
     /** Lifecycle phase, set only when `stage === 'lifecycle'`. */
     phase?: ChaosLifecyclePhase;
-    /** Rule category — `'failure' | 'latency' | 'abort' | ...`. */
+    /** Rule category  -  `'failure' | 'latency' | 'abort' | ...`. */
     ruleType?: string;
     /** Deterministic identifier for a specific rule WITHIN A SINGLE
      *  CONFIG SNAPSHOT. Positional: reordering rules in your config changes
@@ -163,7 +163,7 @@ export class ChaosEventEmitter {
   }
 
   /**
-   * Emit a Debug Mode event. Fast-path no-op when no logger is attached —
+   * Emit a Debug Mode event. Fast-path no-op when no logger is attached  - 
    * single undefined-check before any allocation. When `rule` is supplied
    * and present in the rule-id map, `detail.ruleType` and `detail.ruleId`
    * are filled in automatically.

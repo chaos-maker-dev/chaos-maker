@@ -20,7 +20,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('runtime group gating — network fetch', () => {
+describe('runtime group gating  -  network fetch', () => {
   it('skips a rule when its group is disabled (no chaos applied)', async () => {
     const groups = new RuleGroupRegistry();
     groups.ensure('payments', { enabled: false, explicit: true });
@@ -131,7 +131,7 @@ describe('runtime group gating — network fetch', () => {
     const counters = new Map<object, number>();
     const patched = patchFetch(mockFetch, config, deterministicRandom, emitter, counters, groups);
 
-    // Counter increments even while gated — that's intentional so the rule
+    // Counter increments even while gated  -  that's intentional so the rule
     // hits its 3rd MATCHING request irrespective of toggle state.
     groups.setEnabled('payments', false);
     await patched('/api/pay'); // count=1, gated

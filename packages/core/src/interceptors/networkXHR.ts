@@ -39,7 +39,7 @@ function readXhrBody(body: Document | XMLHttpRequestBodyInit | null | undefined)
   if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
     return { text: body.toString(), unparseable: false };
   }
-  // Blob, FormData, ArrayBuffer, TypedArray, Document — synchronous reads
+  // Blob, FormData, ArrayBuffer, TypedArray, Document  -  synchronous reads
   // aren't possible. Treat as unparseable so rules with graphqlOperation can
   // emit a diagnostic.
   return { text: null, unparseable: true };
@@ -454,7 +454,7 @@ export function patchXHR(originalXhrSend: (body?: Document | XMLHttpRequestBodyI
         // Per the XHR spec, an HTTP failure (server returned a 4xx/5xx) is
         // still a *successful* transport: the user-agent fires `load` then
         // `loadend`, never `error`. The `error` event is reserved for
-        // network-level failures (DNS, connection refused, CORS) — that path
+        // network-level failures (DNS, connection refused, CORS)  -  that path
         // remains unchanged in the CORS-block branch above.
         this.dispatchEvent(new Event('load'));
         this.dispatchEvent(new Event('loadend'));

@@ -28,7 +28,7 @@ describe('ChaosMaker edge cases', () => {
     cm.start();
     const fetchAfterFirst = global.fetch;
 
-    // Second start is a no-op — does not re-patch
+    // Second start is a no-op  -  does not re-patch
     cm.start();
     expect(global.fetch).toBe(fetchAfterFirst);
 

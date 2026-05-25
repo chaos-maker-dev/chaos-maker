@@ -206,7 +206,7 @@ describe('ChaosConfigBuilder', () => {
     // Cloned RegExp must have the same pattern + flags as the source.
     expect((matcher as RegExp).source).toBe(re.source);
     expect((matcher as RegExp).flags).toBe(re.flags);
-    // And must be a fresh instance — mutating original flags shouldn't leak.
+    // And must be a fresh instance  -  mutating original flags shouldn't leak.
     expect(matcher).not.toBe(re);
   });
 

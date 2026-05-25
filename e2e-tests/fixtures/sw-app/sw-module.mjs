@@ -1,5 +1,5 @@
 // Module-SW variant for @chaos-maker/core/sw. Registered with
-// `{ type: 'module' }` — see sw-module.html for the registration call.
+// `{ type: 'module' }`  -  see sw-module.html for the registration call.
 import { installChaosSW } from '/sw-app/chaos-maker-sw.mjs';
 
 installChaosSW();

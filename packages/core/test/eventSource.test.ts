@@ -5,7 +5,7 @@ import { Logger } from '../src/debug';
 import type { SSEConfig } from '../src/config';
 
 // ---------------------------------------------------------------------------
-// MockEventSource — minimal stand-in for the browser's EventSource. No real
+// MockEventSource  -  minimal stand-in for the browser's EventSource. No real
 // network. Tests drive inbound events with `simulateMessage(type?, data)`.
 // ---------------------------------------------------------------------------
 class MockEventSource extends EventTarget {
@@ -60,7 +60,7 @@ function setupPatch(config: SSEConfig, random: () => number = () => 0) {
 const ALWAYS = () => 0;
 const NEVER = () => 0.99;
 
-describe('patchEventSource — wrapper constructor', () => {
+describe('patchEventSource  -  wrapper constructor', () => {
   it('returns a real MockEventSource (instanceof compatibility)', () => {
     const { Wrapped } = setupPatch({});
     const es = new Wrapped('http://test/sse');

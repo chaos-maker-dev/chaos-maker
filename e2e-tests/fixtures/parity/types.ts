@@ -40,7 +40,7 @@ export interface ParityAssert {
 
 /** A single matcher parity case. `config` is injected before navigation,
  *  `steps` run in order, then `check` asserts the outcome. Pure data plus
- *  one pure function — no dependency on any test runner. */
+ *  one pure function  -  no dependency on any test runner. */
 export interface Scenario {
   /** Stable identifier, e.g. `net-hostname-match`. */
   id: string;

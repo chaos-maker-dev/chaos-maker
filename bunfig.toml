@@ -1,0 +1,4 @@
+[install]
+# Use isolated linker for pnpm-like strict dependency isolation
+# (prevents phantom dependencies)
+linker = "isolated"

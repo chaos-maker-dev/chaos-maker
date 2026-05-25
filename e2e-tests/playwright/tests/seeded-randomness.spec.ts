@@ -129,7 +129,7 @@ test.describe('Seeded Randomness', () => {
     expect(Number.isInteger(seed)).toBe(true);
   });
 
-  test('seed works with probability 1.0 — always applies', async ({ page }) => {
+  test('seed works with probability 1.0  -  always applies', async ({ page }) => {
     await injectChaos(page, {
       seed: SEED,
       network: {
@@ -143,7 +143,7 @@ test.describe('Seeded Randomness', () => {
     await expect(page.locator('#result')).toContainText('503');
   });
 
-  test('seed works with probability 0 — never applies', async ({ page }) => {
+  test('seed works with probability 0  -  never applies', async ({ page }) => {
     await injectChaos(page, {
       seed: SEED,
       network: {

@@ -36,20 +36,20 @@ const EXPECTED_EVAL_ERRORS = [
 ];
 
 async function ensurePageBridge(page: ChaosPage): Promise<void> {
-  // `evaluateOnNewDocument` is additive — dedupe per-page so listener sets
+  // `evaluateOnNewDocument` is additive  -  dedupe per-page so listener sets
   // never stack across re-inject calls.
   const marked = (page as unknown as Record<symbol, unknown>)[BRIDGE_INIT_KEY];
   if (!marked) {
     await page.evaluateOnNewDocument(SW_BRIDGE_SOURCE);
     (page as unknown as Record<symbol, unknown>)[BRIDGE_INIT_KEY] = true;
   }
-  // Current document has already committed — ensure bridge is live there too.
+  // Current document has already committed  -  ensure bridge is live there too.
   try {
     await (page.evaluate(SW_BRIDGE_SOURCE) as Promise<unknown>);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!EXPECTED_EVAL_ERRORS.some((m) => msg.includes(m))) throw err;
-    // Page has no committed doc yet — init script covers the first one.
+    // Page has no committed doc yet  -  init script covers the first one.
   }
 }
 
@@ -58,7 +58,7 @@ async function ensurePageBridge(page: ChaosPage): Promise<void> {
  *
  * Call **after** `page.goto(...)` so the SW has registered and claimed the
  * page. The target SW must `importScripts('/chaos-maker-sw.js')` (classic) or
- * call `installChaosSW()` (module) — see README for fixture examples.
+ * call `installChaosSW()` (module)  -  see README for fixture examples.
  */
 export async function injectSWChaos(
   page: ChaosPage,
@@ -76,7 +76,7 @@ export async function injectSWChaos(
           apply: (c: unknown, t: number) => Promise<{ seed: number | null }>;
         };
       }).__chaosMakerSWBridge;
-      if (!bridge) throw new Error('[chaos-maker] SW bridge missing — ensurePageBridge failed');
+      if (!bridge) throw new Error('[chaos-maker] SW bridge missing  -  ensurePageBridge failed');
       return await bridge.apply(cfg, t as number);
     },
     validated as unknown,
@@ -164,7 +164,7 @@ async function toggleSWGroup(
           toggleGroup: (n: string, e: boolean, t: number) => Promise<unknown>;
         };
       }).__chaosMakerSWBridge;
-      if (!bridge) throw new Error('[chaos-maker] SW bridge missing — ensurePageBridge failed');
+      if (!bridge) throw new Error('[chaos-maker] SW bridge missing  -  ensurePageBridge failed');
       await bridge.toggleGroup(n as string, e as boolean, t as number);
     },
     name as unknown,

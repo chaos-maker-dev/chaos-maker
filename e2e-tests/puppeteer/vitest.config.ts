@@ -11,7 +11,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     testTimeout: 60_000,
     hookTimeout: 30_000,
-    // Run files serially — each test file launches its own browser; parallel
+    // Run files serially  -  each test file launches its own browser; parallel
     // launches on CI exhaust memory and create race conditions on ports.
     fileParallelism: false,
     sequence: { concurrent: false },

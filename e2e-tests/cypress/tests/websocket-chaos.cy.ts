@@ -13,7 +13,7 @@ function sendMessages(n: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// Drop — outbound messages silently discarded
+// Drop  -  outbound messages silently discarded
 // ---------------------------------------------------------------------------
 describe('WebSocket drop', () => {
   it('drops every 2nd outbound message; server echoes only half', () => {
@@ -36,7 +36,7 @@ describe('WebSocket drop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Delay — inbound messages held for delayMs before delivery
+// Delay  -  inbound messages held for delayMs before delivery
 // ---------------------------------------------------------------------------
 describe('WebSocket delay', () => {
   it('delays inbound messages by >= 800ms', () => {
@@ -64,7 +64,7 @@ describe('WebSocket delay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Corrupt — truncate inbound payload
+// Corrupt  -  truncate inbound payload
 // ---------------------------------------------------------------------------
 describe('WebSocket corrupt', () => {
   it('truncates inbound text payload', () => {
@@ -87,7 +87,7 @@ describe('WebSocket corrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Close — force-close after afterMs with custom code/reason
+// Close  -  force-close after afterMs with custom code/reason
 // ---------------------------------------------------------------------------
 describe('WebSocket close', () => {
   it('force-closes after afterMs with configured code and reason', () => {
@@ -109,7 +109,7 @@ describe('WebSocket close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Seeded replay — same seed → identical drop pattern across two navigations
+// Seeded replay  -  same seed → identical drop pattern across two navigations
 // ---------------------------------------------------------------------------
 describe('WebSocket seeded replay', () => {
   it('same seed produces identical drop outcomes', () => {
@@ -135,7 +135,7 @@ describe('WebSocket seeded replay', () => {
         .map((e) => e.detail.direction as string);
     });
 
-    // Run 2 — detach handler, re-inject with same seed, reload
+    // Run 2  -  detach handler, re-inject with same seed, reload
     cy.removeChaos();
     cy.injectChaos(cfg);
     cy.visit('/');
@@ -152,7 +152,7 @@ describe('WebSocket seeded replay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Counting — onNth: 3 drops only the 3rd outbound message
+// Counting  -  onNth: 3 drops only the 3rd outbound message
 // ---------------------------------------------------------------------------
 describe('WebSocket counting', () => {
   it('onNth: 3 drops only the 3rd outbound message', () => {

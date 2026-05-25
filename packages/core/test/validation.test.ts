@@ -382,7 +382,7 @@ describe('validateConfig', () => {
     });
 
     it('rejects close reason whose UTF-8 encoding exceeds 123 bytes', () => {
-      // 124 × 'a' encodes to 124 bytes — just over the spec limit.
+      // 124 × 'a' encodes to 124 bytes  -  just over the spec limit.
       const config = {
         websocket: { closes: [{ urlPattern: '/ws', probability: 1, reason: 'a'.repeat(124) }] },
       };

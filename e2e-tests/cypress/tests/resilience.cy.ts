@@ -1,4 +1,4 @@
-// Baseline tests — verify the AUT works correctly without any chaos injected.
+// Baseline tests  -  verify the AUT works correctly without any chaos injected.
 // If these fail, chaos-specific failures elsewhere are suspect (page under
 // test is broken, not the chaos adapter).
 

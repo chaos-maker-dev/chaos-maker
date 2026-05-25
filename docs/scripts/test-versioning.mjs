@@ -2,7 +2,7 @@
 /**
  * Validates the docs versioning pipeline end-to-end.
  *
- * Assumes `docs/dist/` exists (run `pnpm --filter chaos-maker-docs build:dev`
+ * Assumes `docs/dist/` exists (run `bun --filter chaos-maker-docs build:dev`
  * first; CI runs that build before this script). Failures abort with a
  * descriptive message and exit code 1.
  *
@@ -58,7 +58,7 @@ function listHtmlPages(slugDir) {
 }
 
 // Extract every href that targets the configured Astro base (`/chaos-maker`).
-// External links and fragment anchors are ignored — the goal is to verify
+// External links and fragment anchors are ignored  -  the goal is to verify
 // that internal navigation respects version namespace boundaries.
 function extractInternalHrefs(html) {
   const re = /href="([^"]+)"/g;
@@ -193,7 +193,7 @@ function testPaginationScope(manifest) {
 }
 
 // 4. Version selector renders + embedded manifest matches versions.json.
-//    Tested on every page in the version (splash + non-splash) — splash pages
+//    Tested on every page in the version (splash + non-splash)  -  splash pages
 //    have no sidebar but the dropdown lives in the header and must still work.
 //    The archived snapshot whose tag equals `manifest.latestTag` is the twin
 //    of `latest/` and is hidden from the dropdown to avoid a duplicate
@@ -260,14 +260,14 @@ function testLatestSemantics(manifest) {
   if (latest && archived) {
     check(
       JSON.stringify(latest.pages) === JSON.stringify(archived.pages),
-      `latest/ pages differ from ${expectedSlug}/ pages — latest is not tracking the newest stable tag`,
+      `latest/ pages differ from ${expectedSlug}/ pages  -  latest is not tracking the newest stable tag`,
     );
   }
 }
 
 function main() {
   if (!existsSync(DIST)) {
-    console.error(`[docs-test] ${DIST} missing — run \`pnpm build:dev\` first`);
+    console.error(`[docs-test] ${DIST} missing  -  run \`bun run build:dev\` first`);
     process.exit(2);
   }
   const manifest = readManifest();
@@ -279,11 +279,11 @@ function main() {
   testLatestSemantics(manifest);
 
   if (failures.length > 0) {
-    console.error(`[docs-test] FAIL — ${failures.length} issue(s):`);
+    console.error(`[docs-test] FAIL  -  ${failures.length} issue(s):`);
     for (const f of failures) console.error('  - ' + f);
     process.exit(1);
   }
-  console.log('[docs-test] PASS — all version isolation checks green');
+  console.log('[docs-test] PASS  -  all version isolation checks green');
 }
 
 main();

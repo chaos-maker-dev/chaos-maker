@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, '../../fixtures');
-const PNPM_BIN = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+const BUNX_BIN = process.platform === 'win32' ? 'bunx.cmd' : 'bunx';
 
 let httpServer: ChildProcess | null = null;
 let wsServer: ChildProcess | null = null;
@@ -39,8 +39,8 @@ export async function setup(): Promise<void> {
 
   if (!httpReady) {
     httpServer = spawn(
-      PNPM_BIN,
-      ['exec', 'http-server', FIXTURES, '-p', '8080', '-s'],
+      BUNX_BIN,
+      ['http-server', FIXTURES, '-p', '8080', '-s'],
       { stdio: 'inherit' },
     );
     await waitForTcp('127.0.0.1', 8080);

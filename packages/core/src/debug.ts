@@ -2,7 +2,7 @@
  * Debug Mode.
  *
  * Two-sink logger that fires when `ChaosConfig.debug` is `true`:
- *   1. Structured `type: 'debug'` events through `ChaosEventEmitter` —
+ *   1. Structured `type: 'debug'` events through `ChaosEventEmitter`  - 
  *      consumers subscribe via `instance.on('debug', cb)` and switch on
  *      `event.detail.stage` for the stage taxonomy.
  *   2. A formatted `[Chaos] <stage> ...` line (or `[Chaos SW] <stage> ...`
@@ -63,7 +63,7 @@ const RULE_TYPE_BY_ARRAY: ReadonlyArray<{
 /**
  * Build a positional rule-id map for a config snapshot. IDs are
  * `<ruleType>#<index>` derived from the order rules appear in their array.
- * Reordering rules between runs changes the IDs — acceptable for in-test
+ * Reordering rules between runs changes the IDs  -  acceptable for in-test
  * diagnostics.
  */
 export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry> {
@@ -83,7 +83,7 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
 
 /**
  * Build the human-readable body mirrored to `console.debug`. Does NOT include
- * the `[Chaos]` / `[Chaos SW]` prefix — that is owned by `Logger.log()` and
+ * the `[Chaos]` / `[Chaos SW]` prefix  -  that is owned by `Logger.log()` and
  * varies by target so the two never compose into a doubled prefix.
  */
 export function formatDebugMessage(stage: ChaosDebugStage, detail: ChaosEvent['detail']): string {
@@ -144,7 +144,7 @@ export class Logger {
       try {
         console.debug(`${prefix} ${formatDebugMessage(stage, finalDetail)}`);
       } catch {
-        /* console sink unavailable or throwing — observability best-effort */
+        /* console sink unavailable or throwing  -  observability best-effort */
       }
     }
     return event;

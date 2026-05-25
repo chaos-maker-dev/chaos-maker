@@ -40,7 +40,7 @@ function detachBeforeLoad(): void {
 }
 
 function attachChaos(config: ChaosConfig, umdSource: string, persist: boolean): void {
-  // Replace any previous listener — re-calling injectChaos overrides the
+  // Replace any previous listener  -  re-calling injectChaos overrides the
   // prior config rather than layering a second listener.
   detachBeforeLoad();
 
@@ -62,7 +62,7 @@ function attachChaos(config: ChaosConfig, umdSource: string, persist: boolean): 
     // `<head>` exists by the time `window:before:load` fires. Falling back to
     // `documentElement` covers rare pages that rewrite the document in-flight.
     (win.document.head || win.document.documentElement).appendChild(script);
-    // Script tag has done its job — remove it so the AUT DOM stays clean.
+    // Script tag has done its job  -  remove it so the AUT DOM stays clean.
     script.remove();
 
     if (!persist) {
@@ -95,7 +95,7 @@ export function registerChaosCommands(): void {
     if (cachedUmdSource !== null) {
       attachChaos(validated, cachedUmdSource, persist);
       // Explicit return type aligns with `Chainable<void>` on the augmented
-      // Cypress.Chainable.injectChaos signature — Cypress accepts commands
+      // Cypress.Chainable.injectChaos signature  -  Cypress accepts commands
       // that don't return anything, but this keeps the overload happy.
       return;
     }
@@ -140,7 +140,7 @@ export function registerChaosCommands(): void {
     cy.window({ log: false }).then((win) => {
       const utils = (win as unknown as { chaosUtils?: ChaosUtilsApi }).chaosUtils;
       if (!utils || !utils.instance) {
-        throw new Error('[chaos-maker] no chaos instance — call cy.injectChaos() first');
+        throw new Error('[chaos-maker] no chaos instance  -  call cy.injectChaos() first');
       }
       if (typeof utils.enableGroup !== 'function') {
         throw new Error('[chaos-maker] enableGroup API unavailable');
@@ -163,7 +163,7 @@ export function registerChaosCommands(): void {
     cy.window({ log: false }).then((win) => {
       const utils = (win as unknown as { chaosUtils?: ChaosUtilsApi }).chaosUtils;
       if (!utils || !utils.instance) {
-        throw new Error('[chaos-maker] no chaos instance — call cy.injectChaos() first');
+        throw new Error('[chaos-maker] no chaos instance  -  call cy.injectChaos() first');
       }
       if (typeof utils.disableGroup !== 'function') {
         throw new Error('[chaos-maker] disableGroup API unavailable');
@@ -179,7 +179,7 @@ export function registerChaosCommands(): void {
     // Cypress's `.then(fn)` overload resolution maps `number | null` to
     // `ThenReturn<AUTWindow, number | null>` which widens to
     // `Chainable<AUTWindow | number | null>`. We narrow to the declared
-    // `Chainable<number | null>` — at runtime the subject genuinely is the
+    // `Chainable<number | null>`  -  at runtime the subject genuinely is the
     // callback's return value (AUTWindow is never propagated).
     return cy.window({ log: false }).then((win) => {
       const utils = (win as unknown as { chaosUtils?: ChaosUtilsApi }).chaosUtils;

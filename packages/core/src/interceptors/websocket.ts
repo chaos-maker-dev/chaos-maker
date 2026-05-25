@@ -312,7 +312,7 @@ export function patchWebSocket(
     data: string | ArrayBuffer | ArrayBufferView | Blob,
     originalSend: (d: string | ArrayBuffer | ArrayBufferView | Blob) => void,
   ): { handled: boolean; data: string | ArrayBuffer | ArrayBufferView | Blob } => {
-    // After stop(), leave existing sockets alone — pass the payload through
+    // After stop(), leave existing sockets alone  -  pass the payload through
     // untouched so the real socket still behaves normally.
     if (!running) return { handled: false, data };
 
@@ -470,7 +470,7 @@ export function patchWebSocket(
         continue;
       }
       emitter.debug('rule-applied', { url }, rule);
-      // Default to 1000 (Normal Closure) — the only 1xxx code browsers accept
+      // Default to 1000 (Normal Closure)  -  the only 1xxx code browsers accept
       // as input to `socket.close(code)`. Reserved codes like 1006 throw
       // InvalidAccessError. Apps wanting a chaos-specific code should pass
       // something in the 4000–4999 range (e.g., `code: 4000`).

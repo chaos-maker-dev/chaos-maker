@@ -26,11 +26,11 @@
 
 <!-- What did you run locally? Paste output snippets if useful. -->
 
-- [ ] `pnpm lint`
-- [ ] `pnpm test`
-- [ ] `pnpm build`
-- [ ] Relevant adapter E2E (e.g. `pnpm test:playwright -- --project=chromium`)
-- [ ] `pnpm build:docs` (if docs touched)
+- [ ] `bun run lint`
+- [ ] `bun run test`
+- [ ] `bun run build`
+- [ ] Relevant adapter E2E (e.g. `bun run test:playwright -- --project=chromium`)
+- [ ] `bun run build:docs` (if docs touched)
 
 ## Checklist
 

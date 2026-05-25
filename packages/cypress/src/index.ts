@@ -15,7 +15,7 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
-// Reporting utilities — turn an event log into a structured report and
+// Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
   buildChaosReport,
@@ -129,7 +129,7 @@ declare global {
        * `cy.visit()` so the SW has a chance to register and claim the page.
        *
        * Requires the app's SW to include `importScripts('/chaos-maker-sw.js')`
-       * (classic) or `import { installChaosSW }` (module) — see README.
+       * (classic) or `import { installChaosSW }` (module)  -  see README.
        *
        * @example
        * cy.visit('/');

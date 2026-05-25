@@ -53,7 +53,7 @@ export function activeVersionSlug(pathname: string): string | null {
   return VERSION_SLUGS.has(first) ? first : null;
 }
 
-// Group keys are exactly the version slugs — see astro.config.mjs. Returning
+// Group keys are exactly the version slugs  -  see astro.config.mjs. Returning
 // the entries (not the wrapping group) lets the rendered sidebar look like
 // "Adapters / API / ...", with no top-level version label.
 function findVersionGroupEntries(
@@ -119,7 +119,7 @@ export const onRequest = defineRouteMiddleware(async (context, next) => {
   const filtered = findVersionGroupEntries(route.sidebar, slug);
   if (!filtered) return;
 
-  // Recursively prune any nested group whose label is also a version slug —
+  // Recursively prune any nested group whose label is also a version slug  - 
   // defensive against future autogenerate changes that might nest differently.
   const prune = (entries: SidebarEntry[]): SidebarEntry[] =>
     entries

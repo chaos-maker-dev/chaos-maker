@@ -221,7 +221,7 @@ test.describe('Response Corruption', () => {
 
     await expect(page.locator('#status')).toHaveText('Parse Error!');
     const result = await page.locator('#result').textContent();
-    // Truncated to ~half length — original is ~60 chars
+    // Truncated to ~half length  -  original is ~60 chars
     expect(result!.length).toBeGreaterThan(0);
     expect(result!.length).toBeLessThan(50);
 

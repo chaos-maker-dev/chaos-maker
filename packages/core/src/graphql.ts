@@ -9,7 +9,7 @@ export type GraphQLExtractResult =
 /**
  * Pull the operation name out of a GraphQL `query` string without bringing in
  * a full GraphQL parser. Matches the first `query|mutation|subscription`
- * keyword followed by an identifier — the spec form for named operations.
+ * keyword followed by an identifier  -  the spec form for named operations.
  * Anonymous operations (`query { … }`) return `null`.
  */
 export function parseOperationFromQueryString(query: string): string | null {
@@ -32,7 +32,7 @@ function tryParseJson(text: string): unknown {
 function operationNameFromJsonShape(parsed: unknown): { isGraphQL: boolean; operationName: string | null } {
   if (!parsed || typeof parsed !== 'object') return { isGraphQL: false, operationName: null };
   // GraphQL-over-HTTP also accepts a JSON array (batched requests). Treat the
-  // first entry as the operation for matcher purposes — chaos applies to the
+  // first entry as the operation for matcher purposes  -  chaos applies to the
   // whole HTTP request anyway.
   if (Array.isArray(parsed)) {
     if (parsed.length === 0) return { isGraphQL: false, operationName: null };
@@ -72,10 +72,10 @@ function extractFromUrl(url: string): GraphQLExtractResult {
 /**
  * Identify a request as GraphQL and extract its operation name.
  *
- * - `kind: 'extracted'` — request is GraphQL; `operationName` may be `null`
+ * - `kind: 'extracted'`  -  request is GraphQL; `operationName` may be `null`
  *   for anonymous operations.
- * - `kind: 'not-graphql'` — not a GraphQL request (no body, wrong shape).
- * - `kind: 'unparseable'` — looks like it could be GraphQL but the body is in
+ * - `kind: 'not-graphql'`  -  not a GraphQL request (no body, wrong shape).
+ * - `kind: 'unparseable'`  -  looks like it could be GraphQL but the body is in
  *   a form we can't read (multipart upload, ReadableStream, binary). Callers
  *   that have a `graphqlOperation` matcher must skip the rule and emit a
  *   diagnostic event so the user can debug why their rule isn't firing.
@@ -107,7 +107,7 @@ export function extractGraphQLOperation(
  *
  *  Defensive `lastIndex` reset: validation rejects `/g` and `/y` flags up-front,
  *  but matchers can also be constructed dynamically (in-page, after deserialization),
- *  so reset here too — `RegExp.test()` mutates `lastIndex` for stateful flags
+ *  so reset here too  -  `RegExp.test()` mutates `lastIndex` for stateful flags
  *  and would flap match outcomes across consecutive calls with the same instance.
  */
 export function operationNameMatches(matcher: GraphQLOperationMatcher, operationName: string | null): boolean {

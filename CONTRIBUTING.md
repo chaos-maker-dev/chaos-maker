@@ -10,9 +10,9 @@ Thanks for your interest in contributing. This guide gets you from fork to merge
    git clone https://github.com/YOUR_USERNAME/chaos-maker.git
    cd chaos-maker
    ```
-3. Install dependencies (pnpm + Node from `.nvmrc`):
+3. Install dependencies (Bun):
    ```bash
-   pnpm install
+   bun install
    ```
 4. Create a feature branch off `main`:
    ```bash
@@ -44,47 +44,47 @@ docs/
 scripts/             # Repo-wide build helpers (e.g. sync-sw-fixtures.mjs)
 ```
 
-Adapter package names match their leaf directory in `packages/`. E2E workspace names use the `e2e-tests-<framework>` form so root scripts can target them with pnpm filters.
+Adapter package names match their leaf directory in `packages/`. E2E workspace names use the `e2e-tests-<framework>` form so root scripts can target them with Bun filters.
 
 ## Development
 
 All commands are run from the repo root.
 
 ```bash
-pnpm install              # install all workspace dependencies
-pnpm lint                 # ESLint across packages, adapters, e2e tests, and scripts
-pnpm test                 # core unit suite (Vitest)
-pnpm build                # build all 5 published packages + sync the SW bundle into fixtures
-pnpm dev:core             # watch-build @chaos-maker/core
-pnpm dev:docs             # local docs dev server (Astro/Starlight)
-pnpm build:docs           # production docs build
+bun install              # install all workspace dependencies
+bun run lint             # ESLint across packages, adapters, e2e tests, and scripts
+bun run test             # core unit suite (Vitest)
+bun run build            # build all 5 published packages + sync the SW bundle into fixtures
+bun run dev:core         # watch-build @chaos-maker/core
+bun run dev:docs         # local docs dev server (Astro/Starlight)
+bun run build:docs       # production docs build
 ```
 
 ### Running E2E tests locally
 
-Each adapter has its own workspace and root script. They all consume the dist artifacts produced by `pnpm build`, so build first if you have changed core or an adapter.
+Each adapter has its own workspace and root script. They all consume the dist artifacts produced by `bun run build`, so build first if you have changed core or an adapter.
 
 ```bash
-pnpm test:playwright                              # all Playwright projects (chromium, firefox, webkit, edge)
-pnpm test:playwright -- --project=chromium        # single project, fastest iteration
+bun run test:playwright                              # all Playwright projects (chromium, firefox, webkit, edge)
+bun run test:playwright -- --project=chromium        # single project, fastest iteration
 
-pnpm test:cypress                                 # default browser (chrome)
-pnpm test:cypress:chrome
-pnpm test:cypress:electron
-pnpm test:cypress:all                             # chrome + electron sequentially
+bun run test:cypress                                 # default browser (chrome)
+bun run test:cypress:chrome
+bun run test:cypress:electron
+bun run test:cypress:all                             # chrome + electron sequentially
 
-pnpm test:wdio                                    # chrome by default
-pnpm test:wdio:chrome
-pnpm test:wdio:firefox
+bun run test:wdio                                    # chrome by default
+bun run test:wdio:chrome
+bun run test:wdio:firefox
 
-pnpm test:puppeteer                               # headless-new Chrome via Vitest
+bun run test:puppeteer                               # headless-new Chrome via Vitest
 ```
 
-First run for Playwright will install browsers (`pnpm --filter e2e-tests-playwright exec playwright install`). Cypress installs its binary on first install. WebdriverIO uses your system Chrome / Firefox.
+First run for Playwright requires browser installation (using `bunx playwright install` inside `e2e-tests/playwright`). Cypress installs its binary on first install. WebdriverIO uses your system Chrome / Firefox.
 
 ### Docs site
 
-The Starlight docs site source lives in `docs/content-source/`. Edits there are picked up by `pnpm dev:docs` immediately.
+The Starlight docs site source lives in `docs/content-source/`. Edits there are picked up by `bun run dev:docs` immediately.
 
 Versioned snapshots in `docs/src/content/docs/{latest,v0-X-Y}/` are **generated artifacts** produced by `docs/scripts/build-versioned-docs.mjs` from git tags. Do not hand-edit them; if you need to change copy that appears on the redirect landing page or in archived versions, edit the script's template literals (around the `index.mdx` writer) and regenerate.
 
@@ -98,7 +98,7 @@ CI is split into three workflows under `.github/workflows/`:
 - `docs.yml` builds and deploys the versioned docs site on tag pushes.
 - `release.yml` runs on `v*` tag pushes. Re-validates, then publishes all 5 packages to npm via OIDC Trusted Publishing.
 
-The Playwright and Cypress E2E jobs in `ci.yml` run inside official upstream container images (`mcr.microsoft.com/playwright` and `cypress/included`) so browsers and system deps come pre-baked. The image pins live next to the `container:` declarations - when you bump `@playwright/test` or `cypress` in a workspace `package.json`, bump the matching image tag in `ci.yml` in the same PR. WebdriverIO and Puppeteer jobs stay on `ubuntu-latest` with cached binaries.
+Every job in `ci.yml` runs on `ubuntu-latest`. Browser binaries are restored from `actions/cache` keyed on the relevant workspace `package.json` (Playwright) or on `bun.lock` (Cypress, Puppeteer); on a cache miss the workflow installs them via `bunx playwright install --with-deps <project>`, `bunx cypress install`, and `bunx puppeteer browsers install chrome` respectively. WebdriverIO uses the system Chrome / Firefox provided by the runner image. There are no `container:` blocks to maintain, so a Playwright or Cypress dependency bump only needs the workspace `package.json` update.
 
 ## Adding a new chaos type
 
@@ -146,8 +146,8 @@ E2E spec because chaos-type semantics often diverge per browser API.
 ## Before submitting
 
 ```bash
-pnpm lint && pnpm test && pnpm build && pnpm build:docs
-pnpm test:playwright -- --project=chromium
+bun run lint && bun run test && bun run build && bun run build:docs
+bun run test:playwright -- --project=chromium
 ```
 
 For changes that touch a specific adapter, run that adapter's full E2E suite too. PR CI will run the full matrix.

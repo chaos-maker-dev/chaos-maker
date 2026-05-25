@@ -6,7 +6,7 @@ import type { ChaosConfig } from '@chaos-maker/playwright';
 const BASE_URL = 'http://127.0.0.1:8080';
 const API_PATTERN = '/api/data.json';
 
-// UI chaos must be started AFTER page load — the DOM assailant needs document.body.
+// UI chaos must be started AFTER page load  -  the DOM assailant needs document.body.
 async function injectUiChaos(page: import('@playwright/test').Page, config: ChaosConfig) {
   await page.evaluate((cfg) => {
     (window as any).chaosUtils.start(cfg);
@@ -25,14 +25,14 @@ test.describe('Chaos Lifecycle', () => {
     });
     await page.goto(BASE_URL);
 
-    // With chaos — should fail
+    // With chaos  -  should fail
     await page.click('#fetch-data');
     await expect(page.locator('#status')).toHaveText('Error!');
 
     // Remove chaos
     await removeChaos(page);
 
-    // Without chaos — should succeed
+    // Without chaos  -  should succeed
     await page.click('#fetch-data');
     await expect(page.locator('#status')).toHaveText('Success!');
   });
@@ -148,7 +148,7 @@ test.describe('Presets', () => {
     // We verify the chaos was injected and events were emitted.
     await page.waitForSelector('#status:not(:empty)');
     const log = await getChaosLog(page);
-    // Events should be emitted for the /api/ match — applied or skipped
+    // Events should be emitted for the /api/ match  -  applied or skipped
     expect(log.some(e => e.type === 'network:failure' || e.type === 'network:latency')).toBe(true);
   });
 
@@ -157,7 +157,7 @@ test.describe('Presets', () => {
     await page.goto(BASE_URL);
     await page.click('#fetch-data');
 
-    // probability 1.0, delayMs 2000 — request should take at least ~2s
+    // probability 1.0, delayMs 2000  -  request should take at least ~2s
     await expect(page.locator('#status')).toHaveText('Success!', { timeout: 10000 });
     const timing = await page.locator('#timing').textContent();
     const elapsed = parseInt(timing!);
@@ -178,7 +178,7 @@ test.describe('Presets', () => {
     await page.goto(BASE_URL);
     await page.click('#fetch-data');
 
-    // Low probabilities — just verify injection didn't crash
+    // Low probabilities  -  just verify injection didn't crash
     await page.waitForSelector('#status:not(:empty)');
     const log = await getChaosLog(page);
     // Abort (0.05) and latency (0.1) events should be logged (applied or skipped)
@@ -189,7 +189,7 @@ test.describe('Presets', () => {
     // Load UMD bundle so chaosUtils is available after navigation
     await injectChaos(page, {});
     await page.goto(BASE_URL);
-    // UI preset needs DOM — inject after load
+    // UI preset needs DOM  -  inject after load
     await injectUiChaos(page, presets.degradedUi);
 
     // Wait for MutationObserver to process
@@ -197,7 +197,7 @@ test.describe('Presets', () => {
 
     const log = await getChaosLog(page);
     const uiEvents = log.filter(e => e.type === 'ui:assault');
-    // There are multiple buttons and links on the page — events should be emitted
+    // There are multiple buttons and links on the page  -  events should be emitted
     expect(uiEvents.length).toBeGreaterThan(0);
   });
 });

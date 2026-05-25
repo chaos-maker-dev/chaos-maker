@@ -5,7 +5,7 @@ import { Logger } from '../src/debug';
 import type { WebSocketConfig } from '../src/config';
 
 // ---------------------------------------------------------------------------
-// MockWebSocket — minimal, deterministic stand-in for the browser's WebSocket.
+// MockWebSocket  -  minimal, deterministic stand-in for the browser's WebSocket.
 // Does not actually open any connection. Tests drive inbound messages via
 // `simulateMessage` and observe outbound messages via `sentMessages`.
 // ---------------------------------------------------------------------------
@@ -71,7 +71,7 @@ const ALWAYS = () => 0;
 // random() => 0.99 → probability never fires (unless p >= 1).
 const NEVER = () => 0.99;
 
-describe('patchWebSocket — wrapper constructor', () => {
+describe('patchWebSocket  -  wrapper constructor', () => {
   it('returns a real MockWebSocket instance (instanceof compatibility)', () => {
     const { Wrapped } = setupPatch({});
     const socket = new Wrapped('ws://test/api');
@@ -195,7 +195,7 @@ describe('delay chaos', () => {
   });
 });
 
-describe('corrupt chaos — text', () => {
+describe('corrupt chaos  -  text', () => {
   it.each([
     ['truncate', 'hello world', 'hello'], // half
     ['empty', 'hello', ''],
@@ -233,7 +233,7 @@ describe('corrupt chaos — text', () => {
   });
 });
 
-describe('corrupt chaos — binary', () => {
+describe('corrupt chaos  -  binary', () => {
   it('truncate halves an ArrayBuffer', () => {
     const { Wrapped } = setupPatch({
       corruptions: [{ urlPattern: '/api', direction: 'outbound', strategy: 'truncate', probability: 1 }],
@@ -368,7 +368,7 @@ describe('determinism', () => {
   });
 });
 
-describe('lifecycle — uninstall', () => {
+describe('lifecycle  -  uninstall', () => {
   beforeEach(() => { vi.useFakeTimers(); });
 
   it('clears pending delay timers and emits drop events', () => {
@@ -448,7 +448,7 @@ describe('close interrupts pending delays', () => {
     socket.simulateOpen();
     socket.send('buffered');
     vi.advanceTimersByTime(100);
-    // Close fired — pending send should never deliver.
+    // Close fired  -  pending send should never deliver.
     vi.advanceTimersByTime(5000);
     expect(socket.sentMessages).toEqual([]);
     const dropReasons = emitter.getLog()

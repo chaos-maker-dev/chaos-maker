@@ -188,7 +188,7 @@ const AUTH_REQUESTS: NamedMatcher = { requestHeaders: { authorization: true } };
  *
  *  `authRequests` carries only the network-only `requestHeaders` field, so a
  *  WebSocket or SSE rule that references it has no transport-applicable
- *  targeting and matches every stream — it is meaningful on network rules
+ *  targeting and matches every stream  -  it is meaningful on network rules
  *  only. `graphql` uses `urlPattern` (not `graphqlOperation`) so it does not
  *  force request-body extraction. */
 export const BUILT_IN_MATCHERS: ReadonlyArray<MatcherEntry> = Object.freeze(

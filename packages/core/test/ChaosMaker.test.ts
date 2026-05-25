@@ -79,7 +79,7 @@ describe('ChaosMaker', () => {
     chaosMaker.stop();
 
     // If counters weren't reset on restart, counter would already be past 1
-    // and this request would NOT fail. We expect it to fail — counter is fresh.
+    // and this request would NOT fail. We expect it to fail  -  counter is fresh.
     chaosMaker.start();
     const r2 = await global.fetch('/api/test');
     expect(r2.status).toBe(500);
@@ -207,7 +207,7 @@ describe('ChaosMaker', () => {
       expect((caught as Error).message).toMatch(/'nope'/);
     });
 
-    it('expands customPresets end-to-end — fetch hits the merged failure rule', async () => {
+    it('expands customPresets end-to-end  -  fetch hits the merged failure rule', async () => {
       chaosMaker = new ChaosMaker({
         customPresets: {
           'team-flow': {

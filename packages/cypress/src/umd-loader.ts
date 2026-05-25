@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
  * which then injects it into the AUT window via a `<script>` tag.
  *
  * The path is resolved from `@chaos-maker/core` via `require.resolve` so we
- * always pick up the installed version — no hard-coded relative paths, and no
+ * always pick up the installed version  -  no hard-coded relative paths, and no
  * version drift between core and cypress adapter.
  */
 
