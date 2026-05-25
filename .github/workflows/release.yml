@@ -47,14 +47,17 @@ jobs:
 
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-playwright exec playwright install --with-deps
+        working-directory: e2e-tests/playwright
+        run: bunx playwright install --with-deps
 
       - name: Install Playwright System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: bun --filter e2e-tests-playwright exec playwright install-deps
+        working-directory: e2e-tests/playwright
+        run: bunx playwright install-deps
 
       - name: Playwright E2E Tests
-        run: bun --filter e2e-tests-playwright exec playwright test
+        working-directory: e2e-tests/playwright
+        run: bunx playwright test
 
       - name: Cache Cypress Binary
         id: cypress-cache
@@ -65,10 +68,12 @@ jobs:
 
       - name: Install Cypress Binary
         if: steps.cypress-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-cypress exec cypress install
+        working-directory: e2e-tests/cypress
+        run: bunx cypress install
 
       - name: Cypress E2E Tests
-        run: bun --filter e2e-tests-cypress exec cypress run --browser chrome
+        working-directory: e2e-tests/cypress
+        run: bunx cypress run --browser chrome
 
       - name: WebdriverIO E2E Tests
         env:
@@ -84,7 +89,8 @@ jobs:
 
       - name: Install Puppeteer Chrome
         if: steps.puppeteer-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
+        working-directory: e2e-tests/puppeteer
+        run: bunx puppeteer browsers install chrome
 
       - name: Puppeteer E2E Tests
         run: bun --filter e2e-tests-puppeteer test

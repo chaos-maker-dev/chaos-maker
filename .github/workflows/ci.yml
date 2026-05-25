@@ -196,14 +196,17 @@ jobs:
 
       - name: Install Playwright Browser (${{ matrix.install }})
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-playwright exec playwright install --with-deps ${{ matrix.install }}
+        working-directory: e2e-tests/playwright
+        run: bunx playwright install --with-deps ${{ matrix.install }}
 
       - name: Install Playwright System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: bun --filter e2e-tests-playwright exec playwright install-deps ${{ matrix.install }}
+        working-directory: e2e-tests/playwright
+        run: bunx playwright install-deps ${{ matrix.install }}
 
       - name: Run E2E Tests (${{ matrix.project }})
-        run: bun --filter e2e-tests-playwright exec playwright test --project ${{ matrix.project }}
+        working-directory: e2e-tests/playwright
+        run: bunx playwright test --project ${{ matrix.project }}
 
   e2e-cypress:
     name: E2E Cypress (${{ matrix.browser }})
@@ -245,7 +248,8 @@ jobs:
 
       - name: Install Cypress Binary
         if: steps.cypress-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-cypress exec cypress install
+        working-directory: e2e-tests/cypress
+        run: bunx cypress install
 
       - name: Download Build Artifact
         uses: actions/download-artifact@v8
@@ -257,7 +261,8 @@ jobs:
         run: node scripts/sync-sw-fixtures.mjs
 
       - name: Run Cypress E2E Tests (${{ matrix.browser }})
-        run: bun --filter e2e-tests-cypress exec cypress run --browser ${{ matrix.browser }}
+        working-directory: e2e-tests/cypress
+        run: bunx cypress run --browser ${{ matrix.browser }}
 
       - name: Upload Cypress Screenshots (on failure)
         if: failure()
@@ -329,7 +334,8 @@ jobs:
 
       - name: Install Puppeteer Chrome
         if: steps.puppeteer-cache.outputs.cache-hit != 'true'
-        run: bun --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
+        working-directory: e2e-tests/puppeteer
+        run: bunx puppeteer browsers install chrome
 
       - name: Run Puppeteer E2E Tests
         run: bun --filter e2e-tests-puppeteer test
