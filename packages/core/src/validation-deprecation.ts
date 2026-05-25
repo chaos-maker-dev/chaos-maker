@@ -1,7 +1,7 @@
 import type { ChaosConfig } from './config';
 import type { DeprecationEntry, ValidationIssue } from './validation-types';
 
-/** Empty for v0.5.0 — rails only. First real deprecation lands in v0.5.x by
+/** Empty for v0.5.0  -  rails only. First real deprecation lands in v0.5.x by
  *  adding an entry here keyed by a dot-notation path the walker can detect.
  *  Top-level paths only for now (e.g. `'someTopLevelField'`). */
 export const DEPRECATED_FIELDS: Map<string, DeprecationEntry> = new Map();
@@ -22,7 +22,7 @@ export function checkDeprecations(
     };
     if (onDeprecation) onDeprecation(issue);
     try {
-      console.warn(`[chaos-maker] deprecated: ${path} — ${entry.message}`);
+      console.warn(`[chaos-maker] deprecated: ${path}  -  ${entry.message}`);
     } catch {
       /* console may be unavailable in some sandboxes */
     }

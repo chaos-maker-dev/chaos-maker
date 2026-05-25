@@ -51,7 +51,7 @@ describe('deserializeForTransport', () => {
   });
 
   it('does not coerce an object that has __chaosMakerRegExp alongside sibling keys', () => {
-    // Outer object isn't an exclusive marker — siblings would be silently dropped
+    // Outer object isn't an exclusive marker  -  siblings would be silently dropped
     // if isRegExpMarker treated it as one. Preserve the whole shape instead.
     const input = { __chaosMakerRegExp: { source: '^x', flags: '' }, sibling: 42 };
     const out = deserializeForTransport(input) as Record<string, unknown>;
@@ -61,7 +61,7 @@ describe('deserializeForTransport', () => {
   });
 
   it('returns the marker unchanged and warns when RegExp construction throws', () => {
-    // Malformed pattern (unterminated group). Must not crash bootstrap — pass
+    // Malformed pattern (unterminated group). Must not crash bootstrap  -  pass
     // the original marker through and emit a warning so downstream validation
     // can reject with a clearer message.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -84,7 +84,7 @@ describe('deserializeForTransport', () => {
 
   it('does not coerce when the inner marker has unexpected keys', () => {
     // Inner shape must be exactly { source, flags }. Extra keys mean it's not
-    // ours — leave it alone.
+    // ours  -  leave it alone.
     const input = { __chaosMakerRegExp: { source: '^x', flags: '', evil: true } };
     const out = deserializeForTransport(input);
     expect(out).not.toBeInstanceOf(RegExp);

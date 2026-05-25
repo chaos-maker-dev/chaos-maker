@@ -1,5 +1,5 @@
 /**
- * Mulberry32 — a fast, seedable 32-bit PRNG.
+ * Mulberry32  -  a fast, seedable 32-bit PRNG.
  * Returns values in [0, 1) like Math.random().
  *
  * @see https://gist.github.com/tommyettinger/46a874533244883189143505d203312c

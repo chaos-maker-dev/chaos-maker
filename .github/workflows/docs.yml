@@ -37,17 +37,24 @@ jobs:
       - name: Fetch tags
         run: git fetch --tags --force origin
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
 
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       # PRs validate the branch's working-tree docs alongside tag archives so
       # that broken mdx/frontmatter/imports fail review. The published site is
@@ -55,18 +62,18 @@ jobs:
       # overlay and never include `/main/` in the deployable artifact.
       - name: Build Docs (PR preview, working tree + tags)
         if: github.event_name == 'pull_request'
-        run: pnpm --filter chaos-maker-docs run build:dev
+        run: bun --filter chaos-maker-docs build:dev
 
       - name: Build Docs (production, tag-only)
         if: github.event_name != 'pull_request'
-        run: pnpm --filter chaos-maker-docs build
+        run: bun --filter chaos-maker-docs build
 
       # Validates per-version sidebar isolation, internal-link rewriting,
       # pagination scope, version-selector rendering, and that `latest/`
       # tracks the newest stable git tag. Runs against whichever build
       # produced docs/dist/ above.
       - name: Validate Docs Versioning
-        run: pnpm --filter chaos-maker-docs run test:versions
+        run: bun --filter chaos-maker-docs test:versions
 
       - name: Upload PR Preview Artifact
         if: github.event_name == 'pull_request'

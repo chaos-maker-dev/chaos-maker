@@ -83,7 +83,7 @@ describe('patchXHR (send)', () => {
     
     // Should set status and dispatch events to simulate failure. Per the
     // XHR spec, an HTTP-level failure (server returns 5xx) fires `load`
-    // then `loadend`, NOT `error` — `error` is reserved for network-level
+    // then `loadend`, NOT `error`  -  `error` is reserved for network-level
     // failures (DNS / connection refused / CORS), which the dedicated CORS
     // branch covers separately. Inspect via `Event.type` because vitest's
     // deep-equal cannot distinguish Event instances by constructor argument.

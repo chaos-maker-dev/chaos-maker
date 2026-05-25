@@ -14,7 +14,7 @@ async function messageCount(page: Page): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Drop — every 2nd inbound message is silently discarded.
+// Drop  -  every 2nd inbound message is silently discarded.
 // ---------------------------------------------------------------------------
 test.describe('SSE drop', () => {
   test('drops every 2nd inbound event and emits sse:drop', async ({ page }) => {
@@ -41,7 +41,7 @@ test.describe('SSE drop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Delay — every event is held for delayMs before delivery.
+// Delay  -  every event is held for delayMs before delivery.
 // ---------------------------------------------------------------------------
 test.describe('SSE delay', () => {
   test('delays inbound by >= 600ms relative to baseline', async ({ page }) => {
@@ -71,7 +71,7 @@ test.describe('SSE delay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Corrupt — truncate strategy halves event.data text.
+// Corrupt  -  truncate strategy halves event.data text.
 // ---------------------------------------------------------------------------
 test.describe('SSE corrupt', () => {
   test('truncates inbound text payload', async ({ page }) => {
@@ -93,7 +93,7 @@ test.describe('SSE corrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Close — force-close the EventSource after afterMs.
+// Close  -  force-close the EventSource after afterMs.
 // ---------------------------------------------------------------------------
 test.describe('SSE close', () => {
   test('force-closes the source after afterMs', async ({ page }) => {
@@ -112,7 +112,7 @@ test.describe('SSE close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Named event — eventType filter targets only the named event.
+// Named event  -  eventType filter targets only the named event.
 // ---------------------------------------------------------------------------
 test.describe('SSE named eventType', () => {
   test('drops only named "tick" events; default messages survive', async ({ page }) => {
@@ -137,7 +137,7 @@ test.describe('SSE named eventType', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Seeded replay — identical seeds → identical drop sequence.
+// Seeded replay  -  identical seeds → identical drop sequence.
 //
 // Server emits `tick N` with sequential N. App records delivered ticks in
 // `#sse-log` (`msg <ts> tick N`). The dropped tick numbers = {1..max} minus
@@ -195,7 +195,7 @@ test.describe('SSE seeded replay', () => {
     expect(seed1).toBe(9000);
     expect(seed2).toBe(9000);
     // Two runs may stop after a different total tick count, so compare the
-    // shared prefix only — every tick index present in both windows must
+    // shared prefix only  -  every tick index present in both windows must
     // have the same drop/deliver outcome.
     const sharedMax = Math.min(max1, max2);
     const prefix1 = [...dropped1].filter(n => n <= sharedMax).sort((a, b) => a - b);

@@ -60,7 +60,7 @@ test.describe('GraphQL operation matching', () => {
     await fireOp(page, 'gql-get-user', 'error');
     await expect(page.locator('#gql-status')).toContainText('502');
 
-    // CreatePost should pass — doesn't match /^Get/.
+    // CreatePost should pass  -  doesn't match /^Get/.
     await fireOp(page, 'gql-create-post');
     await expect(page.locator('#gql-status')).toContainText('200');
   });
@@ -125,7 +125,7 @@ test.describe('GraphQL operation matching', () => {
     await page.goto(BASE_URL);
 
     await page.click('#gql-multipart');
-    // Wait for status to leave loading state — server returns 400 because the
+    // Wait for status to leave loading state  -  server returns 400 because the
     // fixture isn't a real graphql-multipart implementation, but that's fine:
     // the test cares that chaos's 599 was NOT injected over the real response.
     await page.waitForFunction(

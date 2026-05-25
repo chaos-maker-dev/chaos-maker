@@ -3,15 +3,15 @@
  * Cypress / WDIO / Puppeteer) to talk to the Service-Worker chaos engine.
  *
  * This is a string because it is injected via `addInitScript`, `eval` or a
- * `<script>` tag — *not* imported as a module. Adapters are Node-side, but
+ * `<script>` tag  -  *not* imported as a module. Adapters are Node-side, but
  * this source executes in the AUT window.
  *
  * Exposes `window.__chaosMakerSWBridge`:
- *  - `apply(cfg, timeoutMs)` — post config over MessageChannel, wait for ack.
- *  - `stop(timeoutMs)` — stop chaos in the SW.
- *  - `toggleGroup(name, enabled, timeoutMs)` — flip a rule group inside the SW
+ *  - `apply(cfg, timeoutMs)`  -  post config over MessageChannel, wait for ack.
+ *  - `stop(timeoutMs)`  -  stop chaos in the SW.
+ *  - `toggleGroup(name, enabled, timeoutMs)`  -  flip a rule group inside the SW
  *    via `__chaosMakerToggleGroup`; resolves on ack with no engine restart.
- *  - `getLocalLog()` / `clearLocalLog()` — page-side buffered event log.
+ *  - `getLocalLog()` / `clearLocalLog()`  -  page-side buffered event log.
  *  - `getRemoteLog(timeoutMs)` / `clearRemoteLog(timeoutMs)` - inspect or
  *    clear the SW-side in-memory log.
  *
@@ -57,7 +57,7 @@ export const SW_BRIDGE_SOURCE = /* js */ `
           return;
         }
         if (Date.now() - start >= timeoutMs) {
-          reject(new Error('[chaos-maker] no SW controller after ' + timeoutMs + 'ms — did you register the SW?'));
+          reject(new Error('[chaos-maker] no SW controller after ' + timeoutMs + 'ms  -  did you register the SW?'));
           return;
         }
         setTimeout(poll, 50);
@@ -100,7 +100,7 @@ export const SW_BRIDGE_SOURCE = /* js */ `
       if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
         return Promise.reject(new Error('[chaos-maker] bridge.apply: config must be an object'));
       }
-      // Stash cfg BEFORE awaiting ack — intentional. If the first ack times
+      // Stash cfg BEFORE awaiting ack  -  intentional. If the first ack times
       // out (e.g. SW still installing), the controllerchange listener above
       // will retry with this config once the new SW claims the page. Caller
       // still sees the rejection from this attempt and can re-throw.
@@ -118,7 +118,7 @@ export const SW_BRIDGE_SOURCE = /* js */ `
     },
     toggleGroup: function (name, enabled, timeoutMs) {
       if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
-        return Promise.reject(new Error('[chaos-maker] no SW controller — call injectSWChaos before toggleGroup'));
+        return Promise.reject(new Error('[chaos-maker] no SW controller  -  call injectSWChaos before toggleGroup'));
       }
       var t = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : 2000;
       return postViaPort(

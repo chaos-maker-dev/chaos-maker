@@ -29,7 +29,7 @@ body:
     id: version
     attributes:
       label: Chaos Maker version
-      description: Output of `npm ls @chaos-maker/core` (or pnpm equivalent).
+      description: Output of `npm ls @chaos-maker/core` (or bun equivalent).
       placeholder: "0.6.0"
     validations:
       required: true

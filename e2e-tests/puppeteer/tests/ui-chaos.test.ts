@@ -13,7 +13,7 @@ afterAll(async () => { await browser.close(); });
 beforeEach(async () => { page = await browser.newPage(); });
 afterEach(async () => { await page.close(); });
 
-// UI chaos must start AFTER page load — the DOM assailant does an initial scan
+// UI chaos must start AFTER page load  -  the DOM assailant does an initial scan
 // of existing elements and attaches a MutationObserver to document.body, both of
 // which require the DOM to exist. Inject an empty config pre-nav to load the UMD
 // bundle, then start UI chaos via chaosUtils.start() after goto().

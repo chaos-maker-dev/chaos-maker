@@ -102,7 +102,7 @@ describe('incrementCounter', () => {
     expect(incrementCounter(ruleB, counters)).toBe(2);
   });
 
-  it('uses object reference as the key — same ref means same counter', () => {
+  it('uses object reference as the key  -  same ref means same counter', () => {
     const counters = new Map<object, number>();
     const rule = { urlPattern: '/api' };
     // Simulate fetch + XHR sharing the same rule object
@@ -124,7 +124,7 @@ describe('counting + probability interaction', () => {
     for (let i = 0; i < 5; i++) {
       const count = incrementCounter(rule, counters);
       const conditionMet = checkCountingCondition(rule, count);
-      // With probability 1.0 — always fires when condition is met
+      // With probability 1.0  -  always fires when condition is met
       results.push(conditionMet && true);
     }
 

@@ -126,7 +126,7 @@ describe('PresetRegistry', () => {
     expect(a.get('slowNetwork')).toBe(b.get('slowNetwork'));
   });
 
-  it('built-in slices are deep-frozen — mutation throws in strict mode', () => {
+  it('built-in slices are deep-frozen  -  mutation throws in strict mode', () => {
     const registry = new PresetRegistry();
     const slow = registry.get('slow-api') as { network?: { latencies?: { delayMs: number }[] } };
     expect(() => {
@@ -141,7 +141,7 @@ describe('PresetRegistry', () => {
     }).toThrow(TypeError);
   });
 
-  it('BUILT_IN_PRESETS descriptors are frozen — name swap throws', () => {
+  it('BUILT_IN_PRESETS descriptors are frozen  -  name swap throws', () => {
     expect(Object.isFrozen(BUILT_IN_PRESETS[0])).toBe(true);
     expect(() => {
       (BUILT_IN_PRESETS[0] as { name: string }).name = 'poisoned';
@@ -150,7 +150,7 @@ describe('PresetRegistry', () => {
     expect(new PresetRegistry().has('unstableApi')).toBe(true);
   });
 
-  it('BUILT_IN_PRESETS descriptors are frozen — config swap throws', () => {
+  it('BUILT_IN_PRESETS descriptors are frozen  -  config swap throws', () => {
     expect(() => {
       (BUILT_IN_PRESETS[0] as { config: unknown }).config = {};
     }).toThrow(TypeError);

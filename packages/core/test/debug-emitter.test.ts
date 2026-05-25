@@ -6,7 +6,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('ChaosEventEmitter.debug — fast-path no-op', () => {
+describe('ChaosEventEmitter.debug  -  fast-path no-op', () => {
   it('does nothing when no logger is attached', () => {
     const emitter = new ChaosEventEmitter();
     const emitSpy = vi.spyOn(emitter, 'emit');
@@ -21,7 +21,7 @@ describe('ChaosEventEmitter.debug — fast-path no-op', () => {
   });
 });
 
-describe('ChaosEventEmitter.debug — with logger attached', () => {
+describe('ChaosEventEmitter.debug  -  with logger attached', () => {
   it('fires console.debug AND emits a debug event with stage on detail', () => {
     const emitter = new ChaosEventEmitter();
     emitter.setLogger(new Logger({ enabled: true }));

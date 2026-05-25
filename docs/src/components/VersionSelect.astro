@@ -34,7 +34,7 @@ const dropdownVersions = manifest.versions.filter(
 
 // Render the dropdown only on routes whose URL maps to a known docs version.
 // The root redirect index (`/chaos-maker/`) has no active version, so the
-// selector would offer no meaningful preselection — hide it there.
+// selector would offer no meaningful preselection  -  hide it there.
 const show = dropdownVersions.length > 0 && active !== null;
 
 // Resolve the option that should be preselected. When the user is on the
@@ -47,7 +47,7 @@ const activeOptionSlug =
 
 // Embed the manifest into the page as JSON for the client-side switcher.
 // Cross-version mapping needs every version's full page list, but the entire
-// payload is tens of KB of static data — fine for a docs site.
+// payload is tens of KB of static data  -  fine for a docs site.
 const payload = {
   base: manifest.base,
   versions: dropdownVersions.map((v) => ({

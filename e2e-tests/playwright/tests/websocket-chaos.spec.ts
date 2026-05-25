@@ -23,7 +23,7 @@ async function inboundCount(page: Page): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Drop — outbound every other message
+// Drop  -  outbound every other message
 // ---------------------------------------------------------------------------
 test.describe('WebSocket drop', () => {
   test('drops every 2nd outbound message; server echoes only half', async ({ page }) => {
@@ -46,7 +46,7 @@ test.describe('WebSocket drop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Delay — inbound messages arrive no sooner than delayMs
+// Delay  -  inbound messages arrive no sooner than delayMs
 // ---------------------------------------------------------------------------
 test.describe('WebSocket delay', () => {
   test('delays inbound by >= 800ms (relative to baseline)', async ({ page }) => {
@@ -83,7 +83,7 @@ test.describe('WebSocket delay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Corrupt — truncate inbound payload
+// Corrupt  -  truncate inbound payload
 // ---------------------------------------------------------------------------
 test.describe('WebSocket corrupt', () => {
   test('truncates inbound text payload', async ({ page }) => {
@@ -108,7 +108,7 @@ test.describe('WebSocket corrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Close — force-close after 500ms with custom code/reason
+// Close  -  force-close after 500ms with custom code/reason
 // ---------------------------------------------------------------------------
 test.describe('WebSocket close', () => {
   test('force-closes after afterMs with configured code and reason', async ({ page }) => {
@@ -132,7 +132,7 @@ test.describe('WebSocket close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Seeded replay — identical seeds → identical drop patterns
+// Seeded replay  -  identical seeds → identical drop patterns
 // ---------------------------------------------------------------------------
 test.describe('WebSocket seeded replay', () => {
   test('same seed produces identical drop outcomes', async ({ page }) => {
@@ -174,7 +174,7 @@ test.describe('WebSocket seeded replay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Counting — onNth: 3 drops only the 3rd outbound
+// Counting  -  onNth: 3 drops only the 3rd outbound
 // ---------------------------------------------------------------------------
 test.describe('WebSocket counting', () => {
   test('onNth: 3 drops only the 3rd outbound message', async ({ page }) => {

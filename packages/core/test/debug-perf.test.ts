@@ -5,7 +5,7 @@ import { mockFetch } from './setup';
 
 const ok = () => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
-describe('Debug Mode — disabled fast-path', () => {
+describe('Debug Mode  -  disabled fast-path', () => {
   beforeEach(() => {
     mockFetch.mockReset();
   });

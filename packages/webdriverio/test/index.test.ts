@@ -55,7 +55,7 @@ describe('@chaos-maker/webdriverio', () => {
       });
     });
 
-    it('passes the script as a function, not a raw string — lets WDIO handle IIFE wrapping', async () => {
+    it('passes the script as a function, not a raw string  -  lets WDIO handle IIFE wrapping', async () => {
       await injectChaos(fake.browser, {});
       expect(fake.executeCalls).toHaveLength(1);
       expect(typeof fake.executeCalls[0].fn).toBe('function');

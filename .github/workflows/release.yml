@@ -23,28 +23,20 @@ jobs:
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" "origin/main"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup
+        uses: ./.github/actions/setup
         with:
-          node-version-file: '.nvmrc'
-          cache: 'pnpm'
-
-      - name: Install Dependencies
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-        run: pnpm install --frozen-lockfile
+          frozen-lockfile: 'true'
+          skip-puppeteer-download: 'true'
 
       - name: Lint
-        run: pnpm lint
+        run: bun run lint
 
       - name: Unit Tests
-        run: pnpm test
+        run: bun run test
 
       - name: Build
-        run: pnpm build
+        run: bun run build
 
       - name: Cache Playwright Browsers
         id: playwright-cache
@@ -55,47 +47,47 @@ jobs:
 
       - name: Install Playwright Browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-playwright exec playwright install --with-deps
+        run: bun --filter e2e-tests-playwright exec playwright install --with-deps
 
       - name: Install Playwright System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm --filter e2e-tests-playwright exec playwright install-deps
+        run: bun --filter e2e-tests-playwright exec playwright install-deps
 
       - name: Playwright E2E Tests
-        run: pnpm --filter e2e-tests-playwright test
+        run: bun --filter e2e-tests-playwright exec playwright test
 
       - name: Cache Cypress Binary
         id: cypress-cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/Cypress
-          key: cypress-${{ hashFiles('pnpm-lock.yaml') }}
+          key: cypress-${{ hashFiles('bun.lock') }}
 
       - name: Install Cypress Binary
         if: steps.cypress-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-cypress exec cypress install
+        run: bun --filter e2e-tests-cypress exec cypress install
 
       - name: Cypress E2E Tests
-        run: pnpm --filter e2e-tests-cypress exec cypress run --browser chrome
+        run: bun --filter e2e-tests-cypress exec cypress run --browser chrome
 
       - name: WebdriverIO E2E Tests
         env:
           WDIO_BROWSER: chrome
-        run: pnpm --filter e2e-tests-webdriverio test
+        run: bun --filter e2e-tests-webdriverio test
 
       - name: Cache Puppeteer Chrome
         id: puppeteer-cache
         uses: actions/cache@v5
         with:
           path: ~/.cache/puppeteer
-          key: puppeteer-${{ hashFiles('e2e-tests/puppeteer/package.json', 'pnpm-lock.yaml') }}
+          key: puppeteer-${{ hashFiles('e2e-tests/puppeteer/package.json', 'bun.lock') }}
 
       - name: Install Puppeteer Chrome
         if: steps.puppeteer-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
+        run: bun --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
 
       - name: Puppeteer E2E Tests
-        run: pnpm --filter e2e-tests-puppeteer test
+        run: bun --filter e2e-tests-puppeteer test
 
   publish-core:
     name: Publish @chaos-maker/core
@@ -108,24 +100,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Core
-        run: pnpm build:core
+        run: bun run build:core
 
       - name: Publish Core
-        run: pnpm --filter @chaos-maker/core publish --no-git-checks --access public
+        run: npm --workspace packages/core publish --no-git-checks --access public
 
   publish-playwright:
     name: Publish @chaos-maker/playwright
@@ -138,24 +137,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Playwright
-        run: pnpm build:core && pnpm build:playwright
+        run: bun run build:core && bun run build:playwright
 
       - name: Publish Playwright Adapter
-        run: pnpm --filter @chaos-maker/playwright publish --no-git-checks --access public
+        run: npm --workspace packages/playwright publish --no-git-checks --access public
 
   publish-cypress:
     name: Publish @chaos-maker/cypress
@@ -168,24 +174,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Cypress
-        run: pnpm build:core && pnpm build:cypress
+        run: bun run build:core && bun run build:cypress
 
       - name: Publish Cypress Adapter
-        run: pnpm --filter @chaos-maker/cypress publish --no-git-checks --access public
+        run: npm --workspace packages/cypress publish --no-git-checks --access public
 
   publish-webdriverio:
     name: Publish @chaos-maker/webdriverio
@@ -198,24 +211,31 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build WebdriverIO
-        run: pnpm build:core && pnpm build:webdriverio
+        run: bun run build:core && bun run build:webdriverio
 
       - name: Publish WebdriverIO Adapter
-        run: pnpm --filter @chaos-maker/webdriverio publish --no-git-checks --access public
+        run: npm --workspace packages/webdriverio publish --no-git-checks --access public
 
   publish-puppeteer:
     name: Publish @chaos-maker/puppeteer
@@ -228,21 +248,28 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
       - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Puppeteer
-        run: pnpm build:core && pnpm build:puppeteer
+        run: bun run build:core && bun run build:puppeteer
 
       - name: Publish Puppeteer Adapter
-        run: pnpm --filter @chaos-maker/puppeteer publish --no-git-checks --access public
+        run: npm --workspace packages/puppeteer publish --no-git-checks --access public

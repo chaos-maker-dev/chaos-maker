@@ -10,7 +10,7 @@
  *
  * `serializeForTransport` walks the config and replaces every `RegExp` with a
  * plain marker object that survives JSON. `deserializeForTransport` reverses
- * the substitution. Both are pure and structurally recursive — they don't
+ * the substitution. Both are pure and structurally recursive  -  they don't
  * touch other values.
  */
 
@@ -23,7 +23,7 @@ interface RegExpMarker {
 function isRegExpMarker(value: unknown): value is RegExpMarker {
   if (value === null || typeof value !== 'object') return false;
   const obj = value as Record<string, unknown>;
-  // Outer object must have exactly one own key — the marker — so an object
+  // Outer object must have exactly one own key  -  the marker  -  so an object
   // that happens to contain `__chaosMakerRegExp` alongside sibling data isn't
   // mis-coerced into a RegExp (which would silently drop the siblings).
   const outerKeys = Object.keys(obj);
@@ -31,7 +31,7 @@ function isRegExpMarker(value: unknown): value is RegExpMarker {
   const marker = obj[REGEX_MARKER];
   if (!marker || typeof marker !== 'object') return false;
   const m = marker as Record<string, unknown>;
-  // Inner object must only carry `source` + `flags` — extra keys mean it's
+  // Inner object must only carry `source` + `flags`  -  extra keys mean it's
   // not our marker shape and we should leave the value alone.
   for (const k of Object.keys(m)) {
     if (k !== 'source' && k !== 'flags') return false;
@@ -68,9 +68,9 @@ export function deserializeForTransport<T>(value: T): T {
     } catch (err) {
       // Malformed pattern or flags would otherwise crash bootstrap before any
       // chaos rule runs. Surface a one-line warning and pass through the marker
-      // unchanged — downstream Zod validation will then reject the rule with a
+      // unchanged  -  downstream Zod validation will then reject the rule with a
       // clear message rather than the page going dark.
-      console.warn(`[chaos-maker] deserializeForTransport: invalid RegExp { source: ${JSON.stringify(source)}, flags: ${JSON.stringify(flags)} } — ${(err as Error).message}`);
+      console.warn(`[chaos-maker] deserializeForTransport: invalid RegExp { source: ${JSON.stringify(source)}, flags: ${JSON.stringify(flags)} }  -  ${(err as Error).message}`);
       return value;
     }
   }

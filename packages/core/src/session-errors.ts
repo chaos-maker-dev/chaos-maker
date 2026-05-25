@@ -1,6 +1,6 @@
 /**
  * Recognize errors thrown when a browser session, page, or websocket
- * transport is gone — i.e. cases where adapter cleanup has nothing left to
+ * transport is gone  -  i.e. cases where adapter cleanup has nothing left to
  * act on and should swallow the failure rather than surface it as a real
  * teardown bug.
  *

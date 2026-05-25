@@ -2,7 +2,7 @@ import type { ChaosEvent } from '../events';
 import type { TransportKind } from './types';
 
 /** Classify an event by its `type` prefix. Returns `null` for `'debug'` events
- *  and for any unrecognized prefix — both are excluded from transport-scoped
+ *  and for any unrecognized prefix  -  both are excluded from transport-scoped
  *  aggregates and filters. */
 export function classifyTransport(event: ChaosEvent): TransportKind | null {
   const type = event.type;

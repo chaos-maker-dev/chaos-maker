@@ -20,7 +20,7 @@ function getCoreUmdPath(): string {
     ? __dirname
     : dirname(fileURLToPath(import.meta.url));
   const req = createRequire(resolve(currentDir, 'package.json'));
-  // Resolve the main entry point to find the dist directory — avoids
+  // Resolve the main entry point to find the dist directory  -  avoids
   // requiring `./package.json` which isn't in the exports map.
   const coreEntry = req.resolve('@chaos-maker/core');
   const coreDistDir = dirname(coreEntry);
@@ -37,9 +37,9 @@ export interface InjectChaosOptions {
    * Emit chaos events into the Playwright trace as `test.step` entries and
    * attach the full event log on test end.
    *
-   * - `true` — always on. Requires `testInfo`.
-   * - `false` (default for direct `injectChaos()` calls) — off.
-   * - `'auto'` (default for the fixture) — on when Playwright tracing is
+   * - `true`  -  always on. Requires `testInfo`.
+   * - `false` (default for direct `injectChaos()` calls)  -  off.
+   * - `'auto'` (default for the fixture)  -  on when Playwright tracing is
    *   enabled in the project config; no-op otherwise.
    */
   tracing?: boolean | 'auto';
@@ -121,14 +121,14 @@ export async function injectChaos(
     win.__CHAOS_CONFIG__ = cfg;
   }, serialized);
 
-  // Load core UMD bundle by path — no eval needed
+  // Load core UMD bundle by path  -  no eval needed
   await page.addInitScript({ path: umdPath });
 }
 
 function resolveTracing(opts: InjectChaosOptions): boolean {
   if (opts.tracing === true) return true;
   if (opts.tracing === false || opts.tracing === undefined) return false;
-  // 'auto' — fixture must have pre-resolved this to true/false before calling
+  // 'auto'  -  fixture must have pre-resolved this to true/false before calling
   // injectChaos. If it reaches here as 'auto', treat as off (no testInfo
   // context available to introspect project.use.trace).
   return false;
@@ -145,7 +145,7 @@ export async function removeChaos(page: Page): Promise<void> {
     try {
       seed = await getChaosSeed(page);
     } catch {
-      // Page closed / detached — fall through with seed=null.
+      // Page closed / detached  -  fall through with seed=null.
     }
   }
 
@@ -155,7 +155,7 @@ export async function removeChaos(page: Page): Promise<void> {
       win.chaosUtils.stop();
     }
   }).catch(() => {
-    // Page may already be closed during teardown — don't mask real failures.
+    // Page may already be closed during teardown  -  don't mask real failures.
   });
 
   // Flush trace attachment if tracing was active.
@@ -200,7 +200,7 @@ export async function enableGroup(page: Page, name: string): Promise<void> {
       };
     }).chaosUtils;
     if (!utils || !utils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof utils.enableGroup !== 'function') {
       throw new Error('[chaos-maker] enableGroup API unavailable');
@@ -229,7 +229,7 @@ export async function disableGroup(page: Page, name: string): Promise<void> {
       };
     }).chaosUtils;
     if (!utils || !utils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof utils.disableGroup !== 'function') {
       throw new Error('[chaos-maker] disableGroup API unavailable');
@@ -322,7 +322,7 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
-// Reporting utilities — turn an event log into a structured report and
+// Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
   buildChaosReport,

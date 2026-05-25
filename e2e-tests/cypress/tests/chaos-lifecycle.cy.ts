@@ -19,14 +19,14 @@ describe('Chaos Lifecycle', () => {
     });
     cy.visit('/');
 
-    // With chaos — should fail
+    // With chaos  -  should fail
     cy.get('#fetch-data').click();
     cy.get('#status').should('have.text', 'Error!');
 
     // Remove chaos
     cy.removeChaos();
 
-    // Without chaos — should succeed
+    // Without chaos  -  should succeed
     cy.get('#fetch-data').click();
     cy.get('#status').should('have.text', 'Success!');
   });
@@ -153,7 +153,7 @@ describe('Presets', () => {
     cy.injectChaos(presets.unstableApi);
     cy.visit('/');
     cy.get('#fetch-data').click();
-    // Low probabilities — the request may or may not be affected. Verify that
+    // Low probabilities  -  the request may or may not be affected. Verify that
     // events (applied or skipped) were emitted for the /api/ match.
     cy.get('#status').should('not.be.empty');
     cy.getChaosLog().then((log) => {
@@ -191,7 +191,7 @@ describe('Presets', () => {
   });
 
   it('degradedUi preset assaults buttons and links', () => {
-    // UI preset needs DOM — load UMD with empty config, then start after visit
+    // UI preset needs DOM  -  load UMD with empty config, then start after visit
     cy.injectChaos({});
     cy.visit('/');
     startChaos(presets.degradedUi);

@@ -43,7 +43,7 @@ function buildChaosReport(
 ): ChaosReport;
 ```
 
-Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page — the summary:
+Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page  -  the summary:
 
 - `meta.appliedCount` counts outcome events with `applied === true`.
 - `meta.skippedCount` counts debug events with stage in `{rule-skip-match, rule-skip-counting, rule-skip-group, rule-skip-probability}`. `rule-group:gated` is not double-counted.

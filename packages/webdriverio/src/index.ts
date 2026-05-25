@@ -20,7 +20,7 @@ export interface InjectChaosOptions {
 /**
  * Minimal structural type for the WebdriverIO `Browser` object. Typed this way
  * so we don't have to take a hard type-only dependency on `webdriverio`'s
- * internal types — any object exposing `execute` works.
+ * internal types  -  any object exposing `execute` works.
  */
 export interface ChaosBrowser {
   execute<ReturnValue, Args extends unknown[]>(
@@ -57,7 +57,7 @@ function loadCoreUmdSource(): string {
 /**
  * Inject chaos into the current WebdriverIO browser page.
  *
- * Call **after** `browser.url(...)` — WebDriver has no generic pre-navigation
+ * Call **after** `browser.url(...)`  -  WebDriver has no generic pre-navigation
  * hook across Chromium/Firefox, so requests issued during the initial page
  * load are not intercepted. For full-lifecycle chaos use Playwright or Cypress.
  *
@@ -86,7 +86,7 @@ export async function injectChaos(
   const validated = validateChaosConfig(config, opts.validation);
   const umdSource = loadCoreUmdSource();
   // Both the config assignment and UMD source run inside the <script> tag's
-  // textContent so they execute in the page realm — Firefox/geckodriver runs
+  // textContent so they execute in the page realm  -  Firefox/geckodriver runs
   // `executeScript` bodies in a sandbox whose globals don't leak to the real
   // `window`, so setting `window.__CHAOS_CONFIG__` from the execute callback
   // alone leaves the UMD's auto-bootstrap with nothing to pick up.
@@ -119,7 +119,7 @@ export async function injectChaos(
  * on the current page.
  */
 export async function removeChaos(browser: ChaosBrowser): Promise<void> {
-  // Read state off `window` (the page realm), not `globalThis` — in Firefox
+  // Read state off `window` (the page realm), not `globalThis`  -  in Firefox
   // geckodriver's executeScript sandbox `globalThis` is the sandbox global,
   // which never sees `chaosUtils` because the UMD attaches it to `window`.
   try {
@@ -170,7 +170,7 @@ export async function enableGroup(browser: ChaosBrowser, name: string): Promise<
       };
     };
     if (!w.chaosUtils || !w.chaosUtils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof w.chaosUtils.enableGroup !== 'function') {
       throw new Error('[chaos-maker] enableGroup API unavailable');
@@ -199,7 +199,7 @@ export async function disableGroup(browser: ChaosBrowser, name: string): Promise
       };
     };
     if (!w.chaosUtils || !w.chaosUtils.instance) {
-      throw new Error('[chaos-maker] no chaos instance on page — call injectChaos first');
+      throw new Error('[chaos-maker] no chaos instance on page  -  call injectChaos first');
     }
     if (typeof w.chaosUtils.disableGroup !== 'function') {
       throw new Error('[chaos-maker] disableGroup API unavailable');
@@ -237,7 +237,7 @@ export async function getChaosSeed(browser: ChaosBrowser): Promise<number | null
 export function registerChaosCommands(browser: ChaosBrowser): void {
   if (!browser.addCommand) {
     throw new Error(
-      '[chaos-maker] registerChaosCommands: browser object does not expose addCommand — not a WebdriverIO Browser?',
+      '[chaos-maker] registerChaosCommands: browser object does not expose addCommand  -  not a WebdriverIO Browser?',
     );
   }
   browser.addCommand('injectChaos', async function (this: ChaosBrowser, ...args: unknown[]) {
@@ -322,7 +322,7 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
-// Reporting utilities — turn an event log into a structured report and
+// Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
   buildChaosReport,

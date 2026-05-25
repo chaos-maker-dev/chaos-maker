@@ -4,7 +4,7 @@
  * static file server (python http.server / http-server on CI) can serve them
  * as `/sw-app/chaos-maker-sw.js` and `/sw-app/chaos-maker-sw.mjs`.
  *
- * Both copies are gitignored — run `pnpm build:core` (or the root `pnpm build`)
+ * Both copies are gitignored  -  run `bun run build:core` (or the root `bun run build`)
  * before an e2e run to refresh them.
  */
 import { copyFile, mkdir } from 'node:fs/promises';

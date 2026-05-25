@@ -80,7 +80,7 @@ export class ChaosMaker {
   /** Rule-group registry. Default-on; default group always exists. */
   private groups: RuleGroupRegistry;
   /** Positional rule-id map shared across interceptors via emitter.
-   *  Built lazily — only when debug mode is enabled — so disabled instances
+   *  Built lazily  -  only when debug mode is enabled  -  so disabled instances
    *  pay zero allocation cost. The emitter handles `undefined` ruleIds
    *  internally via `?.get(rule)`. */
   private ruleIds?: WeakMap<object, RuleIdEntry>;
@@ -137,7 +137,7 @@ export class ChaosMaker {
     });
   }
 
-  // Engine `start()` already checked `getActiveRuntimeInstance` and bailed —
+  // Engine `start()` already checked `getActiveRuntimeInstance` and bailed  - 
   // by the time this runs the target is owned by this instance, so the
   // active-instance probe lives at the call site and not here.
   private emitStartInvariantDiagnostics(target: ChaosTarget): void {
@@ -248,7 +248,7 @@ export class ChaosMaker {
   }
 
   /** Enable a rule group at runtime. Auto-creates the group if unknown.
-   *  Engine state and per-rule counters are preserved — no restart. */
+   *  Engine state and per-rule counters are preserved  -  no restart. */
   public enableGroup(name: string): void {
     const nameNorm = normalizeGroupName(name);
     this.groups.setEnabled(nameNorm, true);
@@ -321,7 +321,7 @@ export class ChaosMaker {
     }
     this.emitStartInvariantDiagnostics(target);
     // Reset per-run state so counting rules (onNth / everyNth / afterN)
-    // restart from request 1 on every start() — not just on first construction.
+    // restart from request 1 on every start()  -  not just on first construction.
     this.requestCounters.clear();
     this.running = true;
     console.log('🛠️ Chaos Maker ENGAGED 🛠️');

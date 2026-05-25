@@ -73,7 +73,7 @@ function mergeProfileSliceInPlace(target: ProfileOverrideSlice, slice: ProfileOv
 export class ChaosConfigBuilder {
   private config: ChaosConfig;
   /** Single-shot group name applied to the next rule pushed and then cleared.
-   *  Sticky semantics intentionally rejected — silent capture of stale groups
+   *  Sticky semantics intentionally rejected  -  silent capture of stale groups
    *  is harder to debug than the explicit re-chain. */
   private pendingGroup?: string;
   /** Queued preset names for `.usePreset(...)`. Silently deduped on
@@ -241,7 +241,7 @@ export class ChaosConfigBuilder {
     return this;
   }
 
-  // Counting shortcuts (only the two highest-value ones — see plan §8).
+  // Counting shortcuts (only the two highest-value ones  -  see plan §8).
 
   dropMessagesOnNth(urlPattern: string, direction: WebSocketDirection, n: number) {
     return this.dropMessages(urlPattern, direction, 1, { onNth: n });
@@ -317,7 +317,7 @@ export class ChaosConfigBuilder {
   }
 
   /** Set the scenario profile to resolve at engine init.
-   *  Singular by design — calling again replaces the previously set profile.
+   *  Singular by design  -  calling again replaces the previously set profile.
    *  Empty / whitespace-only names throw. The profile is resolved by the
    *  per-instance `ProfileRegistry` during `prepareChaosConfig`. */
   useProfile(name: string): this {

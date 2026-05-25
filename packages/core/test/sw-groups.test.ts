@@ -144,7 +144,7 @@ describe('SW chaos - rule groups', () => {
     handle.uninstall();
   });
 
-  it('startEngine seeds groups from rule references — referenced groups become observable post-config', async () => {
+  it('startEngine seeds groups from rule references  -  referenced groups become observable post-config', async () => {
     const client = makeFakeClient('a');
     const target = makeSWTarget([client]);
     const { installChaosSW } = await importSwWithTarget(target);

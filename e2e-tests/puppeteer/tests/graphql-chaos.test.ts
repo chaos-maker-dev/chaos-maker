@@ -110,7 +110,7 @@ describe('GraphQL operation matching', () => {
     await page.goto(BASE_URL);
 
     await fireOp(page, 'gql-multipart');
-    // Server returns 400 because the fixture isn't a real multipart impl —
+    // Server returns 400 because the fixture isn't a real multipart impl  - 
     // test only cares that chaos's 599 was NOT injected over the real response.
     expect(await getText(page, '#gql-status')).not.toContain('599');
 

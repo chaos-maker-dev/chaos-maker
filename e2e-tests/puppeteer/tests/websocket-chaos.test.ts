@@ -30,7 +30,7 @@ async function inboundCount(p: Page): Promise<number> {
 }
 
 describe('WebSocket drop', () => {
-  it('drops every 2nd outbound message — server echoes half', async () => {
+  it('drops every 2nd outbound message  -  server echoes half', async () => {
     await injectChaos(page, {
       websocket: {
         drops: [{ urlPattern: WS_URL_PATTERN, direction: 'outbound', probability: 1, everyNth: 2 }],

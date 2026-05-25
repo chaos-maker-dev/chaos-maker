@@ -3,7 +3,7 @@ import type { ChaosConfig } from '../src/config';
 import { applyProfile, ProfileRegistry } from '../src/profiles';
 
 describe('applyProfile', () => {
-  it('returns a fresh ChaosConfig — caller owns the result', () => {
+  it('returns a fresh ChaosConfig  -  caller owns the result', () => {
     const input: ChaosConfig = { profile: 'mobileCheckout' };
     const out = applyProfile(input, new ProfileRegistry());
     expect(out).not.toBe(input);
@@ -43,7 +43,7 @@ describe('applyProfile', () => {
     expect(out.customProfiles).toBeUndefined();
   });
 
-  it('expands a built-in profile via the registry — mobileCheckout folds its presets into the output', () => {
+  it('expands a built-in profile via the registry  -  mobileCheckout folds its presets into the output', () => {
     const out = applyProfile({ profile: 'mobileCheckout' }, new ProfileRegistry());
     expect(out.presets).toEqual(['mobile-3g', 'checkout-degraded']);
   });

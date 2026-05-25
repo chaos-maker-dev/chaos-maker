@@ -55,14 +55,14 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run ESLint
-        run: pnpm lint
+        run: bun run lint
 
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    # Runs in parallel with `lint` and `build` — none of the three reads
+    # Runs in parallel with `lint` and `build`  -  none of the three reads
     # another's output. E2E jobs still gate on `build` for the dist artifact.
     steps:
       - name: Checkout Repository
@@ -72,7 +72,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Run Unit Tests
-        run: pnpm test
+        run: bun run test
 
   build:
     name: Build Core
@@ -89,7 +89,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Build All Packages
-        run: pnpm build
+        run: bun run build
 
       - name: Report Bundle Size
         run: |
@@ -138,11 +138,11 @@ jobs:
           frozen-lockfile: 'true'
 
       # Validates the branch's `docs/content-source/**` edits in addition to
-      # the tag-driven archives. The published site is still tag-only — this
+      # the tag-driven archives. The published site is still tag-only  -  this
       # job's artifact is never deployed; it exists to fail PRs that break
       # docs syntax, frontmatter, or imports.
       - name: Build Docs (working tree + tags)
-        run: pnpm --filter chaos-maker-docs run build:dev
+        run: bun --filter chaos-maker-docs build:dev
 
       - name: Upload Docs Artifact
         uses: actions/upload-artifact@v7
@@ -196,14 +196,14 @@ jobs:
 
       - name: Install Playwright Browser (${{ matrix.install }})
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-playwright exec playwright install --with-deps ${{ matrix.install }}
+        run: bun --filter e2e-tests-playwright exec playwright install --with-deps ${{ matrix.install }}
 
       - name: Install Playwright System Dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm --filter e2e-tests-playwright exec playwright install-deps ${{ matrix.install }}
+        run: bun --filter e2e-tests-playwright exec playwright install-deps ${{ matrix.install }}
 
       - name: Run E2E Tests (${{ matrix.project }})
-        run: pnpm --filter e2e-tests-playwright exec playwright test --project ${{ matrix.project }}
+        run: bun --filter e2e-tests-playwright exec playwright test --project ${{ matrix.project }}
 
   e2e-cypress:
     name: E2E Cypress (${{ matrix.browser }})
@@ -214,7 +214,7 @@ jobs:
       fail-fast: false
       matrix:
         # Chrome is pre-installed on ubuntu-latest runners.
-        # Electron ships with the Cypress binary itself — no separate install.
+        # Electron ships with the Cypress binary itself  -  no separate install.
         #
         # Firefox is intentionally excluded: Cypress 13.x's CDP-over-GeckoDriver
         # bridge is broken against Firefox 140+ on ubuntu-latest ("Failed to
@@ -238,14 +238,14 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/Cypress
-          key: cypress-${{ hashFiles('pnpm-lock.yaml') }}
+          key: cypress-${{ hashFiles('bun.lock') }}
 
       - name: Setup
         uses: ./.github/actions/setup
 
       - name: Install Cypress Binary
         if: steps.cypress-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-cypress exec cypress install
+        run: bun --filter e2e-tests-cypress exec cypress install
 
       - name: Download Build Artifact
         uses: actions/download-artifact@v8
@@ -257,7 +257,7 @@ jobs:
         run: node scripts/sync-sw-fixtures.mjs
 
       - name: Run Cypress E2E Tests (${{ matrix.browser }})
-        run: pnpm --filter e2e-tests-cypress exec cypress run --browser ${{ matrix.browser }}
+        run: bun --filter e2e-tests-cypress exec cypress run --browser ${{ matrix.browser }}
 
       - name: Upload Cypress Screenshots (on failure)
         if: failure()
@@ -295,7 +295,7 @@ jobs:
       - name: Run WebdriverIO E2E Tests (${{ matrix.browser }})
         env:
           WDIO_BROWSER: ${{ matrix.browser }}
-        run: pnpm --filter e2e-tests-webdriverio test
+        run: bun --filter e2e-tests-webdriverio test
 
   e2e-puppeteer:
     name: E2E Puppeteer (headless-new)
@@ -311,7 +311,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/puppeteer
-          key: puppeteer-${{ hashFiles('e2e-tests/puppeteer/package.json', 'pnpm-lock.yaml') }}
+          key: puppeteer-${{ hashFiles('e2e-tests/puppeteer/package.json', 'bun.lock') }}
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -329,15 +329,15 @@ jobs:
 
       - name: Install Puppeteer Chrome
         if: steps.puppeteer-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
+        run: bun --filter e2e-tests-puppeteer exec puppeteer browsers install chrome
 
       - name: Run Puppeteer E2E Tests
-        run: pnpm --filter e2e-tests-puppeteer test
+        run: bun --filter e2e-tests-puppeteer test
 
   # Single status check that branch protection should require. Aggregates the
   # results of every gating job above so docs-only PRs can skip the e2e
   # matrix without leaving a required check pending. Skipped jobs count as
-  # passing — only failure or cancellation marks this red.
+  # passing  -  only failure or cancellation marks this red.
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest

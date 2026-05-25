@@ -8,15 +8,15 @@
   "scripts": {
     "generate:versions": "node scripts/build-versioned-docs.mjs",
     "generate:versions:dev": "node scripts/build-versioned-docs.mjs --dev",
-    "predev": "pnpm run generate:versions:dev",
+    "predev": "bun run generate:versions:dev",
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
-    "prebuild": "pnpm run generate:versions",
+    "prebuild": "bun run generate:versions",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
-    "prebuild:dev": "pnpm run generate:versions:dev",
+    "prebuild:dev": "bun run generate:versions:dev",
     "build:dev": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "test:versions": "node scripts/test-versioning.mjs",
-    "test:versions:full": "pnpm run build:dev && node scripts/test-versioning.mjs"
+    "test:versions:full": "bun run build:dev && node scripts/test-versioning.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.0",

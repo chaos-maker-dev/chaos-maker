@@ -127,7 +127,7 @@ describe('afterN counting', () => {
     }
   });
 
-  it('fetch: afterN 0 — every request fails', async () => {
+  it('fetch: afterN 0  -  every request fails', async () => {
     await browser.url('/');
     await browser.injectChaos({
       network: { failures: [{ urlPattern: API_PATTERN, statusCode: 503, probability: 1.0, afterN: 0 }] },

@@ -353,7 +353,7 @@ export function patchFetch(originalFetch: typeof globalThis.fetch, config: Netwo
         const applied = shouldApplyChaos(cors.probability, random);
         // The `graphql-body-unparseable` diagnostic is intentionally gated on
         // both group and probability so disabled groups / missed rolls do not
-        // produce noisy diagnostics for every unparseable body — see the
+        // produce noisy diagnostics for every unparseable body  -  see the
         // "suppresses graphql-body-unparseable diagnostics" tests in
         // packages/core/test/networkFetch.test.ts.
         if (gate.outcome?.kind === 'unparseable') {

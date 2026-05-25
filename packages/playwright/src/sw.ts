@@ -30,14 +30,14 @@ const BRIDGE_INIT_KEY = Symbol.for('chaos-maker.playwright.sw.bridgeInit');
 const DEFAULT_SW_TOGGLE_TIMEOUT = 2_000;
 
 async function ensurePageBridge(page: Page): Promise<void> {
-  // `addInitScript` is additive — call it at most once per Page to prevent
+  // `addInitScript` is additive  -  call it at most once per Page to prevent
   // listener stacking across re-inject calls. The flag inside the script also
   // guards against double-install within a single document.
   if (!(page as unknown as Record<symbol, unknown>)[BRIDGE_INIT_KEY]) {
     await page.addInitScript({ content: SW_BRIDGE_SOURCE });
     (page as unknown as Record<symbol, unknown>)[BRIDGE_INIT_KEY] = true;
   }
-  // Current document has already navigated — init script won't retro-fire, so
+  // Current document has already navigated  -  init script won't retro-fire, so
   // also evaluate the same source against the live document.
   await page.evaluate(SW_BRIDGE_SOURCE).catch(() => {
     // Page may not yet have committed (pre-goto usage). addInitScript covers
@@ -49,7 +49,7 @@ async function ensurePageBridge(page: Page): Promise<void> {
  * Configure Service-Worker chaos for a Playwright page. Call **after**
  * `page.goto(...)` so there is a SW registration + controller to target.
  *
- * Requires the user's service worker to load the chaos SW bundle — typically
+ * Requires the user's service worker to load the chaos SW bundle  -  typically
  * via `importScripts('/path/to/chaos-maker-sw.js')` (classic SW) or
  * `import { installChaosSW } from '@chaos-maker/core/sw'; installChaosSW();`
  * (module SW).
@@ -79,7 +79,7 @@ export async function injectSWChaos(
           apply: (c: ChaosConfig, t: number) => Promise<{ seed: number | null }>;
         };
       }).__chaosMakerSWBridge;
-      if (!bridge) throw new Error('[chaos-maker] SW bridge missing from page — ensurePageBridge failed');
+      if (!bridge) throw new Error('[chaos-maker] SW bridge missing from page  -  ensurePageBridge failed');
       return await bridge.apply(cfg, timeoutMs);
     },
     { cfg: validated, timeoutMs },
@@ -113,7 +113,7 @@ export async function removeSWChaos(page: Page, opts: SWChaosOptions = {}): Prom
     },
     { timeoutMs },
   ).catch(() => {
-    // Page may be closed during teardown — don't mask real failures.
+    // Page may be closed during teardown  -  don't mask real failures.
   });
 }
 
@@ -155,7 +155,7 @@ async function toggleSWGroup(page: Page, name: string, enabled: boolean, opts: S
           toggleGroup: (name: string, enabled: boolean, t: number) => Promise<unknown>;
         };
       }).__chaosMakerSWBridge;
-      if (!bridge) throw new Error('[chaos-maker] SW bridge missing — ensurePageBridge failed');
+      if (!bridge) throw new Error('[chaos-maker] SW bridge missing  -  ensurePageBridge failed');
       await bridge.toggleGroup(n, e, t);
     },
     { n: name, e: enabled, t: timeoutMs },

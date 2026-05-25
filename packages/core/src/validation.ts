@@ -560,7 +560,7 @@ const buildProfileSliceObject = (p: Policy) =>
 /** Shape of a scenario profile slice OR a runtime override slice. A profile
  *  MAY carry its own `presets[]`, `seed`, `debug`, `groups`, and the four rule
  *  categories. It MAY NOT carry `customPresets`, `customProfiles`, `profile`,
- *  `profileOverrides`, or `schemaVersion` — nested profile chaining is
+ *  `profileOverrides`, or `schemaVersion`  -  nested profile chaining is
  *  explicitly out-of-scope. A `superRefine` flags forbidden keys with a
  *  `profile_chain` code so the error surface stays actionable on the public
  *  validation path. */
@@ -606,7 +606,7 @@ export const chaosConfigSchemaPassthrough: z.ZodTypeAny = buildChaosConfigSchema
 
 const chaosConfigSliceSchema = buildSliceSchema('strict');
 
-// DRIFT GUARD — fails to compile if `PresetConfigSlice` gains a top-level
+// DRIFT GUARD  -  fails to compile if `PresetConfigSlice` gains a top-level
 // key the schema doesn't model. SCOPE: top-level category coverage only.
 type _SliceKeys = keyof Required<PresetConfigSlice>;
 type _SchemaKeys = keyof typeof chaosConfigSliceSchema.shape;
@@ -617,7 +617,7 @@ void _sliceSchemaCovers;
 const chaosProfileSliceObject = buildProfileSliceObject('strict');
 const chaosProfileSliceSchema = buildProfileSliceSchema('strict');
 
-// DRIFT GUARD — fails to compile if `ProfileConfigSlice` gains a top-level
+// DRIFT GUARD  -  fails to compile if `ProfileConfigSlice` gains a top-level
 // key the profile-slice schema doesn't model. Same coverage scope as the
 // preset slice guard above. Targets the inner ZodObject so `.shape` is
 // available (the public schema wraps it in a `superRefine`).
@@ -732,7 +732,7 @@ export interface PrepareChaosConfigOptions {
  *       resolve `profile` + `profileOverrides` into a flat config (strips
  *       all three profile fields).
  *    3. Build per-instance `PresetRegistry`, register `customPresets`.
- *    4. `expandPresets` — append rule arrays + groups, strip preset fields.
+ *    4. `expandPresets`  -  append rule arrays + groups, strip preset fields.
  *    5. Zod pass 2 (strict, on the merged config).
  *
  *  v0.4.x callers pass no opts and get strict-by-default behavior identical
@@ -921,11 +921,11 @@ function runCustomValidators(
  *  Pipeline:
  *    1. Schema-version gate (BEFORE Zod, unambiguous message).
  *    2. Brand short-circuit (only when brand-version matches AND opts empty).
- *    3-5. `prepareChaosConfig` — Zod pass 1 + preset expansion + Zod pass 2.
+ *    3-5. `prepareChaosConfig`  -  Zod pass 1 + preset expansion + Zod pass 2.
  *    6. Deprecation walk.
  *    7. Custom validators.
  *    8. Issue sort (inside ChaosConfigError construction).
- *    9. Brand stamp — final step only.
+ *    9. Brand stamp  -  final step only.
  *
  *  Throws `ChaosConfigError` aggregating all issues from the first failing
  *  layer. Subsequent layers are skipped on failure. */

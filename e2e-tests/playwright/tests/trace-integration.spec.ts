@@ -17,7 +17,7 @@ test.use({ trace: 'on' });
 // flush (which happens between test 1's teardown and test 2's start).
 test.describe.configure({ mode: 'serial' });
 
-// Shared state between paired tests in this describe — Playwright writes
+// Shared state between paired tests in this describe  -  Playwright writes
 // trace.zip at end-of-test, so we always read it from a follow-up test.
 let traceZipPath: string | null = null;
 let chaosLogAttachmentPath: string | null = null;
@@ -93,7 +93,7 @@ test.describe('Playwright trace integration', () => {
 
   test('trace.zip from previous test contains chaos:network:latency steps', async ({}, _testInfo) => {
     expect(traceZipPath).toBeTruthy();
-    // Wait briefly — trace flush runs during test-worker transitions; file may
+    // Wait briefly  -  trace flush runs during test-worker transitions; file may
     // not be on disk instantly on slower runners.
     const deadline = Date.now() + 5000;
     while (!(traceZipPath && existsSync(traceZipPath)) && Date.now() < deadline) {
@@ -157,7 +157,7 @@ test.describe('Playwright trace integration', () => {
 
     // Stash the expected trace path for the follow-up test. Playwright flushes
     // trace.zip during teardown AFTER this body returns, so we read it from a
-    // separate test — same trick as `traceZipPath` above.
+    // separate test  -  same trick as `traceZipPath` above.
     debugTraceZipPath = join(testInfo.outputDir, 'trace.zip');
   });
 

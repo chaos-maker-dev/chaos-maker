@@ -272,7 +272,7 @@ test('flaky checkout', async ({ page, chaos }) => {
 });
 ```
 
-On failure, open the trace (`pnpm exec playwright show-trace ...`). You'll see a step like:
+On failure, open the trace (`bunx playwright show-trace ...`). You'll see a step like:
 
 > `chaos:network:failure /api/pay → 503`
 

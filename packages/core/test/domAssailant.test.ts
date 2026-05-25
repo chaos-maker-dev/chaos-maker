@@ -122,7 +122,7 @@ describe('domAssailant', () => {
     el.textContent = 'Dynamic content';
     document.body.appendChild(el);
 
-    // MutationObserver fires asynchronously — wait for callback to execute
+    // MutationObserver fires asynchronously  -  wait for callback to execute
     await new Promise((r) => setTimeout(r, 0));
 
     expect(el.style.display).toBe('none');
@@ -215,7 +215,7 @@ describe('domAssailant', () => {
     startObserver(config);
     observer.disconnect();
 
-    // Add element after disconnect — should NOT be assaulted
+    // Add element after disconnect  -  should NOT be assaulted
     const btn = document.createElement('button');
     btn.textContent = 'After disconnect';
     document.body.appendChild(btn);

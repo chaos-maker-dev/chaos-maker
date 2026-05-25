@@ -1,8 +1,8 @@
-name: Setup pnpm + Node + install
+name: Setup Bun + Node + install
 description: Checkout assumed already done by caller
 inputs:
   frozen-lockfile:
-    description: Pass --frozen-lockfile to pnpm install
+    description: Pass --frozen-lockfile to bun install
     required: false
     default: 'false'
   skip-puppeteer-download:
@@ -12,17 +12,23 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v6
+    - uses: oven-sh/setup-bun@v2
     - uses: actions/setup-node@v6
       with:
         node-version-file: '.nvmrc'
-        cache: 'pnpm'
+    - name: Cache Bun dependencies
+      uses: actions/cache@v5
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
     - shell: bash
       env:
         PUPPETEER_SKIP_DOWNLOAD: ${{ inputs.skip-puppeteer-download == 'true' && 'true' || '' }}
       run: |
         if [ "${{ inputs.frozen-lockfile }}" = "true" ]; then
-          pnpm install --frozen-lockfile
+          bun install --frozen-lockfile
         else
-          pnpm install
+          bun install
         fi

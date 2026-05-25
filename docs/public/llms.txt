@@ -1,0 +1,70 @@
+# Chaos Maker
+
+> Frontend chaos engineering toolkit for testing resilience across Playwright, Cypress, WebdriverIO, and Puppeteer.
+
+This file provides a curated index of the Chaos Maker documentation, designed for consumption by Large Language Models (LLMs) and AI tools.
+
+## Full Documentation
+
+- [Full Documentation](/chaos-maker/llms-full.txt): Complete text of all documentation in a single file
+
+## Introduction
+
+- [Chaos Maker](/chaos-maker/latest/): Frontend chaos engineering toolkit for testing resilience across Playwright, Cypress, WebdriverIO, and Puppeteer.
+
+## Adapters
+
+- [Cypress Adapter](/chaos-maker/latest/adapters/cypress/): Public API and command registration for @chaos-maker/cypress.
+- [Playwright Adapter](/chaos-maker/latest/adapters/playwright/): Public API and timing rules for @chaos-maker/playwright.
+- [Puppeteer Adapter](/chaos-maker/latest/adapters/puppeteer/): Public API and timing rules for @chaos-maker/puppeteer.
+- [WebdriverIO Adapter](/chaos-maker/latest/adapters/webdriverio/): Public API and limitations for @chaos-maker/webdriverio.
+
+## Api
+
+- [Config Reference](/chaos-maker/latest/api/config-reference/): ChaosConfig, event, and rule type reference.
+- [Core API](/chaos-maker/latest/api/core/): Public exports from @chaos-maker/core.
+- [Debug Mode](/chaos-maker/latest/api/debug/): ChaosConfig.debug, the debug event payload, and the rule decision stage taxonomy.
+- [Reporting API](/chaos-maker/latest/api/reporting/): buildChaosReport, formatReportJson/Markdown/Html, and filterEventsByTransport for turning event logs into deterministic artifacts.
+
+## Concepts
+
+- [Builder](/chaos-maker/latest/concepts/builder/): Compose ChaosConfig with ChaosConfigBuilder.
+- [Chaos Types](/chaos-maker/latest/concepts/chaos-types/): Network, UI, WebSocket, Service Worker, SSE, and GraphQL chaos primitives.
+- [Advanced matchers](/chaos-maker/latest/concepts/matchers/): Hostname, query parameter, header, and resource-type matchers plus a reusable named matcher registry for fine-grained rule targeting.
+- [Nth Counting](/chaos-maker/latest/concepts/nth-counting/): Target exact matching requests with onNth, everyNth, and afterN.
+- [Observability](/chaos-maker/latest/concepts/observability/): Inspect chaos events, seeds, debug logs, and Playwright trace output.
+- [Presets](/chaos-maker/latest/concepts/presets/): Built-in Chaos Maker presets for common resilience scenarios.
+- [Scenario profiles](/chaos-maker/latest/concepts/profiles/): Reusable named bundles that compose presets, seed, and rule slices, plus runtime overrides at the inject site.
+- [Seeded Reproducibility](/chaos-maker/latest/concepts/seeded-reproducibility/): Replay probability-driven chaos decisions with a fixed seed.
+- [Service Worker Chaos](/chaos-maker/latest/concepts/service-worker-chaos/): Apply network chaos to fetches made inside a Service Worker.
+- [SSE Chaos](/chaos-maker/latest/concepts/sse-chaos/): Drop, delay, corrupt, or close Server-Sent Event streams.
+- [Timeline and reporting](/chaos-maker/latest/concepts/timeline-and-reporting/): Turn a chaos event log into deterministic JSON, Markdown, or HTML artifacts for CI and PR review.
+- [Rule Validation](/chaos-maker/latest/concepts/validation/): Structured config validation, the JSON Schema artifact, and forward-compat rails for ChaosConfig.
+
+## Getting Started
+
+- [Cypress](/chaos-maker/latest/getting-started/cypress/): Inject chaos into Cypress tests before cy.visit().
+- [Install](/chaos-maker/latest/getting-started/install/): Install Chaos Maker for Playwright, Cypress, WebdriverIO, or Puppeteer.
+- [Playwright](/chaos-maker/latest/getting-started/playwright/): Inject chaos into Playwright tests before navigation.
+- [Puppeteer](/chaos-maker/latest/getting-started/puppeteer/): Inject chaos into Puppeteer pages with evaluateOnNewDocument().
+- [WebdriverIO](/chaos-maker/latest/getting-started/webdriverio/): Inject chaos into WebdriverIO tests after navigation.
+
+## Rationale
+
+- [Why Frontend Chaos?](/chaos-maker/latest/rationale/why-frontend-chaos/): Why resilience testing belongs in frontend E2E suites.
+
+## Recipes
+
+- [Abort Upload Midflight](/chaos-maker/latest/recipes/abort-upload-midflight/): Verify upload cancellation and recovery when a request aborts midflight.
+- [AI Chat Streaming Under Flaky SSE](/chaos-maker/latest/recipes/ai-chat-streaming-sse/): Verify streaming chat UI when EventSource tokens drop or stall.
+- [Corrupt JSON Response](/chaos-maker/latest/recipes/corrupt-json-response/): Verify parse-error handling when an API returns malformed JSON.
+- [CORS Preflight Block](/chaos-maker/latest/recipes/cors-preflight-block/): Verify cross-origin fallback UI when the browser rejects a request.
+- [Degraded UI Buttons](/chaos-maker/latest/recipes/degraded-ui-buttons/): Verify fallback behavior when critical buttons are disabled.
+- [Diagnose No Chaos](/chaos-maker/latest/recipes/diagnose-no-chaos/): Use debug events and skipped log entries to explain why a rule did not fire.
+- [Fail One GraphQL Operation](/chaos-maker/latest/recipes/fail-graphql-operation/): Target one operation on a shared GraphQL endpoint while others pass.
+- [Flaky API With Retries](/chaos-maker/latest/recipes/flaky-api-with-retries/): Verify retry UX when an API intermittently returns 503.
+- [Nth Request Fails](/chaos-maker/latest/recipes/nth-request-fails/): Verify pagination or polling recovery when a specific request fails.
+- [Reproduce a Flaky Failure](/chaos-maker/latest/recipes/reproduce-flaky-failure/): Capture the chaos seed on failure, hardcode it, and replay the same chaos decisions.
+- [Slow Checkout](/chaos-maker/latest/recipes/slow-checkout/): Verify checkout loading and disabled-submit states when payment APIs are slow.
+- [WebSocket Disconnect Storm](/chaos-maker/latest/recipes/ws-disconnect-storm/): Verify reconnect UI when WebSocket connections close repeatedly.
+

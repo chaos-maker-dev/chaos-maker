@@ -86,7 +86,7 @@ describe('ProfileRegistry', () => {
     expect(a.get('mobileCheckout')).toBe(b.get('mobileCheckout'));
   });
 
-  it('built-in slice is deep-frozen — mutation throws in strict mode', () => {
+  it('built-in slice is deep-frozen  -  mutation throws in strict mode', () => {
     const registry = new ProfileRegistry();
     const slice = registry.get('mobile-checkout');
     expect(() => {
@@ -94,7 +94,7 @@ describe('ProfileRegistry', () => {
     }).toThrow(TypeError);
   });
 
-  it('BUILT_IN_PROFILES descriptors are frozen — name swap throws', () => {
+  it('BUILT_IN_PROFILES descriptors are frozen  -  name swap throws', () => {
     expect(Object.isFrozen(BUILT_IN_PROFILES[0])).toBe(true);
     expect(() => {
       (BUILT_IN_PROFILES[0] as { name: string }).name = 'poisoned';
@@ -102,7 +102,7 @@ describe('ProfileRegistry', () => {
     expect(new ProfileRegistry().has('mobileCheckout')).toBe(true);
   });
 
-  it('BUILT_IN_PROFILES descriptors are frozen — config swap throws', () => {
+  it('BUILT_IN_PROFILES descriptors are frozen  -  config swap throws', () => {
     expect(() => {
       (BUILT_IN_PROFILES[0] as { config: unknown }).config = {};
     }).toThrow(TypeError);

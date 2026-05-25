@@ -1,4 +1,4 @@
-// Baseline — AUT without chaos. If these fail, chaos-specific failures
+// Baseline  -  AUT without chaos. If these fail, chaos-specific failures
 // elsewhere point at the page, not the adapter.
 import { browser, $ } from '@wdio/globals';
 

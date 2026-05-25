@@ -15,8 +15,8 @@ npm-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# PNPM
-.pnpm-store/
+# Bun
+bun.lockb
 
 # Vite
 dist/

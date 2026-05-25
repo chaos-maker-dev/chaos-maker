@@ -10,7 +10,7 @@
  * tests can read a unified log on the page side.
  *
  * Deliberately excluded from this bundle: Zod validation, UI DOM assailant,
- * the public `ChaosMaker` class, and the builder — all page-side concerns.
+ * the public `ChaosMaker` class, and the builder  -  all page-side concerns.
  * The page-side adapter helpers validate config before postMessage, so the
  * SW bundle stays small enough to ship to production service workers.
  */
@@ -34,7 +34,7 @@ import {
 
 /**
  * Service-Worker global scope. Typed manually so this file compiles under the
- * main `lib: ["ESNext", "DOM"]` config — adding the `"WebWorker"` lib at the
+ * main `lib: ["ESNext", "DOM"]` config  -  adding the `"WebWorker"` lib at the
  * tsconfig level collides with `lib.dom`. These are the only SW globals we
  * touch.
  */
@@ -110,9 +110,9 @@ export interface InstallChaosSWOptions {
   /**
    * How the SW receives its chaos config.
    *
-   * - `'message'` (default) — wait for a `postMessage({ __chaosMakerConfig: … })`
+   * - `'message'` (default)  -  wait for a `postMessage({ __chaosMakerConfig: … })`
    *   from the page. Typically paired with a `MessageChannel` for ack.
-   * - `'self-global'` — read `self.__CHAOS_CONFIG__` synchronously. Useful when
+   * - `'self-global'`  -  read `self.__CHAOS_CONFIG__` synchronously. Useful when
    *   the SW script is served with the config baked in (e.g. query-string).
    */
   source?: 'message' | 'self-global';
@@ -150,12 +150,12 @@ function broadcastToClients(target: SWGlobal, message: unknown): void {
         try {
           client.postMessage(message);
         } catch {
-          // client gone — ignore
+          // client gone  -  ignore
         }
       }
     })
     .catch(() => {
-      /* matchAll rejected during teardown — silent */
+      /* matchAll rejected during teardown  -  silent */
     });
 }
 
@@ -194,7 +194,7 @@ function startEngine(state: SWEngineState, config: ChaosConfig): number {
   state.groups.ensure(DEFAULT_GROUP_NAME, { enabled: true });
 
   // Only allocate the positional rule-id map and attach a Logger
-  // when debug mode is enabled — matches the same gating used in
+  // when debug mode is enabled  -  matches the same gating used in
   // `ChaosMaker.ts` so the SW disabled path stays allocation-free. Both
   // bindings are also explicitly cleared on a config swap that disables
   // debug, so a stale logger from a prior config can't reach interceptors.
@@ -285,7 +285,7 @@ function stopEngine(state: SWEngineState): void {
   }
   state.emitter.debug('lifecycle', { phase: 'sw:config-stopped' });
   // Detach the SW debug sink so a stale Logger from the prior config can no
-  // longer fire after the engine is stopped — e.g. an out-of-band
+  // longer fire after the engine is stopped  -  e.g. an out-of-band
   // `__chaosMakerToggleGroup` message arriving post-stop must NOT emit
   // `type: 'debug'` events or call `console.debug`.
   state.emitter.setLogger(undefined);
@@ -317,7 +317,7 @@ function replyViaPortOrBroadcast(target: SWGlobal, evt: { ports?: readonly unkno
  *
  * Idempotent: calling more than once returns the existing handle.
  *
- * @example Classic SW (typical user integration — one line)
+ * @example Classic SW (typical user integration  -  one line)
  * ```js
  * // user's sw.js
  * importScripts('/vendor/chaos-maker-sw.js');
@@ -348,7 +348,7 @@ export function installChaosSW(opts: InstallChaosSWOptions = {}): SWChaosHandle 
   if (existing) return existing;
 
   const emitter = new ChaosEventEmitter(opts.maxLogEntries ?? 2000);
-  // Placeholder PRNG replaced by `createPrng` when a config arrives — never
+  // Placeholder PRNG replaced by `createPrng` when a config arrives  -  never
   // consulted by an interceptor before `startEngine` swaps it.
   const placeholder = createPrng(0);
   const state: SWEngineState = {

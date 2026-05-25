@@ -28,7 +28,7 @@ export default defineConfig({
   webServer: [
     {
       command: process.env.CI
-        ? 'pnpm exec http-server ../fixtures -p 8080 -s'
+        ? 'bunx http-server ../fixtures -p 8080 -s'
         : 'python3 -m http.server 8080 -d ../fixtures',
       url: 'http://127.0.0.1:8080',
       reuseExistingServer: !process.env.CI,

@@ -4,7 +4,7 @@ import type { ChaosConfig } from '@chaos-maker/playwright';
 
 const BASE_URL = 'http://127.0.0.1:8080';
 
-// UI chaos must be started AFTER page load — the DOM assailant does an initial
+// UI chaos must be started AFTER page load  -  the DOM assailant does an initial
 // scan of existing elements and attaches a MutationObserver to document.body,
 // both of which require the DOM to exist. We use injectChaos with an empty
 // config to load the UMD bundle (which sets up window.chaosUtils), then call
@@ -68,7 +68,7 @@ test.describe('UI Assaults', () => {
     // No dynamic buttons yet
     await expect(page.locator('.dynamic-btn')).toHaveCount(0);
 
-    // Add one dynamically — MutationObserver should catch it
+    // Add one dynamically  -  MutationObserver should catch it
     await page.click('#add-dynamic');
     const btn = page.locator('.dynamic-btn');
     await expect(btn).toHaveCount(1);

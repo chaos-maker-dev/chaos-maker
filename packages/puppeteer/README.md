@@ -7,7 +7,7 @@ Puppeteer adapter for [`@chaos-maker/core`](https://github.com/chaos-maker-dev/c
 ```bash
 npm install --save-dev @chaos-maker/puppeteer puppeteer
 # or
-pnpm add -D @chaos-maker/puppeteer puppeteer
+bun add -D @chaos-maker/puppeteer puppeteer
 ```
 
 ## Quick start

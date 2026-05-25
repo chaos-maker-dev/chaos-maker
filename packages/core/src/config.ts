@@ -19,14 +19,14 @@ export interface RequestCountingOptions {
 /** Optional group membership shared by every rule type.
  *  Rules without a `group` belong to the implicit `'default'` group, which is
  *  always enabled. Toggling a group at runtime via `enableGroup` /
- *  `disableGroup` skips its rules without restarting the engine — counters
+ *  `disableGroup` skips its rules without restarting the engine  -  counters
  *  stay intact across toggles. */
 export interface RuleGroupAssignment {
   group?: string;
 }
 
 /** Match a GraphQL operation by name. Applied AFTER `urlPattern` + `methods`
- *  as an additive filter — never a replacement. Matches against:
+ *  as an additive filter  -  never a replacement. Matches against:
  *  - JSON `operationName` field on POST request bodies, OR
  *  - the operation name parsed from the `query` field (e.g. `query GetUser { … }`),
  *  - `?operationName=` query parameter for persisted-query GET requests, OR
@@ -43,16 +43,16 @@ export interface RuleGroupAssignment {
 export type GraphQLOperationMatcher = string | RegExp;
 
 /** Match against the hostname portion of a request URL.
- *  - `string` — case-insensitive exact match against `new URL(url).hostname`.
- *  - `RegExp` — `.test(hostname)`; `g`/`y` flags rejected at validation time.
+ *  - `string`  -  case-insensitive exact match against `new URL(url).hostname`.
+ *  - `RegExp`  -  `.test(hostname)`; `g`/`y` flags rejected at validation time.
  */
 export type HostnameMatcher = string | RegExp;
 
 /** Per-key matcher for query parameters and request headers.
- *  - `true` — key must be present (value ignored).
- *  - `false` — key must be absent.
- *  - `string` — exact value match (decoded for query params; raw for headers).
- *  - `RegExp` — `.test(value)`; `g`/`y` flags rejected at validation time.
+ *  - `true`  -  key must be present (value ignored).
+ *  - `false`  -  key must be absent.
+ *  - `string`  -  exact value match (decoded for query params; raw for headers).
+ *  - `RegExp`  -  `.test(value)`; `g`/`y` flags rejected at validation time.
  */
 export type RequestKvMatcher = string | RegExp | boolean;
 
@@ -85,19 +85,19 @@ export interface NamedMatcher {
  *  surfaces a `matcher_inline_conflict` validation error.
  *
  *  Inline matcher semantics:
- *  - `urlPattern` — substring match (or `'*'` for any URL).
- *  - `methods` — HTTP method whitelist (case-sensitive after `.toUpperCase()`
+ *  - `urlPattern`  -  substring match (or `'*'` for any URL).
+ *  - `methods`  -  HTTP method whitelist (case-sensitive after `.toUpperCase()`
  *    at the interceptor).
- *  - `hostname` — case-insensitive exact match or RegExp test against the
+ *  - `hostname`  -  case-insensitive exact match or RegExp test against the
  *    request URL's hostname.
- *  - `queryParams` — per-key matcher map; every entry must pass.
- *  - `requestHeaders` — per-key matcher map for REQUEST headers (key
+ *  - `queryParams`  -  per-key matcher map; every entry must pass.
+ *  - `requestHeaders`  -  per-key matcher map for REQUEST headers (key
  *    comparison is case-insensitive); every entry must pass. The name is
  *    `requestHeaders` (not `headers`) so it does not collide with the
  *    response-synthesis `headers` field on `NetworkFailureConfig`.
- *  - `resourceTypes` — non-empty subset of `{'fetch','xhr'}`; rule fires only
+ *  - `resourceTypes`  -  non-empty subset of `{'fetch','xhr'}`; rule fires only
  *    when the originating interceptor is in the list.
- *  - `graphqlOperation` — applied AFTER all other matchers.
+ *  - `graphqlOperation`  -  applied AFTER all other matchers.
  */
 export interface NetworkRuleMatchers {
   urlPattern?: string;
@@ -335,7 +335,7 @@ export interface ChaosConfig {
    * Enable Chaos Maker's structured Debug Mode. When `true`, every
    * rule decision emits a `type: 'debug'` event (with `detail.stage`)
    * through the emitter AND mirrors a `[Chaos] <stage> ...` line to
-   * `console.debug`. Framework-agnostic — does not touch
+   * `console.debug`. Framework-agnostic  -  does not touch
    * Playwright/Cypress/Puppeteer/WDIO debug semantics. Defaults to `false`;
    * fast-path no-op when off.
    *
@@ -356,7 +356,7 @@ export interface ChaosConfig {
    * user rules last. Duplicate names are silently deduplicated, preserving
    * first occurrence. Unknown names throw `ChaosConfigError` at construction.
    *
-   * Preset configs themselves cannot carry `presets` or `customPresets` —
+   * Preset configs themselves cannot carry `presets` or `customPresets`  - 
    * dependency chains are out of scope and rejected by the schema.
    */
   presets?: string[];
@@ -364,7 +364,7 @@ export interface ChaosConfig {
    * Per-instance custom presets registered alongside the built-ins.
    * Each value is a `PresetConfigSlice` (a `ChaosConfig` minus `presets`,
    * `customPresets`, `seed`, and `debug`). Names collide fail-fast against
-   * built-ins and against each other — pick a unique label.
+   * built-ins and against each other  -  pick a unique label.
    *
    * Custom preset literals stay mutable on input; the engine deep-clones them
    * during expansion, so post-construction tweaks are not observed by the
@@ -376,7 +376,7 @@ export interface ChaosConfig {
    * `ProfileRegistry` (seeded with the built-in `mobileCheckout` demo plus any
    * entries supplied via `customProfiles`).
    *
-   * Singular by design — a profile IS the named scenario. Multi-profile
+   * Singular by design  -  a profile IS the named scenario. Multi-profile
    * composition belongs inside the profile's own `presets: []` field. Unknown
    * profile names throw `ChaosConfigError` at construction with
    * `code: 'unknown_profile'`.
@@ -394,7 +394,7 @@ export interface ChaosConfig {
    * Precedence for the `seed` and `debug` scalars (highest wins):
    *   `profileOverrides` > top-level `seed`/`debug` > profile's own values.
    *
-   * Rule arrays append (never replace) — overrides extend the merged rule
+   * Rule arrays append (never replace)  -  overrides extend the merged rule
    * list rather than substituting it. Carries the same shape constraints as
    * a profile slice: no nested `profile`, `profileOverrides`, `customProfiles`,
    * `customPresets`, or `schemaVersion`.
@@ -430,7 +430,7 @@ export interface ChaosConfig {
    * and preset expansion and BEFORE the post-merge Zod pass, so rules brought
    * in by presets or profiles can also reference top-level matchers.
    *
-   * Matchers are a top-level registry only — presets and profile slices may
+   * Matchers are a top-level registry only  -  presets and profile slices may
    * not declare their own `matchers` field. Recursive composition (a
    * `NamedMatcher` carrying its own `matcher` reference) is out of scope and
    * surfaces as `matcher_cycle` if encountered.

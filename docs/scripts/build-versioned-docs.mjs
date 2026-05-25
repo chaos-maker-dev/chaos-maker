@@ -123,8 +123,8 @@ function extractTagToDir(tag, destDir) {
 
 function rewriteVersionLinks(dir, slug) {
   const sectionsAlt = KNOWN_SECTIONS.join('|');
-  // Capture the syntactic prefix that introduces a URL — markdown link target,
-  // jsx href / to attribute, or yaml `link:` value (quoted or bare) — so the
+  // Capture the syntactic prefix that introduces a URL  -  markdown link target,
+  // jsx href / to attribute, or yaml `link:` value (quoted or bare)  -  so the
   // rewrite only fires on actual link positions and not on prose that happens
   // to mention a path. The `(?:/chaos-maker)?` group makes the rewrite
   // idempotent against both prefixed and base-relative source authors.
@@ -187,7 +187,7 @@ function injectBanner(dir, bannerContent) {
 // land under `<slug>/...` in the content collection, but the corresponding
 // authoring source on `main` lives at `docs/content-source/...` without any
 // version segment. Inject an explicit `editUrl` per page so links point at
-// the right source — or `false` for archived versions, which should not be
+// the right source  -  or `false` for archived versions, which should not be
 // edited through the live site.
 function injectEditUrl(dir, slug, mode) {
   injectFrontmatter(dir, (filePath) => {
@@ -302,11 +302,171 @@ function clean() {
   }
 }
 
+function generateLlmFiles(latestDest, latestTag) {
+  const publicDir = resolve(__dirname, '../public');
+  if (!existsSync(publicDir)) {
+    mkdirSync(publicDir, { recursive: true });
+  }
+
+  const pagesInfo = [];
+
+  const walk = (current) => {
+    for (const entry of readdirSync(current)) {
+      const full = join(current, entry);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.endsWith('.mdx') && !entry.endsWith('.md')) continue;
+
+      // Read file content
+      const content = readFileSync(full, 'utf8');
+      
+      // Parse YAML frontmatter
+      const lines = content.split('\n');
+      let title = '';
+      let description = '';
+      if (lines[0] === '---') {
+        let end = -1;
+        for (let i = 1; i < lines.length; i++) {
+          if (lines[i] === '---') {
+            end = i;
+            break;
+          }
+        }
+        if (end > 0) {
+          const fmLines = lines.slice(1, end);
+          for (const fmL of fmLines) {
+            const matchTitle = fmL.match(/^title:\s*(.*)$/);
+            if (matchTitle) {
+              title = matchTitle[1].replace(/['"]/g, '').trim();
+            }
+            const matchDesc = fmL.match(/^description:\s*(.*)$/);
+            if (matchDesc) {
+              description = matchDesc[1].replace(/['"]/g, '').trim();
+            }
+          }
+        }
+      }
+
+      // Compute relative URL
+      const rel = relative(latestDest, full).replace(/\\/g, '/');
+      const withoutExt = rel.replace(/\.(mdx|md)$/, '');
+      const pathSegment = withoutExt === 'index'
+        ? ''
+        : withoutExt.endsWith('/index')
+          ? withoutExt.slice(0, -'/index'.length)
+          : withoutExt;
+      
+      const url = `${PAGES_BASE}/latest/${pathSegment ? pathSegment + '/' : ''}`;
+
+      // Clean content for llms-full.txt
+      let cleanContent = content;
+      // Strip frontmatter
+      if (lines[0] === '---') {
+        let end = -1;
+        for (let i = 1; i < lines.length; i++) {
+          if (lines[i] === '---') {
+            end = i;
+            break;
+          }
+        }
+        if (end > 0) {
+          cleanContent = lines.slice(end + 1).join('\n');
+        }
+      }
+      // Strip imports
+      cleanContent = cleanContent.split('\n').filter(line => !line.trim().startsWith('import ')).join('\n');
+      
+      // Strip simple Starlight tags or JSX structures like <CardGrid stagger>, </CardGrid>, <Card ...>, </Card>, <LinkCard ... />
+      cleanContent = cleanContent
+        .replace(/<CardGrid[^>]*>/g, '')
+        .replace(/<\/CardGrid>/g, '')
+        .replace(/<Card[^>]*>/g, '')
+        .replace(/<\/Card>/g, '')
+        .replace(/<LinkCard[^>]*\/>/g, '')
+        .trim();
+
+      pagesInfo.push({
+        title: title || pathSegment || 'Home',
+        description,
+        url,
+        pathSegment,
+        content: cleanContent,
+      });
+    }
+  };
+
+  walk(latestDest);
+
+  // Sort pages for deterministic ordering
+  pagesInfo.sort((a, b) => a.url.localeCompare(b.url));
+
+  // 1. Generate docs/public/llms.txt
+  let llmsTxt = `# Chaos Maker\n\n`;
+  llmsTxt += `> Frontend chaos engineering toolkit for testing resilience across Playwright, Cypress, WebdriverIO, and Puppeteer.\n\n`;
+  llmsTxt += `This file provides a curated index of the Chaos Maker documentation, designed for consumption by Large Language Models (LLMs) and AI tools.\n\n`;
+  llmsTxt += `## Full Documentation\n\n`;
+  llmsTxt += `- [Full Documentation](${PAGES_BASE}/llms-full.txt): Complete text of all documentation in a single file\n\n`;
+
+  // Group pages by section
+  const sections = {};
+  for (const page of pagesInfo) {
+    // Determine section from pathSegment (first directory level)
+    let sectionName = 'General';
+    if (page.pathSegment) {
+      const parts = page.pathSegment.split('/');
+      if (parts.length > 1) {
+        sectionName = parts[0]
+          .split('-')
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
+      }
+    } else {
+      sectionName = 'Introduction';
+    }
+
+    if (!sections[sectionName]) {
+      sections[sectionName] = [];
+    }
+    sections[sectionName].push(page);
+  }
+
+  // Write grouped pages in llms.txt
+  for (const [sectionName, secPages] of Object.entries(sections)) {
+    llmsTxt += `## ${sectionName}\n\n`;
+    for (const page of secPages) {
+      llmsTxt += `- [${page.title}](${page.url})${page.description ? ': ' + page.description : ''}\n`;
+    }
+    llmsTxt += `\n`;
+  }
+
+  writeFileSync(join(publicDir, 'llms.txt'), llmsTxt);
+  console.log('[docs-versions] llms.txt generated');
+
+  // 2. Generate docs/public/llms-full.txt
+  let llmsFullTxt = `# Chaos Maker - Full Documentation\n\n`;
+  llmsFullTxt += `This file contains the complete documentation for Chaos Maker, concatenated into a single file for easy AI consumption.\n\n`;
+  llmsFullTxt += `Latest stable release: ${latestTag}\n\n`;
+  llmsFullTxt += `---\n\n`;
+
+  for (const page of pagesInfo) {
+    llmsFullTxt += `# Page: ${page.title}\n`;
+    llmsFullTxt += `URL: https://chaos-maker-dev.github.io${page.url}\n\n`;
+    llmsFullTxt += `${page.content}\n\n`;
+    llmsFullTxt += `---\n\n`;
+  }
+
+  writeFileSync(join(publicDir, 'llms-full.txt'), llmsFullTxt);
+  console.log('[docs-versions] llms-full.txt generated');
+}
+
 function main() {
   const tags = listVersionTags().sort(compareTag);
   if (tags.length === 0) {
     throw new Error(
-      '[docs-versions] no v*.*.* tags found — fetch tags before building',
+      '[docs-versions] no v*.*.* tags found  -  fetch tags before building',
     );
   }
   // `/latest/` mirrors a published npm release, so it must track the newest
@@ -315,7 +475,7 @@ function main() {
   const stableTags = tags.filter((t) => isStable(parseTag(t)));
   if (stableTags.length === 0) {
     throw new Error(
-      '[docs-versions] no stable v*.*.* tags found — /latest/ requires one',
+      '[docs-versions] no stable v*.*.* tags found  -  /latest/ requires one',
     );
   }
   const latestTag = stableTags[stableTags.length - 1];
@@ -339,7 +499,7 @@ function main() {
     // The canonical versioned slug for the current latest stable serves the
     // same content as /latest/, so it should not wear an "archived" banner
     // until a newer stable tag supersedes it. The manifest still flags only
-    // the `/latest/` entry as isLatest — the versioned slug stays an archive
+    // the `/latest/` entry as isLatest  -  the versioned slug stays an archive
     // entry for URL-identity purposes, even when its banner reads "Latest".
     const isCurrentLatest = tag === latestTag;
     const banner = isCurrentLatest
@@ -423,6 +583,7 @@ function main() {
 
   writeRedirectIndex(latestTag);
   writeVersionsManifest(manifestEntries, latestTag);
+  generateLlmFiles(latestDest, latestTag);
   console.log('[docs-versions] index.mdx → redirects to /latest/');
   console.log(
     `[docs-versions] versions.json → ${manifestEntries.length} entries`,

@@ -22,7 +22,7 @@ describe('Seeded Randomness', () => {
       outcomes1 = log.filter((e) => e.type === 'network:failure').map((e) => e.applied);
     });
 
-    // Run 2 with the same seed — detach handler then re-inject before page reload
+    // Run 2 with the same seed  -  detach handler then re-inject before page reload
     cy.removeChaos();
     cy.injectChaos(config);
     cy.visit('/');
@@ -91,7 +91,7 @@ describe('Seeded Randomness', () => {
     });
   });
 
-  it('seed works with probability 1.0 — always applies', () => {
+  it('seed works with probability 1.0  -  always applies', () => {
     cy.injectChaos({
       seed: SEED,
       network: { failures: [{ urlPattern: API_PATTERN, statusCode: 503, probability: 1.0 }] },
@@ -102,7 +102,7 @@ describe('Seeded Randomness', () => {
     cy.get('#result').should('contain', '503');
   });
 
-  it('seed works with probability 0 — never applies', () => {
+  it('seed works with probability 0  -  never applies', () => {
     cy.injectChaos({
       seed: SEED,
       network: { failures: [{ urlPattern: API_PATTERN, statusCode: 503, probability: 0 }] },

@@ -40,7 +40,7 @@ describe('@chaos-maker/puppeteer', () => {
   });
 
   describe('injectChaos', () => {
-    it('calls evaluateOnNewDocument twice — once for config, once for UMD', async () => {
+    it('calls evaluateOnNewDocument twice  -  once for config, once for UMD', async () => {
       await injectChaos(fake.page, {
         network: { failures: [{ urlPattern: '/api', statusCode: 500, probability: 1 }] },
       });
@@ -103,7 +103,7 @@ describe('@chaos-maker/puppeteer', () => {
     });
 
     it('is a no-op when page lacks removeScriptToEvaluateOnNewDocument', async () => {
-      // Older Puppeteer / puppeteer-core forks may not expose the helper —
+      // Older Puppeteer / puppeteer-core forks may not expose the helper  - 
       // cleanup must still stop chaos without throwing.
       await injectChaos(fake.page, {});
       await expect(removeChaos(fake.page)).resolves.toBeUndefined();

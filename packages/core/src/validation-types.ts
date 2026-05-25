@@ -1,5 +1,5 @@
 /** Public types for the structured validation surface.
- *  Pure types — no runtime. Imported by `errors.ts`, `validation.ts`, and the
+ *  Pure types  -  no runtime. Imported by `errors.ts`, `validation.ts`, and the
  *  format / strip / deprecation helpers. */
 
 export type RuleType =

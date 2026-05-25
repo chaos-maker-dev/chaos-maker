@@ -1,10 +1,10 @@
 /**
- * Rule Groups — bulk runtime enable/disable for chaos rules.
+ * Rule Groups  -  bulk runtime enable/disable for chaos rules.
  *
  * A `RuleGroupRegistry` tracks named groups (default-on) and answers
  * `isActive(name)` from interceptors before they apply chaos. Groups not
  * declared up-front are auto-registered the first time they are referenced
- * (typo surfacing — appears in `list()` / `getSnapshot()`).
+ * (typo surfacing  -  appears in `list()` / `getSnapshot()`).
  *
  * Toggle is runtime-only: there is no engine restart, so `requestCounters`
  * survive across `setEnabled()` calls.

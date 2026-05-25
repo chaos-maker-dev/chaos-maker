@@ -2,7 +2,7 @@ import type { ChaosConfig } from './config';
 import { cloneValue } from './utils';
 
 /** ChaosConfig slice a preset is allowed to carry. Auto-includes any new
- *  rule category added to ChaosConfig — the `Omit` is bounded to fields that
+ *  rule category added to ChaosConfig  -  the `Omit` is bounded to fields that
  *  are explicitly forbidden inside a preset: `presets`, `customPresets`,
  *  `seed`, `debug`, `schemaVersion`, plus the v0.7.0 profile coordination
  *  fields (`profile`, `profileOverrides`, `customProfiles`). Profile-related
@@ -109,13 +109,13 @@ function deepFreeze<T>(value: T): T {
 
 // Built-in slices are immutable. Mutating `registry.get('slow-api').network!
 // .latencies![0].delayMs = 1` is a no-op in sloppy mode and throws in strict
-// mode. Custom presets passed via `customPresets` are NOT frozen — users keep
+// mode. Custom presets passed via `customPresets` are NOT frozen  -  users keep
 // ownership of their literals; the engine deep-clones them at expansion time.
 [SLOW_NETWORK, FLAKY_CONNECTION, OFFLINE_MODE, UNSTABLE_API, DEGRADED_UI, UNRELIABLE_WEBSOCKET, UNRELIABLE_EVENT_STREAM, MOBILE_3G, CHECKOUT_DEGRADED].forEach(deepFreeze);
 
 /** All built-in presets including kebab aliases.
  *  Aliases are EXTRA registry entries pointing at the SAME config object
- *  identity as the camelCase entry — so
+ *  identity as the camelCase entry  -  so
  *  `registry.get('slow-api') === presets.slowNetwork`.
  *
  *  Both the array AND each `{ name, config }` descriptor are frozen so that
@@ -245,7 +245,7 @@ function appendSlice(target: ChaosConfig, slice: PresetConfigSlice): void {
  *     the post-expansion config.
  *   - Append order: preset rules first (in the order they appear in
  *     `presets[]`), user rules last. Same rule for `groups`.
- *   - Throws when a name in `presets[]` is not registered. Plain `Error` —
+ *   - Throws when a name in `presets[]` is not registered. Plain `Error`  - 
  *     `prepareChaosConfig` wraps to `ChaosConfigError`.
  *
  *  Defensive deduplication on `presets[]` runs here as well as in the Zod
@@ -288,7 +288,7 @@ export function expandPresets(config: ChaosConfig, registry: PresetRegistry): Ch
 
 /** Backward-compat: the v0.4.0 frozen-record export. **CamelCase keys ONLY.**
  *  kebab aliases (`slow-api`, `flaky-api`, `offline-mode`,
- *  `high-latency`) live exclusively on `PresetRegistry` — they are NOT keys
+ *  `high-latency`) live exclusively on `PresetRegistry`  -  they are NOT keys
  *  on this record. By design:
  *
  *    presets['slow-api']  === undefined

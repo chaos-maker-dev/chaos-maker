@@ -1,6 +1,6 @@
 // Minimal GraphQL-shaped HTTP server for chaos-maker E2E tests.
 //
-// Not a real GraphQL implementation — just enough to round-trip the protocol
+// Not a real GraphQL implementation  -  just enough to round-trip the protocol
 // shape Apollo / urql / relay clients use:
 //   - POST /graphql   → JSON body { query, variables, operationName }
 //   - GET  /graphql?query=…&operationName=… → persisted-query path
@@ -103,7 +103,7 @@ const server = http.createServer(async (req, res) => {
       respond(res, 400, { errors: [{ message: 'invalid JSON body' }] });
       return;
     }
-    // GraphQL-over-HTTP allows batched arrays — first entry drives the response
+    // GraphQL-over-HTTP allows batched arrays  -  first entry drives the response
     // shape so the fixture can back batched-body E2E coverage.
     const first = Array.isArray(parsed) ? parsed[0] : parsed;
     const op = first && (first.operationName || parseOperationFromQuery(first.query));

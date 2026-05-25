@@ -18,7 +18,7 @@ const jsonPath = resolve(distDir, 'chaos-config.schema.json');
 writeFileSync(jsonPath, JSON.stringify(jsonSchema, null, 2) + '\n', 'utf8');
 console.log(`[chaos-maker] wrote ${jsonPath}`);
 
-const notes = `# Chaos Config JSON Schema — parity caveats
+const notes = `# Chaos Config JSON Schema  -  parity caveats
 
 This file ships beside \`chaos-config.schema.json\`. The JSON Schema artifact is
 generated from the canonical Zod schemas via \`zod-to-json-schema\`. Use it for:
@@ -30,26 +30,26 @@ generated from the canonical Zod schemas via \`zod-to-json-schema\`. Use it for:
 
 **The runtime canonical validator is always \`validateChaosConfig\` from
 \`@chaos-maker/core\`.** Do not use the JSON Schema as the sole validator
-before injecting a config — Zod refinements that cannot translate to JSON
+before injecting a config  -  Zod refinements that cannot translate to JSON
 Schema will silently pass under JSON Schema and throw at runtime.
 
 ## Refinements that do NOT translate
 
 | Zod refinement | JSON Schema fate |
 |---|---|
-| \`groupConfigList.superRefine\` (duplicate group names after \`.trim()\`) | dropped — JSON Schema cannot express "duplicate after normalization". |
+| \`groupConfigList.superRefine\` (duplicate group names after \`.trim()\`) | dropped  -  JSON Schema cannot express "duplicate after normalization". |
 | \`mutuallyExclusiveCounting\` (\`onNth\` / \`everyNth\` / \`afterN\` mutual exclusion) | weakly approximated; some edge cases pass JSON Schema but fail Zod. |
 | WebSocket close-code refinement (\`1000\` or \`3000-4999\`) | translated as ranges; verify with the runtime validator. |
-| WebSocket \`reason\` UTF-8 byte length \`<= 123\` | dropped — JSON Schema string length counts code points, not UTF-8 bytes. |
-| GraphQL operation RegExp \`/g\` / \`/y\` flag rejection | dropped — JSON Schema has no RegExp-flag introspection. |
+| WebSocket \`reason\` UTF-8 byte length \`<= 123\` | dropped  -  JSON Schema string length counts code points, not UTF-8 bytes. |
+| GraphQL operation RegExp \`/g\` / \`/y\` flag rejection | dropped  -  JSON Schema has no RegExp-flag introspection. |
 | \`graphqlOperation\` accepting \`RegExp\` instances | rendered as \`string\` only; RegExp is not a JSON Schema type. |
-| Preset-name \`.trim()\` deduplication (\`presets\` array transform) | dropped — schema represents input shape only. |
+| Preset-name \`.trim()\` deduplication (\`presets\` array transform) | dropped  -  schema represents input shape only. |
 
 ## Recommended workflow
 
 1. Use the JSON Schema for IDE / \`"$schema"\` references and external linters.
 2. Use \`validateChaosConfig\` for actual gating in CI and at runtime.
-3. Treat any divergence as expected — fix the runtime, not the artifact.
+3. Treat any divergence as expected  -  fix the runtime, not the artifact.
 `;
 
 const notesPath = resolve(distDir, 'chaos-config.schema.notes.md');

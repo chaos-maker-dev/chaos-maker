@@ -5,7 +5,7 @@ import { prepareChaosConfig, validateConfig } from '../src/validation';
 import { ChaosConfigError } from '../src/errors';
 
 describe('expandPresets', () => {
-  it('returns a fresh ChaosConfig — caller owns the result', () => {
+  it('returns a fresh ChaosConfig  -  caller owns the result', () => {
     const input: ChaosConfig = { presets: ['slow-api'] };
     const out = expandPresets(input, new PresetRegistry());
     expect(out).not.toBe(input);
@@ -240,7 +240,7 @@ describe('prepareChaosConfig', () => {
     ).toThrow(/already registered/);
   });
 
-  it('runs the post-merge Zod pass — group-name collision across preset+user fails', () => {
+  it('runs the post-merge Zod pass  -  group-name collision across preset+user fails', () => {
     let caught: unknown;
     try {
       prepareChaosConfig({

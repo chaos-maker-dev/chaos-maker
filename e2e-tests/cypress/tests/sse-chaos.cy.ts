@@ -11,7 +11,7 @@ function connectNamed(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Drop — every 2nd inbound message is silently discarded.
+// Drop  -  every 2nd inbound message is silently discarded.
 // ---------------------------------------------------------------------------
 describe('SSE drop', () => {
   it('drops every 2nd inbound event', () => {
@@ -32,7 +32,7 @@ describe('SSE drop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Delay — every event is held for delayMs before delivery.
+// Delay  -  every event is held for delayMs before delivery.
 // ---------------------------------------------------------------------------
 describe('SSE delay', () => {
   it('delays inbound messages by >= 600ms', () => {
@@ -61,7 +61,7 @@ describe('SSE delay', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Corrupt — truncate strategy halves event.data text.
+// Corrupt  -  truncate strategy halves event.data text.
 // ---------------------------------------------------------------------------
 describe('SSE corrupt', () => {
   it('truncates inbound text payload', () => {
@@ -82,7 +82,7 @@ describe('SSE corrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Close — force-close the EventSource after afterMs.
+// Close  -  force-close the EventSource after afterMs.
 // ---------------------------------------------------------------------------
 describe('SSE close', () => {
   it('force-closes the source after afterMs', () => {
@@ -100,7 +100,7 @@ describe('SSE close', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Named event — eventType filter targets only the named event.
+// Named event  -  eventType filter targets only the named event.
 // ---------------------------------------------------------------------------
 describe('SSE named eventType', () => {
   it('drops only "tick" events; default messages survive', () => {

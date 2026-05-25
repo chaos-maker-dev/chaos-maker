@@ -21,14 +21,14 @@ export interface ChaosTraceAttachment {
 export { formatStepTitle, shouldEmitStep } from '@chaos-maker/core';
 
 /**
- * Handle returned from `createTraceReporter` — call `dispose()` on teardown
+ * Handle returned from `createTraceReporter`  -  call `dispose()` on teardown
  * to flush the attached log and unbind.
  */
 export interface TraceReporterHandle {
   /**
    * Dispose: attach the final event log to testInfo and release resources.
    * Optional `seed` is embedded at the top of the attachment for one-click
-   * replay — callers typically read it via `getChaosSeed(page)` just before
+   * replay  -  callers typically read it via `getChaosSeed(page)` just before
    * calling dispose.
    */
   dispose: (seed?: number | null) => Promise<void>;
@@ -55,9 +55,9 @@ interface TraceBindingState {
  * in-page emitter into the test runner's trace/report surfaces.
  *
  * Mechanism:
- *   1. `page.exposeBinding(CHAOS_BINDING, handler)` — Playwright-native push
+ *   1. `page.exposeBinding(CHAOS_BINDING, handler)`  -  Playwright-native push
  *      channel (survives navigations).
- *   2. `page.addInitScript(...)` — subscribes `chaosUtils.instance.on('*', …)`
+ *   2. `page.addInitScript(...)`  -  subscribes `chaosUtils.instance.on('*', …)`
  *      after the core UMD has auto-started. Re-runs on every navigation.
  *
  * On each event, we fire a fire-and-forget `test.step` so the chaos decision
@@ -67,7 +67,7 @@ interface TraceBindingState {
  * attached to `testInfo` as JSON for programmatic post-mortem.
  *
  * The binding (and matching init script) is registered exactly once per
- * page — `exposeBinding` throws on re-register and Playwright has no remove
+ * page  -  `exposeBinding` throws on re-register and Playwright has no remove
  * API. A per-page indirection slot keeps the active reporter swappable so
  * inject → remove → re-inject on the same page works without re-binding.
  */
@@ -125,13 +125,13 @@ export async function createTraceReporter(
               win[bindingName](event);
             }
           } catch {
-            // Binding not yet ready or page closing — drop the event.
+            // Binding not yet ready or page closing  -  drop the event.
           }
         });
         return true;
       };
       if (attach()) return;
-      // Instance not yet created — poll briefly until the UMD auto-start runs.
+      // Instance not yet created  -  poll briefly until the UMD auto-start runs.
       const intervalId = setInterval(() => {
         if (attach()) clearInterval(intervalId);
       }, 10);
@@ -158,11 +158,11 @@ export async function createTraceReporter(
           contentType: 'application/json',
         });
       } catch {
-        // Test already finished / attachment not accepted — ignore.
+        // Test already finished / attachment not accepted  -  ignore.
       }
       // Leave state.handler pointing at this reporter so any in-flight late
       // events keep populating its events array (they no longer trigger
-      // test.step rendering — the test body has ended). A subsequent
+      // test.step rendering  -  the test body has ended). A subsequent
       // createTraceReporter overwrites the slot to route fresh events.
       if ((page as any)[TRACE_HANDLE_KEY] === handle) {
         delete (page as any)[TRACE_HANDLE_KEY];
