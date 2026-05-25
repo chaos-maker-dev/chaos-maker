@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
-- Bump transitive `qs` to 6.15.2 and `uuid` to 11.1.1 via workspace overrides to clear Dependabot alerts #67 and #66. Also bump transitive `brace-expansion` to 5.0.6 so `pnpm audit` stays clean. These dependencies are used through developer tooling, so published package runtime surfaces are unchanged.
+- Bump transitive `qs` to 6.15.2 and `uuid` to 11.1.1 via workspace overrides to clear Dependabot alerts #67 and #66. Also bump transitive `brace-expansion` to 5.0.6 so `bun audit` stays clean. These dependencies are used through developer tooling, so published package runtime surfaces are unchanged.
 
 ### Added
 
