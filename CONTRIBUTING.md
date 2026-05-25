@@ -98,7 +98,7 @@ CI is split into three workflows under `.github/workflows/`:
 - `docs.yml` builds and deploys the versioned docs site on tag pushes.
 - `release.yml` runs on `v*` tag pushes. Re-validates, then publishes all 5 packages to npm via OIDC Trusted Publishing.
 
-The Playwright and Cypress E2E jobs in `ci.yml` run inside official upstream container images (`mcr.microsoft.com/playwright` and `cypress/included`) so browsers and system deps come pre-baked. The image pins live next to the `container:` declarations - when you bump `@playwright/test` or `cypress` in a workspace `package.json`, bump the matching image tag in `ci.yml` in the same PR. WebdriverIO and Puppeteer jobs stay on `ubuntu-latest` with cached binaries.
+Every job in `ci.yml` runs on `ubuntu-latest`. Browser binaries are restored from `actions/cache` keyed on the relevant workspace `package.json` (Playwright) or on `bun.lock` (Cypress, Puppeteer); on a cache miss the workflow installs them via `bunx playwright install --with-deps <project>`, `bunx cypress install`, and `bunx puppeteer browsers install chrome` respectively. WebdriverIO uses the system Chrome / Firefox provided by the runner image. There are no `container:` blocks to maintain, so a Playwright or Cypress dependency bump only needs the workspace `package.json` update.
 
 ## Adding a new chaos type
 
