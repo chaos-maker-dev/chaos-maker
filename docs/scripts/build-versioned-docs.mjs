@@ -49,6 +49,7 @@ const DOCS_OUT = resolve(__dirname, '../src/content/docs');
 const DEV_SOURCE = resolve(__dirname, '../content-source');
 const GENERATED_OUT = resolve(__dirname, '../src/generated');
 const PAGES_BASE = '/chaos-maker';
+const BASE_URL = process.env.BASE_URL || 'https://chaos-maker-dev.github.io';
 
 const HISTORICAL_SOURCE_PATHS = [
   'docs/content-source',
@@ -379,13 +380,13 @@ function generateLlmFiles(latestDest, latestTag) {
       // Strip imports
       cleanContent = cleanContent.split('\n').filter(line => !line.trim().startsWith('import ')).join('\n');
       
-      // Strip simple Starlight tags or JSX structures like <CardGrid stagger>, </CardGrid>, <Card ...>, </Card>, <LinkCard ... />
+      // Strip Starlight tags/JSX structures (CardGrid, Card, LinkCard).
+      // Limitation: This regex-based stripping removes the opening, closing, and self-closing tags
+      // of CardGrid, Card, and LinkCard, but leaves nested content inside intact.
       cleanContent = cleanContent
-        .replace(/<CardGrid[^>]*>/g, '')
-        .replace(/<\/CardGrid>/g, '')
-        .replace(/<Card[^>]*>/g, '')
-        .replace(/<\/Card>/g, '')
-        .replace(/<LinkCard[^>]*\/>/g, '')
+        .replace(/<CardGrid[\s\S]*?\/?>|<\/CardGrid\s*>/gi, '')
+        .replace(/<Card[\s\S]*?\/?>|<\/Card\s*>/gi, '')
+        .replace(/<LinkCard[\s\S]*?\/?>|<\/LinkCard\s*>/gi, '')
         .trim();
 
       pagesInfo.push({
@@ -453,7 +454,7 @@ function generateLlmFiles(latestDest, latestTag) {
 
   for (const page of pagesInfo) {
     llmsFullTxt += `# Page: ${page.title}\n`;
-    llmsFullTxt += `URL: https://chaos-maker-dev.github.io${page.url}\n\n`;
+    llmsFullTxt += `URL: ${BASE_URL}${page.url}\n\n`;
     llmsFullTxt += `${page.content}\n\n`;
     llmsFullTxt += `---\n\n`;
   }

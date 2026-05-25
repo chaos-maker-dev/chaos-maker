@@ -13,6 +13,9 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # Detects whether the diff touches anything outside the docs site so the
   # build / test / e2e jobs can short-circuit on docs-only PRs. The aggregator
@@ -60,6 +63,8 @@ jobs:
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: changes
     if: needs.changes.outputs.code == 'true'
     # Runs in parallel with `lint` and `build`  -  none of the three reads
