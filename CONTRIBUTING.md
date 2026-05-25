@@ -80,7 +80,7 @@ bun run test:wdio:firefox
 bun run test:puppeteer                               # headless-new Chrome via Vitest
 ```
 
-First run for Playwright will install browsers (`bun --filter e2e-tests-playwright exec playwright install`). Cypress installs its binary on first install. WebdriverIO uses your system Chrome / Firefox.
+First run for Playwright requires browser installation (using `bunx playwright install` inside `e2e-tests/playwright`). Cypress installs its binary on first install. WebdriverIO uses your system Chrome / Firefox.
 
 ### Docs site
 

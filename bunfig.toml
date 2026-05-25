@@ -1,5 +1,4 @@
 [install]
 # Use isolated linker for pnpm-like strict dependency isolation
 # (prevents phantom dependencies)
-linkWorkspacePackages = true
 linker = "isolated"

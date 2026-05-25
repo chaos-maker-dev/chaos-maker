@@ -282,7 +282,7 @@ Run the full check before submitting:
 
 ```bash
 bun run lint && bun run test && bun run build
-bun --filter e2e-tests-playwright exec playwright test --reporter=line --project=chromium
+bun run test:playwright -- --project=chromium
 ```
 
 ## License
