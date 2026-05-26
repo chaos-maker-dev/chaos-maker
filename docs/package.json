@@ -6,8 +6,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "generate:versions": "node scripts/build-versioned-docs.mjs",
-    "generate:versions:dev": "node scripts/build-versioned-docs.mjs --dev",
+    "generate:versions": "bun scripts/build-versioned-docs.mjs",
+    "generate:versions:dev": "bun scripts/build-versioned-docs.mjs --dev",
     "predev": "bun run generate:versions:dev",
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "prebuild": "bun run generate:versions",
