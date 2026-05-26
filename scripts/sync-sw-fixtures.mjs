@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Copies the built core SW bundles into the e2e fixture directory so the
  * static file server (python http.server / http-server on CI) can serve them
