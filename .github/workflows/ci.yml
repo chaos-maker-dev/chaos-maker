@@ -190,7 +190,7 @@ jobs:
           path: packages
 
       - name: Sync SW bundle into fixtures
-        run: node scripts/sync-sw-fixtures.mjs
+        run: bun scripts/sync-sw-fixtures.mjs
 
       - name: Cache Playwright Browsers
         id: playwright-cache
@@ -263,7 +263,7 @@ jobs:
           path: packages
 
       - name: Sync SW bundle into fixtures
-        run: node scripts/sync-sw-fixtures.mjs
+        run: bun scripts/sync-sw-fixtures.mjs
 
       - name: Run Cypress E2E Tests (${{ matrix.browser }})
         working-directory: e2e-tests/cypress
@@ -300,7 +300,7 @@ jobs:
           path: packages
 
       - name: Sync SW bundle into fixtures
-        run: node scripts/sync-sw-fixtures.mjs
+        run: bun scripts/sync-sw-fixtures.mjs
 
       - name: Run WebdriverIO E2E Tests (${{ matrix.browser }})
         env:
@@ -335,7 +335,7 @@ jobs:
           path: packages
 
       - name: Sync SW bundle into fixtures
-        run: node scripts/sync-sw-fixtures.mjs
+        run: bun scripts/sync-sw-fixtures.mjs
 
       - name: Install Puppeteer Chrome
         if: steps.puppeteer-cache.outputs.cache-hit != 'true'

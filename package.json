@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "lint": "eslint .",
-    "build:core": "bun --filter @chaos-maker/core build && node scripts/sync-sw-fixtures.mjs",
+    "build:core": "bun --filter @chaos-maker/core build && bun scripts/sync-sw-fixtures.mjs",
     "build:playwright": "bun --filter @chaos-maker/playwright build",
     "build:cypress": "bun --filter @chaos-maker/cypress build",
     "build:webdriverio": "bun --filter @chaos-maker/webdriverio build",
