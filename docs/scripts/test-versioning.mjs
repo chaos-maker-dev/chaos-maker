@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Validates the docs versioning pipeline end-to-end.
  *

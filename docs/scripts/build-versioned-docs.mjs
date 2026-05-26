@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 /**
  * Generate versioned docs into docs/src/content/docs/ from git tags.
  *
