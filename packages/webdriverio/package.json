@@ -41,7 +41,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "bun build src/index.ts --format=esm --target=node --external webdriverio --external @wdio/globals --external @chaos-maker/core --outfile=dist/index.js && bun build src/index.ts --format=cjs --target=node --external webdriverio --external @wdio/globals --external @chaos-maker/core --outfile=dist/index.cjs && tsc --emitDeclarationOnly --outDir dist",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -57,7 +57,6 @@
     }
   },
   "devDependencies": {
-    "tsup": "^8.5.1",
     "typescript": "^5.4.5",
     "vitest": "^3.2.4",
     "webdriverio": "^8.40.0"

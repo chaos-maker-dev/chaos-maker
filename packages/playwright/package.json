@@ -49,7 +49,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "bun build src/index.ts src/fixture.ts --format=esm --target=node --external @playwright/test --external @chaos-maker/core --outdir=dist && bun build src/index.ts src/fixture.ts --format=cjs --target=node --external @playwright/test --external @chaos-maker/core --outdir=dist --entry-naming=[name].cjs && tsc --emitDeclarationOnly --outDir dist",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -66,7 +66,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.45.0",
-    "tsup": "^8.5.1",
     "typescript": "^5.4.5",
     "vitest": "^3.2.4"
   }
