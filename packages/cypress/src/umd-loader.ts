@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'fs';
+import { dirname, resolve } from 'path';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 
 /**
  * Plugin-side UMD resolver. Runs in Node (Cypress's `setupNodeEvents` process),
