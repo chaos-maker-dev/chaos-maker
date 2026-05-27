@@ -52,7 +52,7 @@
   ],
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && vite build -c vite.config.sw.ts && tsc -p tsconfig.build.json && bun run build:schema",
+    "build": "vite build && bun build src/sw.ts --format=iife --target=browser --minify --outfile=dist/sw.js && bun build src/sw.ts --format=esm --target=browser --minify --outfile=dist/sw.mjs && tsc -p tsconfig.build.json && bun run build:schema",
     "build:schema": "bun scripts/build-schema.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
