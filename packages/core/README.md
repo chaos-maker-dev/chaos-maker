@@ -154,6 +154,50 @@ const config = new ChaosConfigBuilder()
 | SSE | `sse.*` | Drop, delay, corrupt, or close EventSource events |
 | GraphQL | `graphqlOperation` | Target one operation on a shared endpoint |
 
+## Matchers
+
+Every network, WebSocket, and SSE rule accepts targeting matchers alongside `urlPattern` and `methods`:
+
+- `hostname` (string or RegExp, case-insensitive on strings)
+- `queryParams` (record of `string | RegExp | boolean`)
+- `requestHeaders` (network only; case-insensitive keys)
+- `resourceTypes` (network only; `['fetch' | 'xhr']`)
+
+A top-level `matchers` registry holds reusable named matchers so one matcher can target network, WebSocket, and SSE without per-transport duplication:
+
+```ts
+new ChaosMaker({
+  matchers: {
+    customers: { hostname: 'api.example.com', urlPattern: '/api/customers' },
+  },
+  network: {
+    failures: [{ matcher: 'customers', statusCode: 503, probability: 1 }],
+  },
+});
+```
+
+A rule supplies either inline matcher fields OR `matcher: 'name'`, never both. Mixing surfaces `matcher_inline_conflict` at validation time.
+
+### Built-in matchers
+
+Three matchers ship preregistered and resolve by name without any `matchers` entry:
+
+- `graphql` (`urlPattern: '/graphql'`)
+- `apiRequests` (`urlPattern: '/api'`)
+- `authRequests` (`requestHeaders: { authorization: true }`)
+
+```ts
+new ChaosMaker({
+  network: {
+    latencies: [{ matcher: 'graphql', delayMs: 1200, probability: 1 }],
+  },
+});
+```
+
+`BUILT_IN_MATCHERS` is exported from `@chaos-maker/core` and every adapter. A user `matchers` entry of the same name transparently overrides a built-in. `authRequests` is meaningful on network rules only - WebSocket and SSE rules cannot target request headers, so a stream rule referencing it matches every connection.
+
+See the [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/) for the full surface, validation codes, and debug attribution.
+
 ## Configuration Reference
 
 ### NetworkFailureConfig

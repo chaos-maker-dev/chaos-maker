@@ -23,11 +23,11 @@ Thanks for your interest in contributing. This guide gets you from fork to merge
 
 ```text
 packages/
-  core/              # @chaos-maker/core, the framework-agnostic chaos engine (Vite, ESM + CJS + UMD + SW bundles)
-  playwright/        # @chaos-maker/playwright adapter (tsup)
-  cypress/           # @chaos-maker/cypress adapter (tsup)
-  webdriverio/       # @chaos-maker/webdriverio adapter (tsup)
-  puppeteer/         # @chaos-maker/puppeteer adapter (tsup)
+  core/              # @chaos-maker/core, the framework-agnostic chaos engine (Vite for ESM/CJS/UMD, Bun build for SW)
+  playwright/        # @chaos-maker/playwright adapter (Bun build)
+  cypress/           # @chaos-maker/cypress adapter (Bun build)
+  webdriverio/       # @chaos-maker/webdriverio adapter (Bun build)
+  puppeteer/         # @chaos-maker/puppeteer adapter (Bun build)
 
 e2e-tests/
   fixtures/          # Shared HTTP / WS / SSE / GraphQL fixture servers, SW app
