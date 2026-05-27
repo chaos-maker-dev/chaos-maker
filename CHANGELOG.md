@@ -4,9 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Security
-
-- Bump transitive `qs` to 6.15.2 and `uuid` to 11.1.1 via workspace overrides to clear Dependabot alerts #67 and #66. Also bump transitive `brace-expansion` to 5.0.6 so `bun audit` stays clean. These dependencies are used through developer tooling, so published package runtime surfaces are unchanged.
+## [0.8.0] - 2026-05-28
 
 ### Added
 
@@ -18,9 +16,15 @@ All notable changes to this project will be documented in this file.
 
 - **Package Manager Migration**: Migrated the workspace from pnpm to Bun as the package manager and script runner. Workspaces and dependency resolutions are now managed through Bun, using the isolated linker (`linker = "isolated"` in `bunfig.toml`) to maintain strict dependency isolation. Scripts in CI/CD workflows, developer commands in `README.md` and `CONTRIBUTING.md`, and local setup guides have been updated to `bun` / `bunx` equivalents. E2E tests and publishing still run on Node/npm for compatibility with browsers and OIDC Trusted Publishing.
 
+- **Bundler migration to Bun build**: the Service Worker bundle for `@chaos-maker/core` and the four adapter bundles (`@chaos-maker/playwright`, `@chaos-maker/cypress`, `@chaos-maker/webdriverio`, `@chaos-maker/puppeteer`) now build with `bun build` instead of Vite (SW) and tsup (adapters). `tsc --emitDeclarationOnly` still generates the `.d.ts` outputs so adapter type surfaces are unchanged. No published package shape, runtime behavior, or export map changes.
+
 - WebSocket and SSE rule types (`WebSocketDropConfig`, `WebSocketDelayConfig`, `WebSocketCorruptConfig`, `WebSocketCloseConfig`, `SSEDropConfig`, `SSEDelayConfig`, `SSECorruptConfig`, `SSECloseConfig`) are now `type` aliases over a discriminated union (`TransportRuleMatchers` intersection) rather than `interface extends`. A rule either declares one or more inline matcher fields (`urlPattern`, `hostname`, `queryParams`) or declares `matcher: 'name'`, never both; the inline-versus-named split is mutually exclusive at both the TypeScript level and at validation. `urlPattern` is optional as long as `hostname` or `queryParams` is present, matching the network rule surface. Existing configs that supplied `urlPattern` continue to validate and run unchanged. Consumers who previously did `interface MyRule extends WebSocketDropConfig` should switch to `type MyRule = WebSocketDropConfig & { ... }`.
 
 - **Cross-adapter matcher parity coverage**: matcher E2E coverage across Playwright, Cypress, WebdriverIO, and Puppeteer is now driven by a single declarative scenario catalog under `e2e-tests/fixtures/parity/`. Each adapter ships a thin interpreter that walks the scenario step list (`click`, `waitForText`, `waitForCount`, `expectText`, `request` for in-page fetch/XHR, `settle`) and a one-file spec that loops the catalog so every adapter reports the same ~20 test titles and runs identical chaos configs against the shared fixture. Coverage area: hostname, query-parameter, header (case-insensitive), resource-type (`fetch` vs `xhr`), built-in (`apiRequests`, `graphql`, `authRequests`, user-override), WebSocket (named matcher hostname, queryParams fires / skips, debug `matchedBy` attribution), SSE (named matcher hostname, queryParams fires / skips). Negative network cases vary the matcher rule rather than the request hostname so every request stays same-origin and observable. Replaces the three previous per-adapter spec files (`matchers.*`, `built-in-matchers.*`, `matchers-cross-transport.*`) on all four adapters, removing roughly 1,000 lines of duplicated test code without dropping any covered scenario. No public API change; the chaos-maker package surface is identical.
+
+### Security
+
+- Bump transitive `qs` to 6.15.2 and `uuid` to 11.1.1 via workspace overrides to clear Dependabot alerts #67 and #66. Also bump transitive `brace-expansion` to 5.0.6 so `bun audit` stays clean. These dependencies are used through developer tooling, so published package runtime surfaces are unchanged.
 
 ## [0.7.1] - 2026-05-19
 

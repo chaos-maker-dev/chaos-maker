@@ -6,11 +6,11 @@
 
 Inject controlled chaos into web applications to test frontend resilience. Works with Playwright, Cypress, WebdriverIO, and Puppeteer with no backend changes.
 
-## What's new in v0.7.0
+## What's new in v0.8.0
 
-- **Scenario profiles and runtime overrides**: bundle several presets and rules behind one name with `profile`, register inline with `customProfiles`, and tune one parameter per call site via `profileOverrides`. [Profiles concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/profiles/).
-- **Advanced matchers and named registry**: every network rule now accepts `hostname`, `queryParams`, `requestHeaders`, and `resourceTypes` filters alongside `urlPattern`. A top-level `matchers` registry holds reusable named matchers so several rules can share one targeting definition. [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/).
-- **Chaos timeline and reporting**: turn a chaos event log into a deterministic `ChaosReport` with `buildChaosReport`, then serialize it as JSON, Markdown, or a self-contained HTML timeline for PR comments and CI artifacts. [Timeline and reporting concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/timeline-and-reporting/).
+- **Cross-transport matchers**: every WebSocket and SSE rule now accepts the same matcher targeting surface as network rules. Use inline `hostname`, `queryParams`, or a `matcher: 'name'` reference into the existing top-level `matchers` registry so one matcher can target network, WebSocket, and SSE without per-transport duplication. [WebSocket chaos concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/websocket-chaos/) and [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/).
+- **Built-in matchers**: `graphql`, `apiRequests`, and `authRequests` ship preregistered so the most common targets need no `matchers` entry. A user `matchers` entry of the same name overrides one. [Built-in matchers](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/#built-in-matchers).
+- **Cross-adapter matcher parity coverage**: matcher E2E coverage across Playwright, Cypress, WebdriverIO, and Puppeteer is now driven by a single declarative scenario catalog under `e2e-tests/fixtures/parity/`. No public API change; published package surface is identical.
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -58,7 +58,7 @@ See the [Scenario profiles concept](https://chaos-maker-dev.github.io/chaos-make
 
 ## Advanced matchers
 
-Every network rule now accepts hostname, query parameter, request header, and resource-type matchers alongside `urlPattern` and `methods`. A separate `matchers` registry holds reusable named matchers so several rules can share one targeting definition.
+Every network, WebSocket, and SSE rule accepts hostname, query parameter, and (network-only) request header / resource-type matchers alongside `urlPattern` and `methods`. A separate `matchers` registry holds reusable named matchers so one matcher can target network, WebSocket, and SSE without per-transport duplication.
 
 ```typescript
 await injectChaos(page, {
