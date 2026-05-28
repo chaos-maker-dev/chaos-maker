@@ -225,7 +225,14 @@ function emitDelay(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkInd
     type: 'fetch-stream:chunk-delayed',
     timestamp: Date.now(),
     applied: true,
-    detail: { url: meta.url, connectionId: meta.connectionId, chunkIndex, delayMs, chunkBytes: bytes },
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex,
+      delayMs,
+      chunkBytes: bytes,
+      phase: 'ai:stream-paused',
+    },
   });
 }
 
@@ -249,7 +256,13 @@ function emitDuplicate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chun
     type: 'fetch-stream:chunk-duplicated',
     timestamp: Date.now(),
     applied: true,
-    detail: { url: meta.url, connectionId: meta.connectionId, chunkIndex, chunkBytes: bytes },
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex,
+      chunkBytes: bytes,
+      phase: 'ai:chunk-duplicated',
+    },
   });
 }
 
@@ -258,7 +271,41 @@ function emitTruncate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, reaso
     type: 'fetch-stream:truncated',
     timestamp: Date.now(),
     applied: true,
-    detail: { url: meta.url, connectionId: meta.connectionId, chunkIndex, reason },
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex,
+      reason,
+      phase: 'ai:stream-truncated',
+    },
+  });
+}
+
+function emitFirstChunkMarker(emitter: ChaosEventEmitter, meta: ResponseChaosMeta): void {
+  emitter.emit({
+    type: 'fetch-stream:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:first-chunk',
+    },
+  });
+}
+
+function emitStreamResumedMarker(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkIndex: number): void {
+  emitter.emit({
+    type: 'fetch-stream:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex,
+      phase: 'ai:stream-resumed',
+    },
   });
 }
 
@@ -364,6 +411,9 @@ function wrapChaosBranch(
       if (lifecycle.terminated()) return;
       chunkIndex += 1;
       const bytes = chunk.byteLength;
+      if (chunkIndex === 0) {
+        emitFirstChunkMarker(emitter, meta);
+      }
 
       // close-after-chunk fires once we are AT the configured index
       // (so `afterChunk: 0` truncates immediately on the first chunk).
@@ -422,6 +472,7 @@ function wrapChaosBranch(
           lifecycle.registerTimer(handle);
         });
         if (lifecycle.terminated()) return;
+        emitStreamResumedMarker(emitter, meta, chunkIndex);
       }
 
       try {

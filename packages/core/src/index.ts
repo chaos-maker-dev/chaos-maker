@@ -64,7 +64,7 @@ export { Logger, normalizeDebugOption, formatDebugMessage, buildRuleIdMap } from
 export type { RuleGroup, RuleGroupConfig } from './groups';
 export type { GraphQLExtractResult, GraphQLRuleOutcome } from './graphql';
 export type { DebugOptions, ChaosDebugStage, RuleIdEntry } from './debug';
-export type { ChaosLifecyclePhase } from './events';
+export type { ChaosLifecyclePhase, ChaosPhase, StreamingChaosPhase } from './events';
 export type { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, TransportRuleMatchers, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, FetchStreamConfig, FetchStreamDropConfig, FetchStreamDelayConfig, FetchStreamCorruptConfig, FetchStreamCloseConfig, FetchStreamCorruptionStrategy, AiConfig, AiTransport, ChaosEvent, ChaosEventType, ChaosEventListener };
 export type { MatcherEntry, ParsedRequestUrl, RequestHeaderView } from './matchers';
 

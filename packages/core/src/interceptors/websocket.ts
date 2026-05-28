@@ -52,6 +52,8 @@ interface PendingDelayTimer {
   url: string;
   direction: Direction;
   payloadType: PayloadType;
+  connectionId?: string;
+  chunkIndex?: number;
 }
 
 interface PendingCloseTimer {
@@ -193,18 +195,31 @@ function findFiringRule<T extends RequestCountingOptions & {
   return null;
 }
 
+interface InboundLifecycle {
+  connectionId?: string;
+  chunkIndex?: number;
+}
+
 function emitDrop(
   emitter: ChaosEventEmitter,
   url: string,
   direction: Direction,
   payloadType: PayloadType,
   reason?: string,
+  lifecycle?: InboundLifecycle,
 ): void {
   emitter.emit({
     type: 'websocket:drop',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, direction, payloadType, ...(reason ? { reason } : {}) },
+    detail: {
+      url,
+      direction,
+      payloadType,
+      ...(reason ? { reason } : {}),
+      ...(lifecycle?.connectionId !== undefined ? { connectionId: lifecycle.connectionId } : {}),
+      ...(lifecycle?.chunkIndex !== undefined ? { chunkIndex: lifecycle.chunkIndex } : {}),
+    },
   });
 }
 
@@ -214,12 +229,21 @@ function emitDelay(
   direction: Direction,
   payloadType: PayloadType,
   delayMs: number,
+  lifecycle?: InboundLifecycle,
 ): void {
   emitter.emit({
     type: 'websocket:delay',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, direction, payloadType, delayMs },
+    detail: {
+      url,
+      direction,
+      payloadType,
+      delayMs,
+      ...(lifecycle?.connectionId !== undefined ? { connectionId: lifecycle.connectionId } : {}),
+      ...(lifecycle?.chunkIndex !== undefined ? { chunkIndex: lifecycle.chunkIndex } : {}),
+      ...(direction === 'inbound' ? { phase: 'ai:stream-paused' as const } : {}),
+    },
   });
 }
 
@@ -231,12 +255,21 @@ function emitCorrupt(
   strategy: string,
   applied: boolean,
   reason?: string,
+  lifecycle?: InboundLifecycle,
 ): void {
   emitter.emit({
     type: 'websocket:corrupt',
     timestamp: Date.now(),
     applied,
-    detail: { url, direction, payloadType, strategy, ...(reason ? { reason } : {}) },
+    detail: {
+      url,
+      direction,
+      payloadType,
+      strategy,
+      ...(reason ? { reason } : {}),
+      ...(lifecycle?.connectionId !== undefined ? { connectionId: lifecycle.connectionId } : {}),
+      ...(lifecycle?.chunkIndex !== undefined ? { chunkIndex: lifecycle.chunkIndex } : {}),
+    },
   });
 }
 
@@ -245,13 +278,64 @@ function emitClose(
   url: string,
   code: number,
   reason: string,
+  lifecycle?: InboundLifecycle,
 ): void {
   emitter.emit({
     type: 'websocket:close',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, closeCode: code, closeReason: reason },
+    detail: {
+      url,
+      closeCode: code,
+      closeReason: reason,
+      ...(lifecycle?.connectionId !== undefined ? { connectionId: lifecycle.connectionId } : {}),
+      phase: 'ai:stream-truncated' as const,
+    },
   });
+}
+
+function emitFirstInboundChunkMarker(emitter: ChaosEventEmitter, url: string, lifecycle: InboundLifecycle): void {
+  emitter.emit({
+    type: 'websocket:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url,
+      direction: 'inbound',
+      connectionId: lifecycle.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:first-chunk',
+    },
+  });
+}
+
+function emitStreamResumedMarker(emitter: ChaosEventEmitter, url: string, lifecycle: InboundLifecycle): void {
+  emitter.emit({
+    type: 'websocket:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url,
+      direction: 'inbound',
+      connectionId: lifecycle.connectionId,
+      chunkIndex: lifecycle.chunkIndex,
+      phase: 'ai:stream-resumed',
+    },
+  });
+}
+
+let _wsConnectionCounter = 0;
+function mintConnectionId(): string {
+  const c = (typeof globalThis !== 'undefined' ? (globalThis as { crypto?: Crypto }).crypto : undefined);
+  if (c && typeof c.randomUUID === 'function') {
+    try {
+      return c.randomUUID();
+    } catch {
+      // fall through
+    }
+  }
+  _wsConnectionCounter += 1;
+  return `chaos-ws-${_wsConnectionCounter}`;
 }
 
 export function patchWebSocket(
@@ -263,6 +347,7 @@ export function patchWebSocket(
   groups?: RuleGroupRegistry,
 ): WebSocketPatchHandle {
   const pendingTimersBySocket = new Map<WebSocket, Set<PendingTimer>>();
+  const inboundContextBySocket = new WeakMap<WebSocket, { connectionId: string; chunkIndex: number }>();
   // Set to false in uninstall() so that already-wrapped sockets stop applying
   // chaos on any subsequent message / scheduled close after ChaosMaker.stop().
   let running = true;
@@ -288,7 +373,16 @@ export function patchWebSocket(
       // Only pending delays were observable as a "message in flight"; close
       // timers haven't emitted anything yet, so cancelling them is silent.
       if (timer.kind === 'delay') {
-        emitDrop(emitter, timer.url, timer.direction, timer.payloadType, reason);
+        emitDrop(
+          emitter,
+          timer.url,
+          timer.direction,
+          timer.payloadType,
+          reason,
+          timer.direction === 'inbound'
+            ? { connectionId: timer.connectionId, chunkIndex: timer.chunkIndex }
+            : undefined,
+        );
       }
     }
     pendingTimersBySocket.delete(socket);
@@ -376,6 +470,17 @@ export function patchWebSocket(
       // After stop(), let the event through untouched to app listeners.
       if (!running) return;
 
+      const ctx = inboundContextBySocket.get(socket);
+      if (!ctx) return; // wrapper was uninstalled between dispatch + capture
+      ctx.chunkIndex += 1;
+      const lifecycle: InboundLifecycle = {
+        connectionId: ctx.connectionId,
+        chunkIndex: ctx.chunkIndex,
+      };
+      if (ctx.chunkIndex === 0) {
+        emitFirstInboundChunkMarker(emitter, url, lifecycle);
+      }
+
       const direction: Direction = 'inbound';
       const payloadType = getPayloadType(msgEvt.data);
       let parsedCache: ParsedRequestUrl | null | undefined;
@@ -386,7 +491,7 @@ export function patchWebSocket(
 
       if (findFiringRule<WebSocketDropConfig>(config.drops, url, direction, random, counters, groups, emitter, getParsedUrl)) {
         msgEvt.stopImmediatePropagation();
-        emitDrop(emitter, url, direction, payloadType);
+        emitDrop(emitter, url, direction, payloadType, undefined, lifecycle);
         return;
       }
 
@@ -397,15 +502,15 @@ export function patchWebSocket(
         if (payloadType === 'text') {
           payload = corruptTextPayload(payload as string, corruptRule.strategy);
           wasCorrupted = true;
-          emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, true);
+          emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, true, undefined, lifecycle);
         } else {
           const corrupted = corruptBinaryPayload(payload as ArrayBuffer | ArrayBufferView | Blob, corruptRule.strategy);
           if (corrupted === null) {
-            emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, false, 'incompatible-payload-type');
+            emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, false, 'incompatible-payload-type', lifecycle);
           } else {
             payload = corrupted;
             wasCorrupted = true;
-            emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, true);
+            emitCorrupt(emitter, url, direction, payloadType, corruptRule.strategy, true, undefined, lifecycle);
           }
         }
       }
@@ -413,15 +518,19 @@ export function patchWebSocket(
       const delayRule = findFiringRule<WebSocketDelayConfig>(config.delays, url, direction, random, counters, groups, emitter, getParsedUrl);
       if (delayRule) {
         msgEvt.stopImmediatePropagation();
-        emitDelay(emitter, url, direction, payloadType, delayRule.delayMs);
+        emitDelay(emitter, url, direction, payloadType, delayRule.delayMs, lifecycle);
+        const delayedChunkIndex = ctx.chunkIndex;
         const timer: PendingDelayTimer = {
         kind: 'delay',
         handle: setTimeout(() => {
           untrackTimer(socket, timer);
           if (!running) return;
+          emitStreamResumedMarker(emitter, url, { connectionId: ctx.connectionId, chunkIndex: delayedChunkIndex });
           redispatch(socket, msgEvt, payload);
         }, delayRule.delayMs),
           url, direction, payloadType,
+          connectionId: ctx.connectionId,
+          chunkIndex: delayedChunkIndex,
         };
         trackTimer(socket, timer);
         return;
@@ -483,7 +592,8 @@ export function patchWebSocket(
         // the app socket survives intact.
         if (!running) return;
         clearSocketTimers(socket, 'close-interrupt');
-        emitClose(emitter, url, code, reason);
+        const ctx = inboundContextBySocket.get(socket);
+        emitClose(emitter, url, code, reason, ctx ? { connectionId: ctx.connectionId } : undefined);
         try {
           socket.close(code, reason);
         } catch {
@@ -518,6 +628,7 @@ export function patchWebSocket(
   function ChaosWebSocket(this: unknown, url: string | URL, protocols?: string | string[]): WebSocket {
     const socket = new OriginalWebSocket(url, protocols);
     const urlStr = typeof url === 'string' ? url : url.toString();
+    inboundContextBySocket.set(socket, { connectionId: mintConnectionId(), chunkIndex: -1 });
 
     const boundOriginalSend = socket.send.bind(socket) as (
       d: string | ArrayBuffer | ArrayBufferView | Blob,
@@ -555,7 +666,16 @@ export function patchWebSocket(
         for (const timer of timers) {
           clearTimeout(timer.handle);
           if (timer.kind === 'delay') {
-            emitDrop(emitter, timer.url, timer.direction, timer.payloadType, 'stop-during-delay');
+            emitDrop(
+              emitter,
+              timer.url,
+              timer.direction,
+              timer.payloadType,
+              'stop-during-delay',
+              timer.direction === 'inbound'
+                ? { connectionId: timer.connectionId, chunkIndex: timer.chunkIndex }
+                : undefined,
+            );
           }
         }
       }
