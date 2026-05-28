@@ -140,4 +140,8 @@ export function forEachRule(config: ChaosConfig, fn: (rule: AnyRule) => void): v
   visit(config.sse?.delays as AnyRule[] | undefined);
   visit(config.sse?.corruptions as AnyRule[] | undefined);
   visit(config.sse?.closes as AnyRule[] | undefined);
+  visit(config.fetchStream?.drops as AnyRule[] | undefined);
+  visit(config.fetchStream?.delays as AnyRule[] | undefined);
+  visit(config.fetchStream?.corruptions as AnyRule[] | undefined);
+  visit(config.fetchStream?.closes as AnyRule[] | undefined);
 }

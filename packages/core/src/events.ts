@@ -15,6 +15,16 @@ export type ChaosEventType =
   | 'sse:delay'
   | 'sse:corrupt'
   | 'sse:close'
+  /** A chunk of a wrapped fetch-stream response was withheld from the consumer. */
+  | 'fetch-stream:chunk-dropped'
+  /** A chunk of a wrapped fetch-stream response was delayed before being enqueued. */
+  | 'fetch-stream:chunk-delayed'
+  /** A chunk of a wrapped fetch-stream response was mutated (truncate / malformed-json / empty / wrong-type). */
+  | 'fetch-stream:chunk-corrupted'
+  /** A chunk of a wrapped fetch-stream response was enqueued more than once. */
+  | 'fetch-stream:chunk-duplicated'
+  /** A wrapped fetch-stream response was closed before the upstream finished. */
+  | 'fetch-stream:truncated'
   /** Emitted once per `enableGroup()` call. `applied: true`. */
   | 'rule-group:enabled'
   /** Emitted once per `disableGroup()` call. `applied: true`. */
@@ -117,6 +127,19 @@ export interface ChaosEvent {
     /** Name of the first matcher field that failed for a `rule-skip-match`
      *  debug event. One of the matcher field names. */
     skippedAt?: string;
+    /** Zero-based chunk index within a single streamed response or event
+     *  source. Populated by streaming interceptors so consumers can attribute
+     *  a chunk event back to its position in the stream. */
+    chunkIndex?: number;
+    /** Stable per-connection identifier minted by streaming interceptors
+     *  (UUID v4 when `crypto.randomUUID` is available, monotonic counter
+     *  otherwise). Lets reporting and replay layers correlate chunks
+     *  belonging to the same response when transports multiplex. */
+    connectionId?: string;
+    /** Source byte length of the chunk before any mutation. Set on
+     *  fetch-stream chunk events so reporting can compute total bytes
+     *  dropped/duplicated without re-reading the stream. */
+    chunkBytes?: number;
   };
 }
 

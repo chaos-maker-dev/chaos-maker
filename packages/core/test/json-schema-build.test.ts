@@ -18,9 +18,11 @@ describe.skipIf(!existsSync(schemaPath))('JSON schema build artifact', () => {
     const top = schema.definitions?.ChaosConfig ?? schema;
     const props = Object.keys(top.properties ?? {}).sort();
     const expected = [
+      'ai',
       'customPresets',
       'customProfiles',
       'debug',
+      'fetchStream',
       'groups',
       'matchers',
       'network',

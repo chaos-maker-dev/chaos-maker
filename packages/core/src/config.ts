@@ -317,15 +317,23 @@ export interface SSEConfig {
   closes?: SSECloseConfig[];
 }
 
-/** Strategies for corrupting fetch-stream chunks. Mirrors SSE/WS strategies.
- *  All four operate on text chunks (decoded UTF-8). When the chunk is binary
- *  and the strategy requires text (`malformed-json`, `wrong-type`), the rule
- *  is skipped and a diagnostic event is emitted with `applied: false`. */
+/** Strategies for corrupting fetch-stream chunks.
+ *
+ *  `truncate` / `malformed-json` / `empty` / `wrong-type` operate on text
+ *  chunks (decoded UTF-8); when the chunk is binary and the strategy requires
+ *  text (`malformed-json`, `wrong-type`), the rule is skipped and a diagnostic
+ *  event is emitted with `applied: false`.
+ *
+ *  `duplicate` is an emission-level strategy: the chunk is enqueued onto the
+ *  downstream `ReadableStream` an additional time (binary-safe; no text
+ *  decoding). Use this to test consumer idempotency for AI chat replay,
+ *  ticker fan-out, etc. */
 export type FetchStreamCorruptionStrategy =
   | 'truncate'
   | 'malformed-json'
   | 'empty'
-  | 'wrong-type';
+  | 'wrong-type'
+  | 'duplicate';
 
 interface FetchStreamDropRule {
   /** Apply only to a specific chunk index (zero-based). When omitted, the

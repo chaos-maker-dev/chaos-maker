@@ -7,6 +7,7 @@ import { patchXHR, patchXHROpen, patchXHRSetRequestHeader } from './interceptors
 import { attachDomAssailant } from './interceptors/domAssailant';
 import { patchWebSocket, WebSocketPatchHandle } from './interceptors/websocket';
 import { patchEventSource, EventSourceLikeStatic, EventSourcePatchHandle } from './interceptors/eventSource';
+import { patchFetchStream, FetchStreamPatchHandle } from './interceptors/networkFetchStream';
 import { DEFAULT_GROUP_NAME, RuleGroup, RuleGroupRegistry } from './groups';
 import { forEachRule } from './utils';
 import { Logger, buildRuleIdMap, normalizeDebugOption, RuleIdEntry } from './debug';
@@ -75,6 +76,7 @@ export class ChaosMaker {
   private webSocketHandle?: WebSocketPatchHandle;
   private originalEventSource?: typeof EventSource;
   private eventSourceHandle?: EventSourcePatchHandle;
+  private fetchStreamHandle?: FetchStreamPatchHandle;
   /** Shared counters keyed by config rule object reference. Shared across fetch + XHR + WS. */
   private requestCounters: Map<object, number> = new Map();
   /** Rule-group registry. Default-on; default group always exists. */
@@ -397,6 +399,29 @@ export class ChaosMaker {
         target.EventSource = markRuntimePatch(this.eventSourceHandle.Wrapped, 'eventsource');
       }
 
+      if (this.config.fetchStream && typeof target.fetch === 'function' && typeof Response !== 'undefined') {
+        // Layer fetch-stream chaos on top of whatever fetch is currently
+        // installed: the network interceptor (if `config.network` is set)
+        // already wrapped the original; otherwise we capture the original
+        // here so `stop()` can restore it.
+        let baseFetch: typeof fetch;
+        if (this.originalFetch) {
+          baseFetch = target.fetch.bind(target);
+        } else {
+          this.originalFetch = target.fetch;
+          baseFetch = this.originalFetch.bind(target);
+        }
+        this.fetchStreamHandle = patchFetchStream(
+          baseFetch,
+          this.config.fetchStream,
+          this.random,
+          this.emitter,
+          this.requestCounters,
+          this.groups,
+        );
+        target.fetch = markRuntimePatch(this.fetchStreamHandle.fetch, 'fetch');
+      }
+
       setActiveRuntimeInstance(target, this);
     } catch (err) {
       this.stop();
@@ -420,6 +445,7 @@ export class ChaosMaker {
     const webSocketHandle = this.webSocketHandle;
     const originalEventSource = this.originalEventSource;
     const eventSourceHandle = this.eventSourceHandle;
+    const fetchStreamHandle = this.fetchStreamHandle;
 
     this.originalFetch = undefined;
     this.originalXhrOpen = undefined;
@@ -430,7 +456,13 @@ export class ChaosMaker {
     this.webSocketHandle = undefined;
     this.originalEventSource = undefined;
     this.eventSourceHandle = undefined;
+    this.fetchStreamHandle = undefined;
 
+    if (fetchStreamHandle) {
+      this.runCleanupStep('uninstall-fetch-stream', () => {
+        fetchStreamHandle.uninstall();
+      });
+    }
     if (originalFetch) {
       this.runCleanupStep('restore-fetch', () => {
         target.fetch = originalFetch;

@@ -460,7 +460,11 @@ const buildFetchStreamCorrupt = (p: Policy) =>
       z.object({
         ...transportMatcherFields,
         chunkIndex: chunkIndexField.optional(),
-        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type']),
+        // `duplicate` is fetch-stream-specific (emission-level, not text-level).
+        // SSE / WebSocket corruption stays at the four text strategies because
+        // their interceptors operate on already-decoded message text rather
+        // than raw byte chunks.
+        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type', 'duplicate']),
         probability,
         ...countingFields,
         ...groupField,
