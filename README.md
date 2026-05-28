@@ -6,11 +6,12 @@
 
 Inject controlled chaos into web applications to test frontend resilience. Works with Playwright, Cypress, WebdriverIO, and Puppeteer with no backend changes.
 
-## What's new in v0.8.0
+## What's new in v0.9.0
 
-- **Cross-transport matchers**: every WebSocket and SSE rule now accepts the same matcher targeting surface as network rules. Use inline `hostname`, `queryParams`, or a `matcher: 'name'` reference into the existing top-level `matchers` registry so one matcher can target network, WebSocket, and SSE without per-transport duplication. [WebSocket chaos concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/websocket-chaos/) and [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/).
-- **Built-in matchers**: `graphql`, `apiRequests`, and `authRequests` ship preregistered so the most common targets need no `matchers` entry. A user `matchers` entry of the same name overrides one. [Built-in matchers](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/#built-in-matchers).
-- **Cross-adapter matcher parity coverage**: matcher E2E coverage across Playwright, Cypress, WebdriverIO, and Puppeteer is now driven by a single declarative scenario catalog under `e2e-tests/fixtures/parity/`. No public API change; published package surface is identical.
+- **Streaming chaos for `fetch(...).body`**: a new `fetchStream` config slice wraps every `Response.body` consumer so chunk-level chaos applies to AI chat SDKs (Vercel AI SDK, OpenAI SDK, LangChain, anything that reaches for `Response.body.getReader()`). Drop, delay, corrupt, duplicate, or truncate individual chunks by zero-based index or by probability. See [AI streaming concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/).
+- **Per-chunk phase markers on SSE + WebSocket + fetch-stream**: every streaming event now carries `detail.phase` (`ai:first-chunk`, `ai:stream-paused`, `ai:stream-resumed`, `ai:stream-truncated`, `ai:chunk-duplicated`) and a stable `detail.connectionId`, so report consumers can reconstruct a chunk-level timeline without rerunning matchers.
+- **`ai` config shorthand**: a single `ai: { firstChunkDelayMs, pauseAfterChunk, truncateAfterChunk, duplicateChunkProbability, transport }` block compiles into transport rule arrays at engine init so the same scenario fires across fetch-stream, SSE, and WebSocket without per-transport duplication. See the [AI chat fetch-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/) and [AI chat SSE recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-sse/).
+- **`'duplicate'` corruption strategy on fetch-stream**: emission-level chunk duplication; consumers see the same chunk one additional time. Use for testing client-side idempotency under retry storms or replayed deltas.
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -258,6 +259,36 @@ await injectChaos(page, {
   },
 });
 ```
+
+## Streaming chaos (AI chat, live captions, tickers)
+
+Streaming UIs read responses chunk by chunk (`fetch(...).body.getReader()`,
+`EventSource`, `WebSocket.onmessage`). The `fetchStream` slice wraps every
+`Response.body` so chunk-level chaos applies to AI SDKs that read the stream
+through the SDK rather than the user's `Response`. The `ai` shorthand
+compiles into the matching transport rules for fetch-stream, SSE, AND
+WebSocket so one scenario covers whichever transport the SDK picked.
+
+```typescript
+await injectChaos(page, {
+  ai: {
+    firstChunkDelayMs: 800,
+    pauseAfterChunk: 4,
+    pauseDurationMs: 2000,
+    truncateAfterChunk: 12,
+    duplicateChunkProbability: 0.05,
+    transport: 'auto', // 'fetch-stream' | 'sse' | 'websocket' | 'auto' (default)
+  },
+});
+```
+
+Every emitted streaming event carries `detail.phase` (`ai:first-chunk`,
+`ai:stream-paused`, `ai:stream-resumed`, `ai:stream-truncated`,
+`ai:chunk-duplicated`) and a stable `detail.connectionId`, so report
+consumers can reconstruct a chunk-level timeline. See the [AI streaming
+concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/)
+and the recipes for [fetch-stream](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/)
+and [SSE](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-sse/).
 
 ## Full docs
 
