@@ -525,6 +525,10 @@ export function patchWebSocket(
         handle: setTimeout(() => {
           untrackTimer(socket, timer);
           if (!running) return;
+          // Bail if the app drove the socket to CLOSED between the delay
+          // scheduling and the timer firing; otherwise the redispatch
+          // produces a ghost inbound `message` event past close.
+          if (socket.readyState === socket.CLOSED) return;
           emitStreamResumedMarker(emitter, url, { connectionId: ctx.connectionId, chunkIndex: delayedChunkIndex });
           redispatch(socket, msgEvt, payload);
         }, delayRule.delayMs),

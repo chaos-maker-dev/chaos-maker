@@ -60,11 +60,9 @@ test('chat UI stays responsive across chunk stalls and truncations', async ({ pa
   <TabItem label="Cypress">
 
 ```typescript
-import { injectChaos, getChaosLog } from '@chaos-maker/cypress';
-
 describe('AI chat resilience', () => {
   beforeEach(() => {
-    injectChaos({
+    cy.injectChaos({
       seed: 42,
       ai: {
         firstChunkDelayMs: 800,
@@ -83,7 +81,7 @@ describe('AI chat resilience', () => {
     cy.findByRole('button', { name: 'Send' }).click();
     cy.findByTestId('streaming-indicator').should('be.visible');
     cy.findByTestId('truncated-banner').should('be.visible');
-    getChaosLog().then((log) => {
+    cy.getChaosLog().then((log) => {
       const phases = log
         .filter((e) => e.type.startsWith('fetch-stream:'))
         .map((e) => e.detail.phase);

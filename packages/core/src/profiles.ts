@@ -134,6 +134,11 @@ const PROFILE_CHAIN_FORBIDDEN = [
   'customProfiles',
   'customPresets',
   'schemaVersion',
+  // `ai` is a top-level compiler shorthand; the compiler runs after profile
+  // resolution + preset expansion, so nesting it would silently bypass the
+  // compiler. Reject it loudly here for direct `applyProfile` callers (the
+  // Zod schema rejects it on the public path).
+  'ai',
 ] as const;
 
 function ensureNoProfileChain(slice: object, source: string): void {

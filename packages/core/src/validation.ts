@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ChaosConfigError } from './errors';
-import type { ChaosConfig } from './config';
+import type { AiConfig, ChaosConfig } from './config';
 import { PresetRegistry, expandPresets, type PresetConfigSlice } from './presets';
 import { ProfileRegistry, applyProfile, type ProfileConfigSlice } from './profiles';
 import { MatcherRegistry, resolveNamedMatchers } from './matchers';
@@ -1016,6 +1016,12 @@ export interface ValidateChaosConfigOptions {
 function runCustomValidators(
   config: ChaosConfig,
   validators: CustomValidatorMap,
+  /** User-side `ai` slice captured from the input BEFORE `compileAiToRules`
+   *  stripped it. The compiler runs inside `prepareChaosConfig`, so
+   *  `config.ai` is always `undefined` by the time this function executes;
+   *  routing the pre-compile snapshot here keeps `customValidators.ai`
+   *  reachable. `undefined` when the user never declared an `ai` slice. */
+  preCompileAi?: AiConfig,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
@@ -1062,8 +1068,8 @@ function runCustomValidators(
     });
   }
 
-  if (config.ai !== undefined) {
-    callValidator('ai', config.ai, 'ai');
+  if (preCompileAi !== undefined) {
+    callValidator('ai', preCompileAi, 'ai');
   }
 
   if (validators['top-level']) {
@@ -1110,12 +1116,21 @@ export function validateChaosConfig(
     return input as ChaosConfig;
   }
 
+  // Capture the user-side `ai` slice BEFORE prepareChaosConfig compiles +
+  // strips it. Routing this snapshot into `runCustomValidators` keeps the
+  // `customValidators.ai` hook reachable; without it the validator would
+  // never fire because `config.ai` is gone by the time validators run.
+  const preCompileAi: AiConfig | undefined =
+    input && typeof input === 'object'
+      ? (input as { ai?: AiConfig }).ai
+      : undefined;
+
   const validated = prepareChaosConfig(input, { unknownFields: opts.unknownFields });
 
   checkDeprecations(validated, opts.onDeprecation);
 
   if (opts.customValidators) {
-    const customIssues = runCustomValidators(validated, opts.customValidators);
+    const customIssues = runCustomValidators(validated, opts.customValidators, preCompileAi);
     if (customIssues.length > 0) throw new ChaosConfigError(customIssues);
   }
 

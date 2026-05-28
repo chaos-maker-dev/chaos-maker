@@ -91,6 +91,14 @@ export interface FetchStreamPatchHandle {
   uninstall(): void;
 }
 
+/** Minimal cross-realm `Response` constructor surface used by
+ *  `patchFetchStream`. Any constructor whose `prototype` carries a
+ *  `body` accessor matches; the iframe-realm `Response` shipped by the
+ *  consumer browser satisfies this without further structural typing. */
+export type ResponseCtorLike = {
+  prototype: { body: ReadableStream<Uint8Array> | null };
+};
+
 interface GateResult {
   proceed: boolean;
   matchedBy?: string[];
@@ -314,10 +322,16 @@ function mutateChunkText(chunk: Uint8Array, strategy: FetchStreamCorruptionStrat
     // Emission-level; caller enqueues twice. No text mutation.
     return { out: chunk, binarySkip: false };
   }
-  // Attempt UTF-8 decode; if it throws, treat as binary and skip text strategies.
+  // `fatal: true` makes `decode()` throw `TypeError` on malformed UTF-8 so
+  // binary chunks (or partial multi-byte sequences) are caught and skipped
+  // rather than silently mutated. NOTE: this is a per-chunk decoder, so a
+  // valid multi-byte code point split across chunk boundaries can be
+  // misclassified as binary. Streaming chaos consumers that need byte-perfect
+  // text reassembly should reach for fetch-stream directly with their own
+  // decoder rather than the corruption strategies below.
   let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: false }).decode(chunk);
+    text = new TextDecoder('utf-8', { fatal: true }).decode(chunk);
   } catch {
     return { out: chunk, binarySkip: true };
   }
@@ -383,7 +397,13 @@ function wrapChaosBranch(
   emitter: ChaosEventEmitter,
   counters: Map<object, number>,
   groups: RuleGroupRegistry | undefined,
-  lifecycle: { terminated: () => boolean; markTerminated: () => void; registerController: (c: TransformStreamDefaultController<Uint8Array>) => void; registerTimer: (handle: ReturnType<typeof setTimeout>) => void; },
+  lifecycle: {
+    terminated: () => boolean;
+    markTerminated: () => void;
+    registerController: (c: TransformStreamDefaultController<Uint8Array>) => void;
+    registerTimer: (handle: ReturnType<typeof setTimeout>) => void;
+    unregisterTimer: (handle: ReturnType<typeof setTimeout>) => void;
+  },
 ): ReadableStream<Uint8Array> {
   let chunkIndex = -1;
   const closeRule = findFiringCloseRule(config.closes, meta, random, counters, groups, emitter);
@@ -395,6 +415,7 @@ function wrapChaosBranch(
       lifecycle.registerController(controller);
       if (closeAfterMsScheduled !== undefined) {
         const handle = setTimeout(() => {
+          lifecycle.unregisterTimer(handle);
           if (lifecycle.terminated()) return;
           lifecycle.markTerminated();
           emitTruncate(emitter, meta, 'after-ms', Math.max(chunkIndex, 0));
@@ -468,7 +489,10 @@ function wrapChaosBranch(
       if (delayRule) {
         emitDelay(emitter, meta, chunkIndex, delayRule.delayMs, bytes);
         await new Promise<void>((resolve) => {
-          const handle = setTimeout(() => resolve(), delayRule.delayMs);
+          const handle = setTimeout(() => {
+            lifecycle.unregisterTimer(handle);
+            resolve();
+          }, delayRule.delayMs);
           lifecycle.registerTimer(handle);
         });
         if (lifecycle.terminated()) return;
@@ -503,13 +527,19 @@ export function patchFetchStream(
   emitter: ChaosEventEmitter,
   counters: Map<object, number>,
   groups?: RuleGroupRegistry,
+  /** Realm-specific `Response` constructor whose prototype carries the body
+   *  accessor to patch. Defaults to the ambient `Response`; callers must pass
+   *  the target realm's constructor when patching an iframe / shadow realm
+   *  so `stop()` restores the getter on the correct prototype. */
+  targetResponse?: ResponseCtorLike,
 ): FetchStreamPatchHandle {
   let running = true;
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
   const activeControllers = new Set<TransformStreamDefaultController<Uint8Array>>();
-  const terminatedResponses = new WeakSet<Response>();
+  const terminatedResponses = new WeakSet<object>();
 
-  const originalBodyDescriptor = Object.getOwnPropertyDescriptor(Response.prototype, 'body');
+  const ResponseCtor: ResponseCtorLike = targetResponse ?? (Response as unknown as ResponseCtorLike);
+  const originalBodyDescriptor = Object.getOwnPropertyDescriptor(ResponseCtor.prototype, 'body');
   const originalBodyGetter = originalBodyDescriptor?.get;
   if (!originalBodyGetter) {
     throw new Error('[chaos-maker] Response.prototype.body getter is not available; fetch-stream chaos cannot install.');
@@ -540,6 +570,7 @@ export function patchFetchStream(
         markTerminated: () => terminatedResponses.add(this),
         registerController: (c: TransformStreamDefaultController<Uint8Array>) => activeControllers.add(c),
         registerTimer: (h: ReturnType<typeof setTimeout>) => pendingTimers.add(h),
+        unregisterTimer: (h: ReturnType<typeof setTimeout>) => pendingTimers.delete(h),
       };
       meta.teeState = {
         chaos: wrapChaosBranch(forChaos, meta, config, random, emitter, counters, groups, lifecycle),
@@ -554,7 +585,7 @@ export function patchFetchStream(
     return meta.teeState.original;
   };
   Object.defineProperty(patchedGetter, BODY_GETTER_PATCH_MARKER, { value: true });
-  Object.defineProperty(Response.prototype, 'body', {
+  Object.defineProperty(ResponseCtor.prototype, 'body', {
     configurable: true,
     get: patchedGetter,
   });
@@ -594,7 +625,7 @@ export function patchFetchStream(
       activeControllers.clear();
       // Restore the body getter to whatever was there before patching.
       if (originalBodyDescriptor) {
-        Object.defineProperty(Response.prototype, 'body', originalBodyDescriptor);
+        Object.defineProperty(ResponseCtor.prototype, 'body', originalBodyDescriptor);
       }
     },
   };

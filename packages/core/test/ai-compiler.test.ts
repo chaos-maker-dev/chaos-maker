@@ -143,6 +143,40 @@ describe('AI compiler: composition + ordering', () => {
   });
 });
 
+describe('AI compiler: customValidators reachability', () => {
+  it('invokes customValidators.ai against the user-side ai slice (compiled out by then)', async () => {
+    const { validateChaosConfig } = await import('../src/validation');
+    const calls: unknown[] = [];
+    validateChaosConfig(
+      { ai: { firstChunkDelayMs: 250 } },
+      {
+        customValidators: {
+          ai: (rule) => {
+            calls.push(rule);
+          },
+        },
+      },
+    );
+    expect(calls).toEqual([{ firstChunkDelayMs: 250 }]);
+  });
+
+  it('skips customValidators.ai when the user did not declare an ai slice', async () => {
+    const { validateChaosConfig } = await import('../src/validation');
+    let called = false;
+    validateChaosConfig(
+      { network: { failures: [{ urlPattern: '*', statusCode: 500, probability: 0.1 }] } },
+      {
+        customValidators: {
+          ai: () => {
+            called = true;
+          },
+        },
+      },
+    );
+    expect(called).toBe(false);
+  });
+});
+
 describe('AI compiler: prepareChaosConfig integration', () => {
   it('compiles + re-validates the merged config', () => {
     const out = prepareChaosConfig({

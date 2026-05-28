@@ -399,7 +399,11 @@ export class ChaosMaker {
         target.EventSource = markRuntimePatch(this.eventSourceHandle.Wrapped, 'eventsource');
       }
 
-      if (this.config.fetchStream && typeof target.fetch === 'function' && typeof Response !== 'undefined') {
+      // Resolve `Response` against the chaos target so cross-realm targets
+      // (iframe / shadow realm) patch the right prototype. Falls back to the
+      // ambient `Response` when the target inherits the same realm.
+      const targetResponse = (target as typeof globalThis & { Response?: typeof Response }).Response;
+      if (this.config.fetchStream && typeof target.fetch === 'function' && typeof targetResponse !== 'undefined') {
         // Layer fetch-stream chaos on top of whatever fetch is currently
         // installed: the network interceptor (if `config.network` is set)
         // already wrapped the original; otherwise we capture the original
@@ -418,6 +422,7 @@ export class ChaosMaker {
           this.emitter,
           this.requestCounters,
           this.groups,
+          targetResponse,
         );
         target.fetch = markRuntimePatch(this.fetchStreamHandle.fetch, 'fetch');
       }

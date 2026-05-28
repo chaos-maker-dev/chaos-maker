@@ -2,7 +2,7 @@
 
 This file contains the complete documentation for Chaos Maker, concatenated into a single file for easy AI consumption.
 
-Latest stable release: v0.7.1
+Latest stable release: v0.8.0
 
 ---
 
@@ -517,6 +517,8 @@ interface NamedMatcher {
 
 The top-level `matchers` registry holds reusable `NamedMatcher` entries. Rules reference one via `matcher: 'name'`. The resolver runs after preset and profile expansion, inlines the registered fields, and strips both the `matcher` reference and the `matchers` registry from the resolved config. See [Advanced matchers](/chaos-maker/latest/concepts/matchers/) for the full surface, including the four issue codes (`matcher_not_found`, `matcher_collision`, `matcher_inline_conflict`, `matcher_cycle`).
 
+Three matchers are built in and resolve by name with no `matchers` entry: `graphql` (`urlPattern: '/graphql'`), `apiRequests` (`urlPattern: '/api'`), and `authRequests` (`requestHeaders: { authorization: true }`). A `matchers` entry that reuses one of these names overrides it. `authRequests` is a network-only matcher; see [Advanced matchers](/chaos-maker/latest/concepts/matchers/) for built-in behavior across transports.
+
 ## UI
 
 ```typescript
@@ -545,6 +547,22 @@ type WebSocketDirection = 'inbound' | 'outbound' | 'both';
 type WebSocketCorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-type';
 ```
 
+Every WebSocket rule type is a discriminated union of two shapes:
+
+```typescript
+type TransportRuleMatchers =
+  | {
+      urlPattern?: string;
+      hostname?: HostnameMatcher;
+      queryParams?: Record<string, RequestKvMatcher>;
+    }
+  | {
+      matcher: string;
+    };
+```
+
+A rule sets either inline targeting (any combination of `urlPattern`, `hostname`, and `queryParams`) or a `matcher: 'name'` reference into the top-level matcher registry, never both. `urlPattern` is optional as long as `hostname` or `queryParams` is present, matching the network rule surface. Mixing inline fields with `matcher` surfaces `matcher_inline_conflict`. Omitting both surfaces the existing `matcher_inline_conflict` "rule must set either matcher reference or at least one matcher field" issue. The transport-irrelevant fields from `NamedMatcher` (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined and silently ignored when carried by a referenced matcher so one matcher can target network, WebSocket, and SSE without duplication. See [Advanced matchers](../concepts/matchers) for the full semantics.
+
 ## Server-Sent Events
 
 ```typescript
@@ -560,6 +578,8 @@ type SSECorruptionStrategy = 'truncate' | 'malformed-json' | 'empty' | 'wrong-ty
 ```
 
 Drop, delay, and corruption rules accept optional `eventType`. The default is `message`; use a named event like `token` or the `'*'` wildcard for all data events.
+
+Every SSE rule type uses the same `TransportRuleMatchers` discriminated union as WebSocket rules: either inline targeting (`urlPattern`, `hostname`, `queryParams`) or a `matcher: 'name'` reference. The validation guarantees, debug attribution, and silent-ignore semantics for transport-irrelevant matcher fields match the WebSocket surface.
 
 ## ChaosEvent
 
@@ -865,7 +885,7 @@ The `'*'` wildcard listener also receives debug events, alongside every other ch
 - [`ChaosConfigBuilder.withDebug()`](/chaos-maker/latest/api/core/) on the builder
 - [`debug` field on ChaosConfig](/chaos-maker/latest/api/config-reference/)
 - [Observability concepts](/chaos-maker/latest/concepts/observability/)
-- [Timeline and reporting concepts](/chaos-maker/latest/concepts/timeline-and-reporting/) — debug events feed `ruleHits` and `skipReasons` on the structured report
+- [Timeline and reporting concepts](/chaos-maker/latest/concepts/timeline-and-reporting/)  -  debug events feed `ruleHits` and `skipReasons` on the structured report
 - [Reporting API reference](/chaos-maker/latest/api/reporting/)
 
 ---
@@ -913,7 +933,7 @@ function buildChaosReport(
 ): ChaosReport;
 ```
 
-Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page — the summary:
+Pure function. Given the same `events` array, `seed`, `title`, and `now`, it always returns the same `ChaosReport`. Aggregation rules are listed in full on the concept page  -  the summary:
 
 - `meta.appliedCount` counts outcome events with `applied === true`.
 - `meta.skippedCount` counts debug events with stage in `{rule-skip-match, rule-skip-counting, rule-skip-group, rule-skip-probability}`. `rule-group:gated` is not double-counted.
@@ -1262,6 +1282,49 @@ const config = new ChaosConfigBuilder()
 
 Rules that reference the matcher set the `matcher` field on the literal rule object; the builder rule helpers stay positional and unchanged in this release.
 
+## Built-in matchers
+
+A few matcher definitions get rewritten project after project: the GraphQL endpoint, API traffic, authenticated requests. Chaos Maker ships these as built-in named matchers. A rule references one by name with no `matchers` entry of its own.
+
+```typescript
+await injectChaos(page, {
+  network: {
+    latencies: [
+      { matcher: 'graphql', delayMs: 1200, probability: 1 },
+    ],
+  },
+});
+```
+
+| Name | Targets | Definition |
+| ---- | ------- | ---------- |
+| `graphql` | GraphQL endpoints | `urlPattern: '/graphql'` |
+| `apiRequests` | API traffic | `urlPattern: '/api'` |
+| `authRequests` | Requests carrying an `Authorization` header | `requestHeaders: { authorization: true }` |
+
+A built-in resolves through the same path as a user matcher: its fields inline into the rule, the `matcher` reference is stripped, and debug events carry `detail.matcherName`. There is no separate runtime and no new rule shape.
+
+### Overriding a built-in
+
+Declare a `matchers` entry (or call `.defineMatcher`) with the same name to replace a built-in for that config. The user entry wins and no collision is raised, so a project can keep the familiar name while pointing it at its own endpoint.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    graphql: { urlPattern: '/internal/graphql' },
+  },
+  network: {
+    failures: [{ matcher: 'graphql', statusCode: 503, probability: 1 }],
+  },
+});
+```
+
+### Built-ins across transports
+
+`graphql` and `apiRequests` target on `urlPattern`, so they apply to network, WebSocket, and SSE rules alike.
+
+`authRequests` is meaningful on network rules only. Its single field, `requestHeaders`, is not evaluated on WebSocket or SSE rules, because those transports do not expose request headers. A WebSocket or SSE rule that references `matcher: 'authRequests'` therefore carries no transport-applicable targeting and matches every stream. For WebSocket and SSE, target with `graphql`, `apiRequests`, or an inline `urlPattern` / `hostname` / `queryParams`.
+
 ## Validation issue codes
 
 Failures surface through the existing `ChaosConfigError` aggregator. Codes specific to advanced matchers:
@@ -1291,10 +1354,72 @@ Rules originating from a named matcher are attributed in debug events. Every `ty
 
 This makes the answer to "why did this rule fire?" and "why did this rule skip?" trivially readable in dashboards.
 
+## Cross-transport usage
+
+WebSocket and SSE rules accept the same named-matcher registry and a subset of the inline matcher fields. The supported inline fields on every WS and SSE rule are:
+
+- `urlPattern`
+- `hostname`
+- `queryParams`
+- `matcher` (named-matcher reference)
+
+The four network-only fields (`methods`, `requestHeaders`, `resourceTypes`, `graphqlOperation`) are rejected if inlined onto a WS or SSE rule because they have no meaning on those transports: WebSocket opens via a fixed Upgrade handshake, SSE is GET-only, neither browser API exposes request headers, and there is no JSON-body operation to extract.
+
+A `NamedMatcher` reused across transports may still declare any of its fields. The WS/SSE gate evaluates only `urlPattern`, `hostname`, and `queryParams`; non-applicable fields are silently ignored so one matcher can target network, WebSocket, and SSE without per-transport duplication.
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    realtimeApi: { hostname: /realtime/ },
+  },
+  websocket: {
+    drops: [
+      { matcher: 'realtimeApi', direction: 'inbound', probability: 0.2 },
+    ],
+  },
+  sse: {
+    drops: [
+      { matcher: 'realtimeApi', probability: 0.2 },
+    ],
+  },
+});
+```
+
+Inline forms work the same way:
+
+```typescript
+websocket: {
+  drops: [
+    {
+      urlPattern: 'wss://realtime',
+      direction: 'outbound',
+      queryParams: { room: 'alpha' },
+      probability: 1,
+    },
+  ],
+}
+```
+
+The transport gate runs `urlPattern → direction (WS) / eventType (SSE) → hostname → queryParams` before counting and probability so a matcher mismatch never consumes counting state. Debug attribution mirrors the network surface: `rule-matched` carries `detail.matchedBy`, `rule-skip-match` carries `detail.skippedAt`, and matcher-resolved rules carry `detail.matcherName`.
+
+The TypeScript shape `TransportRuleMatchers` is a discriminated union: a rule either declares one or more inline fields (`urlPattern`, `hostname`, `queryParams`) or declares `matcher: 'name'`, never both. This mirrors the inline-versus-named split on network rules; `urlPattern` is optional as long as `hostname` or `queryParams` already targets the rule. At runtime, validation rejects rules that supply neither a `matcher` reference nor at least one inline field, so a rule always carries some targeting.
+
+## Parity coverage
+
+Matcher behavior is parity-tested across all four supported adapters.
+Playwright, Cypress, WebdriverIO, and Puppeteer each run an identical set of
+scenarios from a shared declarative catalog, so a matcher field that fires on
+one adapter fires on every adapter, with the same chaos log, the same
+matchedBy attribution, and the same observable outcome. The catalog covers
+hostname, query parameter, header, and resource-type matching on network
+rules, the three built-in matchers and their user-override behavior, and the
+WebSocket and SSE matcher subset (`urlPattern`, `hostname`, `queryParams`,
+`matcher`) plus debug `matchedBy` attribution. New matcher coverage gets
+added once to the shared catalog rather than copied into each adapter's
+E2E suite.
+
 ## Out of scope (deferred)
 
-- WebSocket, SSE, and UI rules do not accept named matchers in this release. Each rule shape differs in the matcher dimensions it cares about; named matchers are network-only for now.
-- Built-in matchers. The `matchers` registry is intentionally user-owned. There is no `BUILT_IN_MATCHERS`.
 - Matcher composition (a `NamedMatcher` referencing another). The error code `matcher_cycle` reserves the surface for future work.
 - Response matchers (status code, response headers). Matchers operate on the request only.
 - Disjunctive (any-of) matchers. A rule's matcher block is conjunctive: every field must pass.
@@ -1967,6 +2092,39 @@ Chaos Maker emits:
 
 Each SSE event includes `detail.url`. Drop, delay, and corruption events include `detail.eventType`, and corruption events also include `detail.strategy`. Close events include `detail.reason` instead of `detail.eventType`.
 
+## Targeting with matchers
+
+Every SSE rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Mix and match exactly like network rules, with the same `matcher_inline_conflict` validation guarantee covering both the matcher-plus-inline conflict and the no-targeting case.
+
+```typescript
+await injectChaos(page, {
+  sse: {
+    drops: [
+      {
+        urlPattern: '/feed',
+        queryParams: { topic: 'alerts' },
+        probability: 1,
+      },
+    ],
+  },
+});
+```
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    realtimeApi: { hostname: /realtime/ },
+  },
+  sse: {
+    drops: [
+      { matcher: 'realtimeApi', probability: 0.2 },
+    ],
+  },
+});
+```
+
+See [Advanced matchers](./matchers) for the full field semantics and debug attribution.
+
 ## Preset
 
 ```typescript
@@ -2217,6 +2375,110 @@ The brand is non-enumerable, non-writable, and non-configurable, so:
 - v0.4.x configs validate unchanged - no new fields are required.
 - `ChaosConfigError.message` is enhanced with `code` and `expected` / `received`. Old test grep helpers can switch to `error.messages` to keep the v0.4.x string shape.
 - `injectChaos(page, config, { validation: { unknownFields: 'warn' } })` is the migration path if your configs carry intentional extra metadata.
+
+---
+
+# Page: WebSocket Chaos
+URL: https://chaos-maker-dev.github.io/chaos-maker/latest/concepts/websocket-chaos/
+
+WebSocket traffic does not go through `fetch`, so streaming UI and bidirectional channels need a dedicated chaos surface. Chaos Maker wraps `globalThis.WebSocket` with a constructor that owns a hidden real socket, overrides `.send` for outbound, and installs a capture-phase listener for inbound `MessageEvent`s before app code sees them.
+
+## Config shape
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  websocket: {
+    drops: [
+      { urlPattern: 'wss://realtime', direction: 'outbound', probability: 0.1 },
+    ],
+    delays: [
+      { urlPattern: 'wss://realtime', direction: 'inbound', delayMs: 500, probability: 1 },
+    ],
+    corruptions: [
+      { urlPattern: 'wss://realtime', direction: 'both', strategy: 'truncate', probability: 0.05 },
+    ],
+    closes: [
+      { urlPattern: 'wss://realtime', afterMs: 2000, code: 4000, reason: 'chaos', probability: 0.02 },
+    ],
+  },
+});
+```
+
+All WebSocket rules support `urlPattern`, `probability`, and request counting with `onNth`, `everyNth`, or `afterN`. Drop, delay, and corruption rules also carry a required `direction` field.
+
+## Direction
+
+`direction: 'inbound' | 'outbound' | 'both'` decides which side of the connection a rule applies to:
+
+- `outbound` intercepts at `.send()` before the wire receives the payload.
+- `inbound` intercepts during inbound `message` dispatch, before app listeners.
+- `both` evaluates the rule independently in either direction.
+
+The direction filter applies inside the matched stream; pair it with `urlPattern` (or `hostname` / `queryParams` matchers below) to select the stream itself.
+
+## Targeting with matchers
+
+Every WebSocket rule accepts the cross-transport matcher surface: `urlPattern`, `hostname`, `queryParams`, and the `matcher: 'name'` reference into a registered `NamedMatcher`. Inline and named forms share the same `matcher_inline_conflict` validation guarantee as network and SSE rules, covering both the matcher-plus-inline conflict and the no-targeting case.
+
+```typescript
+await injectChaos(page, {
+  websocket: {
+    drops: [
+      {
+        urlPattern: 'wss://realtime',
+        direction: 'outbound',
+        queryParams: { room: 'alpha' },
+        probability: 1,
+      },
+    ],
+  },
+});
+```
+
+```typescript
+await injectChaos(page, {
+  matchers: {
+    realtimeApi: { hostname: /realtime/ },
+  },
+  websocket: {
+    drops: [
+      { matcher: 'realtimeApi', direction: 'inbound', probability: 0.2 },
+    ],
+  },
+});
+```
+
+See [Advanced matchers](./matchers) for the full field semantics and debug attribution.
+
+## Corruption strategies
+
+`truncate` and `empty` apply to both text and binary payloads. `malformed-json` and `wrong-type` apply to text payloads only; when the runtime payload is binary, corruption is skipped and the event records `applied: false` with `reason: 'incompatible-payload-type'`.
+
+## Events
+
+Chaos Maker emits:
+
+| Event | Meaning |
+| --- | --- |
+| `websocket:drop` | A message was silently discarded. |
+| `websocket:delay` | A message was held for `delayMs` before delivery (inbound) or send (outbound). |
+| `websocket:corrupt` | The payload was rewritten according to `strategy`. |
+| `websocket:close` | The socket was force-closed by chaos. |
+
+Each event includes `detail.url`. Drop, delay, and corruption events include `detail.direction` and `detail.payloadType`. Corruption events also include `detail.strategy`. Close events include `detail.closeCode` and `detail.closeReason`.
+
+## Preset
+
+```typescript
+
+await injectChaos(page, {
+  ...presets.unreliableWebSocket,
+  seed: 42,
+});
+```
+
+`unreliableWebSocket` (also available under the kebab-case alias `websocket-instability`) combines low-probability drops, a small inbound delay, and occasional closes against the default `urlPattern: '*'`.
 
 ---
 

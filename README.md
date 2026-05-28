@@ -10,7 +10,7 @@ Inject controlled chaos into web applications to test frontend resilience. Works
 
 - **Streaming chaos for `fetch(...).body`**: a new `fetchStream` config slice wraps every `Response.body` consumer so chunk-level chaos applies to AI chat SDKs (Vercel AI SDK, OpenAI SDK, LangChain, anything that reaches for `Response.body.getReader()`). Drop, delay, corrupt, duplicate, or truncate individual chunks by zero-based index or by probability. See [AI streaming concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/).
 - **Per-chunk phase markers on SSE + WebSocket + fetch-stream**: every streaming event now carries `detail.phase` (`ai:first-chunk`, `ai:stream-paused`, `ai:stream-resumed`, `ai:stream-truncated`, `ai:chunk-duplicated`) and a stable `detail.connectionId`, so report consumers can reconstruct a chunk-level timeline without rerunning matchers.
-- **`ai` config shorthand**: a single `ai: { firstChunkDelayMs, pauseAfterChunk, truncateAfterChunk, duplicateChunkProbability, transport }` block compiles into transport rule arrays at engine init so the same scenario fires across fetch-stream, SSE, and WebSocket without per-transport duplication. See the [AI chat fetch-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/) and [AI chat SSE recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-sse/).
+- **`ai` config shorthand**: a single `ai: { firstChunkDelayMs, pauseAfterChunk, truncateAfterChunk, duplicateChunkProbability, transport }` block compiles into transport rule arrays at engine init so the same scenario fires across fetch-stream, SSE, and WebSocket without per-transport duplication. See the [AI chat fetch-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/) and [AI chat SSE recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-streaming-sse/).
 - **`'duplicate'` corruption strategy on fetch-stream**: emission-level chunk duplication; consumers see the same chunk one additional time. Use for testing client-side idempotency under retry storms or replayed deltas.
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
@@ -288,7 +288,7 @@ Every emitted streaming event carries `detail.phase` (`ai:first-chunk`,
 consumers can reconstruct a chunk-level timeline. See the [AI streaming
 concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/)
 and the recipes for [fetch-stream](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/)
-and [SSE](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-sse/).
+and [SSE](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-streaming-sse/).
 
 ## Full docs
 
