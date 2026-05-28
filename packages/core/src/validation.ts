@@ -4,6 +4,7 @@ import type { ChaosConfig } from './config';
 import { PresetRegistry, expandPresets, type PresetConfigSlice } from './presets';
 import { ProfileRegistry, applyProfile, type ProfileConfigSlice } from './profiles';
 import { MatcherRegistry, resolveNamedMatchers } from './matchers';
+import { compileAiToRules } from './ai';
 import { formatZodIssue } from './validation-format';
 import type {
   CustomValidatorMap,
@@ -963,7 +964,14 @@ export function prepareChaosConfig(
     }]);
   }
 
-  const finalValidated = validateConfig(expanded);
+  // Compile the `ai` slice into transport rule arrays AFTER preset expansion
+  // (so AI rules append onto the already-merged transport buckets) and
+  // BEFORE the second validation pass (so compiled rules go through Zod).
+  // `compileAiToRules` strips `config.ai` so the post-compile config has no
+  // residual AI surface; the runtime sees only transport rules.
+  const compiled = compileAiToRules(expanded);
+
+  const finalValidated = validateConfig(compiled);
 
   let matcherResolved: ChaosConfig;
   try {

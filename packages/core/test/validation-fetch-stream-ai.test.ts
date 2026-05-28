@@ -224,11 +224,23 @@ describe('prepareChaosConfig integration: fetchStream slices flow through preset
     expect(merged.fetchStream?.drops?.length).toBe(1);
   });
 
-  it('keeps top-level ai surface intact after preset expansion (compiler runs later)', () => {
+  it('compiles the top-level ai surface into transport rule arrays', () => {
     const merged = prepareChaosConfig({
       ai: { firstChunkDelayMs: 800, transport: 'auto' },
     });
-    expect(merged.ai?.firstChunkDelayMs).toBe(800);
-    expect(merged.ai?.transport).toBe('auto');
+    // The compiler strips `ai` and appends compiled rules to the streaming
+    // transport buckets so the runtime never sees the AI surface.
+    expect(merged.ai).toBeUndefined();
+    expect(merged.fetchStream?.delays?.[0]).toMatchObject({
+      chunkIndex: 0,
+      delayMs: 800,
+      probability: 1,
+    });
+    expect(merged.sse?.delays?.[0]).toMatchObject({ onNth: 1, delayMs: 800 });
+    expect(merged.websocket?.delays?.[0]).toMatchObject({
+      direction: 'inbound',
+      onNth: 1,
+      delayMs: 800,
+    });
   });
 });
