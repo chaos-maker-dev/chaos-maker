@@ -362,7 +362,12 @@ export function patchWebSocket(
   };
 
   const untrackTimer = (socket: WebSocket, timer: PendingTimer): void => {
-    pendingTimersBySocket.get(socket)?.delete(timer);
+    const set = pendingTimersBySocket.get(socket);
+    if (!set) return;
+    set.delete(timer);
+    if (set.size === 0) {
+      pendingTimersBySocket.delete(socket);
+    }
   };
 
   const clearSocketTimers = (socket: WebSocket, reason: string): void => {

@@ -297,7 +297,12 @@ export function patchEventSource(
   };
 
   const untrackTimer = (source: EventSource, timer: PendingTimer): void => {
-    pendingTimersBySource.get(source)?.delete(timer);
+    const set = pendingTimersBySource.get(source);
+    if (!set) return;
+    set.delete(timer);
+    if (set.size === 0) {
+      pendingTimersBySource.delete(source);
+    }
   };
 
   const clearSourceTimers = (source: EventSource, reason: string): void => {
