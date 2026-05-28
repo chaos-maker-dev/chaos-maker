@@ -47,7 +47,7 @@ export interface Scenario {
   /** Human-readable test name, used verbatim as the test title on every adapter. */
   title: string;
   /** Transport this scenario exercises. */
-  transport: 'network' | 'websocket' | 'sse';
+  transport: 'network' | 'websocket' | 'sse' | 'fetch-stream';
   config: ChaosConfig;
   steps: Step[];
   check(ctx: AssertCtx, assert: ParityAssert): void;
