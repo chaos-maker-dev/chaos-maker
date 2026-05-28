@@ -317,11 +317,121 @@ export interface SSEConfig {
   closes?: SSECloseConfig[];
 }
 
+/** Strategies for corrupting fetch-stream chunks. Mirrors SSE/WS strategies.
+ *  All four operate on text chunks (decoded UTF-8). When the chunk is binary
+ *  and the strategy requires text (`malformed-json`, `wrong-type`), the rule
+ *  is skipped and a diagnostic event is emitted with `applied: false`. */
+export type FetchStreamCorruptionStrategy =
+  | 'truncate'
+  | 'malformed-json'
+  | 'empty'
+  | 'wrong-type';
+
+interface FetchStreamDropRule {
+  /** Apply only to a specific chunk index (zero-based). When omitted, the
+   *  rule applies probabilistically to every chunk of every matched stream. */
+  chunkIndex?: number;
+  probability: number;
+}
+export type FetchStreamDropConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamDropRule;
+
+interface FetchStreamDelayRule {
+  /** Optional chunk-index gate (zero-based). When set, the delay applies only
+   *  to the chunk at that index; when omitted, every chunk is gated by
+   *  `probability` independently. */
+  chunkIndex?: number;
+  delayMs: number;
+  probability: number;
+}
+export type FetchStreamDelayConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamDelayRule;
+
+interface FetchStreamCorruptRule {
+  chunkIndex?: number;
+  strategy: FetchStreamCorruptionStrategy;
+  probability: number;
+}
+export type FetchStreamCorruptConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamCorruptRule;
+
+interface FetchStreamCloseRule {
+  /** Close (truncate) the stream after this many milliseconds from the first
+   *  chunk. Mutually exclusive with `afterChunk`. */
+  afterMs?: number;
+  /** Close (truncate) the stream after this many chunks have been read.
+   *  Mutually exclusive with `afterMs`. */
+  afterChunk?: number;
+  probability: number;
+}
+export type FetchStreamCloseConfig =
+  TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamCloseRule;
+
+export interface FetchStreamConfig {
+  drops?: FetchStreamDropConfig[];
+  delays?: FetchStreamDelayConfig[];
+  corruptions?: FetchStreamCorruptConfig[];
+  closes?: FetchStreamCloseConfig[];
+}
+
+/** Transport selection for AI-namespace rules.
+ *  - `'auto'` (default): compile rules into fetch-stream AND sse AND
+ *    websocket; the runtime fires whichever transport the consumer actually
+ *    uses. First-matched-wins when a single request matches more than one.
+ *  - explicit transport: emit rules only into that transport. */
+export type AiTransport = 'auto' | 'fetch-stream' | 'sse' | 'websocket';
+
+/** Thin DSL that compiles down to transport rule arrays at engine init.
+ *  The compiler (`compileAiToRules`, wired in `prepareChaosConfig`) reads
+ *  this slice, expands each field into the matching transport rules, and
+ *  appends them via the same append helper presets use.
+ *
+ *  No field on this interface emits a new transport kind. Every value lands
+ *  on `fetchStream` / `sse` / `websocket` so existing report consumers stay
+ *  backward compatible; the semantic overlay rides on `detail.phase`. */
+export interface AiConfig {
+  /** Delay (ms) applied before the first chunk of a matched streaming
+   *  response. Compiles to a delay rule gated to `chunkIndex === 0`. */
+  firstChunkDelayMs?: number;
+  /** Zero-based chunk index after which to pause the stream. Requires
+   *  `pauseDurationMs`. Compiles to a delay rule gated to that chunk. */
+  pauseAfterChunk?: number;
+  /** Pause duration (ms) when `pauseAfterChunk` fires. */
+  pauseDurationMs?: number;
+  /** Zero-based chunk index after which to close (truncate) the stream.
+   *  Compiles to a close rule with `afterChunk`. */
+  truncateAfterChunk?: number;
+  /** Probability (0..1) of duplicating any given chunk. Compiles to a
+   *  corruption rule whose `strategy` is the duplicate variant added in a
+   *  later phase of this release. */
+  duplicateChunkProbability?: number;
+  /** When true, the compiler annotates emitted drop rules so the streaming
+   *  interceptor reconnects (rather than abandons) the dropped stream. */
+  reconnectAfterDrop?: boolean;
+  /** Which streaming transport(s) to target. Default `'auto'`. */
+  transport?: AiTransport;
+}
+
 export interface ChaosConfig {
   network?: NetworkConfig;
   ui?: UiConfig;
   websocket?: WebSocketConfig;
   sse?: SSEConfig;
+  /**
+   * Chaos for streams returned from `fetch(...).body.getReader()` and other
+   * `ReadableStream` consumers. Targets every consumer of the response body,
+   * including SDK wrappers that grab the stream before the user code sees the
+   * `Response`. Rules address chunks by zero-based index or by probability.
+   */
+  fetchStream?: FetchStreamConfig;
+  /**
+   * Thin DSL for AI-chat-flavored streaming chaos. Compiles into transport
+   * rule arrays (`fetchStream`, `sse`, `websocket`) at engine init, with the
+   * semantic overlay surfaced through `detail.phase` (e.g. `'ai:first-chunk'`)
+   * on the emitted events. Top-level only: presets, profiles, and override
+   * slices cannot carry `ai`.
+   */
+  ai?: AiConfig;
   /**
    * Pre-register rule groups with an explicit initial enabled state.
    *

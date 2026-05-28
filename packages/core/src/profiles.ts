@@ -12,7 +12,16 @@ import { cloneValue } from './utils';
  *  out-of-scope. */
 export type ProfileConfigSlice = Omit<
   ChaosConfig,
-  'customPresets' | 'customProfiles' | 'profile' | 'profileOverrides' | 'schemaVersion' | 'matchers'
+  | 'customPresets'
+  | 'customProfiles'
+  | 'profile'
+  | 'profileOverrides'
+  | 'schemaVersion'
+  | 'matchers'
+  // `ai` is a top-level compiler shorthand. Profile / override slices may not
+  // carry it; the compiler runs after profile resolution + preset expansion,
+  // so the only legal seat for `ai` is the post-resolution top-level config.
+  | 'ai'
 >;
 
 /** Runtime override slice applied at inject-time. Identical shape to a profile
@@ -146,7 +155,7 @@ function ensureNoProfileChain(slice: object, source: string): void {
  *  the `cat` tuple below MUST be updated AND the new category needs explicit
  *  handling. */
 function appendProfileSlice(target: ChaosConfig, slice: ProfileConfigSlice): void {
-  for (const cat of ['network', 'ui', 'websocket', 'sse'] as const) {
+  for (const cat of ['network', 'ui', 'websocket', 'sse', 'fetchStream'] as const) {
     const src = slice[cat] as Record<string, unknown> | undefined;
     if (!src) continue;
     const dst = (target[cat] ??= {}) as Record<string, unknown[]>;
@@ -242,6 +251,10 @@ export function applyProfile(
   delete (topSlice as ChaosConfig).debug;
   delete (topSlice as ChaosConfig).schemaVersion;
   delete (topSlice as ChaosConfig).matchers;
+  // `ai` survives profile resolution as a top-level scalar. Profile / override
+  // slices are forbidden from carrying it, so the only legal source is
+  // `inputCopy`; carry it through explicitly below.
+  delete (topSlice as ChaosConfig).ai;
   appendProfileSlice(out, topSlice);
 
   if (overridesSlice) {
@@ -271,6 +284,8 @@ export function applyProfile(
   if (debug !== undefined) out.debug = debug;
 
   if (inputCopy.schemaVersion !== undefined) out.schemaVersion = inputCopy.schemaVersion;
+
+  if (inputCopy.ai !== undefined) out.ai = inputCopy.ai;
 
   return out;
 }

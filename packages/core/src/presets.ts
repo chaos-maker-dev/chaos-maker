@@ -18,6 +18,11 @@ export type PresetConfigSlice = Omit<
   | 'profileOverrides'
   | 'customProfiles'
   | 'matchers'
+  // `ai` is a top-level compiler shorthand that expands into transport rules.
+  // Presets carry the already-compiled transport rules directly, so the
+  // mental model for composition stays "rules in, rules out". Schemas reject
+  // preset slices that try to nest `ai`.
+  | 'ai'
 >;
 
 /** A named preset packaged for registry registration. */
@@ -209,7 +214,7 @@ export class PresetRegistry {
  *  (e.g. a top-level config object instead of a rule bucket), the `cat`
  *  tuple below MUST be updated AND the new category needs explicit handling. */
 function appendSlice(target: ChaosConfig, slice: PresetConfigSlice): void {
-  for (const cat of ['network', 'ui', 'websocket', 'sse'] as const) {
+  for (const cat of ['network', 'ui', 'websocket', 'sse', 'fetchStream'] as const) {
     const src = slice[cat] as Record<string, unknown> | undefined;
     if (!src) continue;
     const dst = (target[cat] ??= {}) as Record<string, unknown[]>;
@@ -282,6 +287,11 @@ export function expandPresets(config: ChaosConfig, registry: PresetRegistry): Ch
   // resolveNamedMatchers (run after this step in `prepareChaosConfig`) can
   // see entries referenced by rules added through presets.
   if (userClone.matchers !== undefined) out.matchers = userClone.matchers;
+  // `ai` is a top-level compiler shorthand that runs AFTER preset expansion.
+  // Preset slices reject the field at schema time, so the only legal carrier
+  // is the user's top-level config. Pull it through explicitly; `appendSlice`
+  // walks rule categories only and would silently drop it.
+  if (userClone.ai !== undefined) out.ai = userClone.ai;
   appendSlice(out, userClone as PresetConfigSlice);
   return out;
 }
