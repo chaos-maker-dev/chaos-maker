@@ -195,22 +195,36 @@ describe('patchFetchStream: close (truncate) rules', () => {
   });
 });
 
-describe('patchFetchStream: tee() double-read safety', () => {
-  it('first body access gets the chaos branch, second access gets the unmutated branch', async () => {
+describe('patchFetchStream: idempotent body getter', () => {
+  it('returns the same wrapped stream on repeated .body access (matches native)', async () => {
     const response = new StreamResponse(makeStream(['a', 'b', 'c']));
     const { handle } = setup(
       { drops: [{ urlPattern: '*', chunkIndex: 1, probability: 1 }] },
       response,
     );
     const out = await handle.fetch('http://api/chat');
-    const firstBranch = out.body!;
-    const secondBranch = out.body!;
-    // The two getters return distinct stream objects (no TypeError: locked).
-    expect(firstBranch).not.toBe(secondBranch);
-    const firstChunks = await readAllText(firstBranch);
-    const secondChunks = await readAllText(secondBranch);
-    expect(firstChunks).toEqual(['a', 'c']);
-    expect(secondChunks).toEqual(['a', 'b', 'c']);
+    // Native Response.body returns a stable reference; the patch must too.
+    const first = out.body!;
+    const second = out.body!;
+    expect(first).toBe(second);
+    const chunks = await readAllText(first);
+    expect(chunks).toEqual(['a', 'c']);
+    handle.uninstall();
+  });
+
+  it('applies chaos when the consumer reads .body after a truthy guard', async () => {
+    const response = new StreamResponse(makeStream(['a', 'b', 'c']));
+    const { handle } = setup(
+      { drops: [{ urlPattern: '*', chunkIndex: 1, probability: 1 }] },
+      response,
+    );
+    const out = await handle.fetch('http://api/chat');
+    // The defensive `if (!body) ...; body.getReader()` pattern accesses `.body`
+    // twice. Both accesses must observe the same chaos-wrapped stream so the
+    // guard does not burn a one-shot branch and leave the read unmutated.
+    if (!out.body) throw new Error('expected a response body');
+    const chunks = await readAllText(out.body);
+    expect(chunks).toEqual(['a', 'c']);
     handle.uninstall();
   });
 });

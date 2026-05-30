@@ -15,10 +15,13 @@
  *      `WeakMap` and decides whether to wrap the stream. Without this tag,
  *      the body-getter would have to re-run matchers on every getter access.
  *
- * Double-read safety: `ReadableStream.tee()` runs on the first body access so
- * the second access (e.g. inside `Response.json()` after the consumer
- * already read `.body`) gets the unmutated branch instead of a locked
- * stream. The first reader receives the chaos-wrapped branch.
+ * Idempotent body getter: the wrapped chaos stream is built once on the first
+ * `.body` access and the same reference is returned on every subsequent
+ * access, matching the native `Response.body` (which returns a stable stream
+ * reference). This is what makes the common defensive pattern
+ * `if (!response.body) return; response.body.getReader()` apply chaos: the
+ * truthy check and the read observe the same wrapped stream rather than the
+ * check burning a one-shot chaos branch and the read getting clean data.
  *
  * Per-chunk pipeline (executed inside a `TransformStream`):
  *   close-after-chunk → drop → corrupt (incl. duplicate) → delay → enqueue
@@ -65,16 +68,12 @@ interface ResponseChaosMeta {
   url: string;
   connectionId: string;
   parsedUrl: ParsedRequestUrl | null;
-  /** Per-response lazy tee state populated on first `.body` access. */
-  teeState?: {
-    chaos: ReadableStream<Uint8Array>;
-    original: ReadableStream<Uint8Array>;
-    /** Toggled to `true` after the chaos branch is handed out, so the next
-     *  `.body` access gets the unmutated branch (matches `tee()` semantics
-     *  but routed deterministically so the first reader is always the
-     *  chaos branch). */
-    chaosBranchHandedOut: boolean;
-  };
+  /** Per-response wrapped body, built lazily on first `.body` access and
+   *  returned on every subsequent access so the getter is idempotent. Mirrors
+   *  the native `Response.body`, which returns a stable stream reference; this
+   *  is what lets a defensive `if (!r.body) ...; r.body.getReader()` apply
+   *  chaos instead of consuming a one-shot branch on the truthy check. */
+  wrappedBody?: ReadableStream<Uint8Array>;
 }
 
 interface TransportRuleLike {
@@ -556,15 +555,7 @@ export function patchFetchStream(
     const meta = RESPONSE_META.get(this);
     if (!meta) return native;
 
-    if (!meta.teeState) {
-      let teed: [ReadableStream<Uint8Array>, ReadableStream<Uint8Array>];
-      try {
-        teed = native.tee() as [ReadableStream<Uint8Array>, ReadableStream<Uint8Array>];
-      } catch {
-        // Stream already locked / consumed; nothing to do.
-        return native;
-      }
-      const [forChaos, forFallback] = teed;
+    if (!meta.wrappedBody) {
       const lifecycle = {
         terminated: () => terminatedResponses.has(this) || !running,
         markTerminated: () => terminatedResponses.add(this),
@@ -572,17 +563,14 @@ export function patchFetchStream(
         registerTimer: (h: ReturnType<typeof setTimeout>) => pendingTimers.add(h),
         unregisterTimer: (h: ReturnType<typeof setTimeout>) => pendingTimers.delete(h),
       };
-      meta.teeState = {
-        chaos: wrapChaosBranch(forChaos, meta, config, random, emitter, counters, groups, lifecycle),
-        original: forFallback,
-        chaosBranchHandedOut: false,
-      };
+      try {
+        meta.wrappedBody = wrapChaosBranch(native, meta, config, random, emitter, counters, groups, lifecycle);
+      } catch {
+        // Native body already locked / disturbed; nothing to wrap.
+        return native;
+      }
     }
-    if (!meta.teeState.chaosBranchHandedOut) {
-      meta.teeState.chaosBranchHandedOut = true;
-      return meta.teeState.chaos;
-    }
-    return meta.teeState.original;
+    return meta.wrappedBody;
   };
   Object.defineProperty(patchedGetter, BODY_GETTER_PATCH_MARKER, { value: true });
   Object.defineProperty(ResponseCtor.prototype, 'body', {
