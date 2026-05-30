@@ -24,21 +24,32 @@ function streamChat(req, res) {
   const n = Math.max(1, Math.min(50, Number(url.searchParams.get('n') || 5)));
   const intervalMs = Math.max(0, Math.min(2000, Number(url.searchParams.get('intervalMs') || 60)));
 
+  // Build every chunk upfront so a fixed Content-Length can be sent. A
+  // fixed-length response is delivered with Transfer-Encoding: identity, not
+  // chunked. Playwright's Firefox rejects a cross-origin CHUNKED response with
+  // NS_ERROR_DOM_BAD_URI when the request is initiated from page (DOM) context,
+  // but accepts a fixed-length one. The bytes are still written incrementally
+  // with a delay between them, so the browser's `body.getReader()` yields a
+  // chunk per write and the streaming-chaos pipeline still exercises each one.
+  const chunks = [];
+  for (let k = 0; k < n; k += 1) chunks.push(Buffer.from(`chunk-${k}\n`));
+  const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
+
   res.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
-    'Transfer-Encoding': 'chunked',
+    'Content-Length': String(total),
     'Access-Control-Allow-Origin': '*',
   });
 
   let i = 0;
   const tick = () => {
-    if (i >= n) {
+    if (i >= chunks.length) {
       try { res.end(); } catch { /* socket already gone */ }
       return;
     }
     try {
-      res.write(`chunk-${i}\n`);
+      res.write(chunks[i]);
     } catch {
       return;
     }
@@ -49,7 +60,7 @@ function streamChat(req, res) {
   // fetch promise resolves before any chunk arrives.
   setTimeout(tick, intervalMs);
 
-  req.on('close', () => { i = n; });
+  req.on('close', () => { i = chunks.length; });
 }
 
 const server = http.createServer((req, res) => {
