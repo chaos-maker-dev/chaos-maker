@@ -70,6 +70,17 @@
     <pre id="gql-result"></pre>
   </section>
 
+  <!-- Fetch streaming (chat-style chunked response) -->
+  <section>
+    <h2>Fetch stream (chat)</h2>
+    <button id="chat-start">Start /chat</button>
+    <button id="chat-start-short">Start /chat?n=3</button>
+    <div id="chat-status">idle</div>
+    <div id="chat-chunk-count">0</div>
+    <div id="chat-first-chunk-ms"></div>
+    <pre id="chat-text"></pre>
+  </section>
+
   <!-- Server-Sent Events -->
   <section>
     <h2>EventSource (SSE)</h2>
@@ -252,6 +263,72 @@
     document.getElementById('ws-close').addEventListener('click', function () {
       if (!ws) return;
       ws.close();
+    });
+
+    // --- Fetch streaming (chat) ---
+    var CHAT_BASE = 'http://127.0.0.1:8084';
+
+    function setChatStatus(text) {
+      document.getElementById('chat-status').textContent = text;
+    }
+    function setChatChunkCount(n) {
+      document.getElementById('chat-chunk-count').textContent = String(n);
+    }
+    function setChatFirstChunkMs(ms) {
+      document.getElementById('chat-first-chunk-ms').textContent = String(ms);
+    }
+    function appendChatText(t) {
+      document.getElementById('chat-text').textContent += t;
+    }
+    function resetChatUi() {
+      setChatStatus('connecting');
+      setChatChunkCount(0);
+      setChatFirstChunkMs('');
+      document.getElementById('chat-text').textContent = '';
+    }
+
+    function startChat(url) {
+      resetChatUi();
+      var chunkCount = 0;
+      var firstChunkAt = null;
+      var startedAt = Date.now();
+      fetch(url).then(function (response) {
+        if (!response.ok || !response.body) {
+          setChatStatus('error');
+          return;
+        }
+        setChatStatus('open');
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        function pump() {
+          reader.read().then(function (result) {
+            if (result.done) {
+              setChatStatus('done');
+              return;
+            }
+            if (firstChunkAt === null) {
+              firstChunkAt = Date.now();
+              setChatFirstChunkMs(firstChunkAt - startedAt);
+            }
+            chunkCount += 1;
+            setChatChunkCount(chunkCount);
+            appendChatText(decoder.decode(result.value, { stream: true }));
+            pump();
+          }).catch(function () {
+            setChatStatus('error');
+          });
+        }
+        pump();
+      }).catch(function () {
+        setChatStatus('error');
+      });
+    }
+
+    document.getElementById('chat-start').addEventListener('click', function () {
+      startChat(CHAT_BASE + '/chat');
+    });
+    document.getElementById('chat-start-short').addEventListener('click', function () {
+      startChat(CHAT_BASE + '/chat?n=3');
     });
 
     // --- Server-Sent Events ---
