@@ -58,7 +58,7 @@
   },
   "devDependencies": {
     "typescript": "^5.4.5",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.8",
     "webdriverio": "^8.40.0"
   }
 }
