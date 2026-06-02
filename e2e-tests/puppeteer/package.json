@@ -13,7 +13,7 @@
     "http-server": "^14.1.1",
     "puppeteer": "^22.0.0",
     "typescript": "^5.4.5",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.8",
     "ws": "^8.20.1"
   }
 }

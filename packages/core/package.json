@@ -65,7 +65,7 @@
     "jsdom": "^27.0.1",
     "typescript": "^5.4.5",
     "vite": "^6.4.2",
-    "vitest": "^3.2.4",
+    "vitest": "^4.1.8",
     "zod-to-json-schema": "3.24.5"
   }
 }
