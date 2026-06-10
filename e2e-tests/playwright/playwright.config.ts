@@ -48,5 +48,10 @@ export default defineConfig({
       url: 'http://127.0.0.1:8083/healthz',
       reuseExistingServer: !process.env.CI,
     },
+    {
+      command: 'node ../fixtures/chat-server.cjs',
+      url: 'http://127.0.0.1:8084/healthz',
+      reuseExistingServer: !process.env.CI,
+    },
   ],
 });

@@ -21,6 +21,7 @@ let httpServer: ChildProcess | null = null;
 let wsServer: ChildProcess | null = null;
 let sseServer: ChildProcess | null = null;
 let graphqlServer: ChildProcess | null = null;
+let chatServer: ChildProcess | null = null;
 
 async function waitForHttp(url: string, timeoutMs = 20_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -107,6 +108,7 @@ export const config: WebdriverIO.Config = {
     const wsReady = await probeTcp('127.0.0.1', 8081);
     const sseReady = await probeTcp('127.0.0.1', 8082);
     const graphqlReady = await probeTcp('127.0.0.1', 8083);
+    const chatReady = await probeTcp('127.0.0.1', 8084);
 
     if (!httpReady) {
       httpServer = spawn(
@@ -136,20 +138,30 @@ export const config: WebdriverIO.Config = {
         { stdio: 'inherit', env: fixtureEnv() },
       );
     }
+    if (!chatReady) {
+      chatServer = spawn(
+        'node',
+        [resolve(FIXTURES, 'chat-server.cjs')],
+        { stdio: 'inherit', env: fixtureEnv() },
+      );
+    }
     if (!httpReady) await waitForHttp('http://127.0.0.1:8080');
     if (!wsReady) await waitForTcp('127.0.0.1', 8081);
     if (!sseReady) await waitForTcp('127.0.0.1', 8082);
     if (!graphqlReady) await waitForTcp('127.0.0.1', 8083);
+    if (!chatReady) await waitForTcp('127.0.0.1', 8084);
   },
   onComplete() {
     httpServer?.kill();
     wsServer?.kill();
     sseServer?.kill();
     graphqlServer?.kill();
+    chatServer?.kill();
     httpServer = null;
     wsServer = null;
     sseServer = null;
     graphqlServer = null;
+    chatServer = null;
   },
   async before() {
     registerChaosCommands(browser as never);

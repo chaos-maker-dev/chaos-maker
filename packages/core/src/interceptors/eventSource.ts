@@ -54,6 +54,8 @@ interface PendingDelayTimer {
   handle: ReturnType<typeof setTimeout>;
   url: string;
   eventType: string;
+  connectionId: string;
+  chunkIndex: number;
 }
 
 interface PendingCloseTimer {
@@ -162,40 +164,115 @@ function findFiringRule<T extends RequestCountingOptions & {
   return null;
 }
 
-function emitDrop(emitter: ChaosEventEmitter, url: string, eventType: string, reason?: string): void {
+interface ConnectionContext {
+  url: string;
+  connectionId: string;
+  chunkIndex: number;
+}
+
+function emitDrop(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string, reason?: string): void {
   emitter.emit({
     type: 'sse:drop',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, eventType, ...(reason ? { reason } : {}) },
+    detail: {
+      url: ctx.url,
+      eventType,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+      ...(reason ? { reason } : {}),
+    },
   });
 }
 
-function emitDelay(emitter: ChaosEventEmitter, url: string, eventType: string, delayMs: number): void {
+function emitDelay(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string, delayMs: number): void {
   emitter.emit({
     type: 'sse:delay',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, eventType, delayMs },
+    detail: {
+      url: ctx.url,
+      eventType,
+      delayMs,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+      phase: 'ai:stream-paused',
+    },
   });
 }
 
-function emitCorrupt(emitter: ChaosEventEmitter, url: string, eventType: string, strategy: SSECorruptionStrategy): void {
+function emitCorrupt(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string, strategy: SSECorruptionStrategy): void {
   emitter.emit({
     type: 'sse:corrupt',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, eventType, strategy },
+    detail: {
+      url: ctx.url,
+      eventType,
+      strategy,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+    },
   });
 }
 
-function emitClose(emitter: ChaosEventEmitter, url: string, reason: string): void {
+function emitClose(emitter: ChaosEventEmitter, ctx: ConnectionContext, reason: string): void {
   emitter.emit({
     type: 'sse:close',
     timestamp: Date.now(),
     applied: true,
-    detail: { url, reason },
+    detail: {
+      url: ctx.url,
+      reason,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+      phase: 'ai:stream-truncated',
+    },
   });
+}
+
+function emitFirstChunkMarker(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string): void {
+  emitter.emit({
+    type: 'sse:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: ctx.url,
+      eventType,
+      connectionId: ctx.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:first-chunk',
+    },
+  });
+}
+
+function emitStreamResumedMarker(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string): void {
+  emitter.emit({
+    type: 'sse:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: ctx.url,
+      eventType,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+      phase: 'ai:stream-resumed',
+    },
+  });
+}
+
+let _sseConnectionCounter = 0;
+function mintConnectionId(): string {
+  const c = (typeof globalThis !== 'undefined' ? (globalThis as { crypto?: Crypto }).crypto : undefined);
+  if (c && typeof c.randomUUID === 'function') {
+    try {
+      return c.randomUUID();
+    } catch {
+      // fall through
+    }
+  }
+  _sseConnectionCounter += 1;
+  return `chaos-sse-${_sseConnectionCounter}`;
 }
 
 export function patchEventSource(
@@ -207,6 +284,7 @@ export function patchEventSource(
   groups?: RuleGroupRegistry,
 ): EventSourcePatchHandle {
   const pendingTimersBySource = new Map<EventSource, Set<PendingTimer>>();
+  const contextBySource = new WeakMap<EventSource, ConnectionContext>();
   let running = true;
 
   const trackTimer = (source: EventSource, timer: PendingTimer): void => {
@@ -219,7 +297,12 @@ export function patchEventSource(
   };
 
   const untrackTimer = (source: EventSource, timer: PendingTimer): void => {
-    pendingTimersBySource.get(source)?.delete(timer);
+    const set = pendingTimersBySource.get(source);
+    if (!set) return;
+    set.delete(timer);
+    if (set.size === 0) {
+      pendingTimersBySource.delete(source);
+    }
   };
 
   const clearSourceTimers = (source: EventSource, reason: string): void => {
@@ -228,7 +311,12 @@ export function patchEventSource(
     for (const timer of set) {
       clearTimeout(timer.handle);
       if (timer.kind === 'delay') {
-        emitDrop(emitter, timer.url, timer.eventType, reason);
+        emitDrop(
+          emitter,
+          { url: timer.url, connectionId: timer.connectionId, chunkIndex: timer.chunkIndex },
+          timer.eventType,
+          reason,
+        );
       }
     }
     pendingTimersBySource.delete(source);
@@ -251,6 +339,14 @@ export function patchEventSource(
     // `MessageEvent.type` reflects the SSE event name, defaulting to 'message'
     // for unnamed events.
     const eventType = msgEvt.type || 'message';
+    const ctx = contextBySource.get(source);
+    if (!ctx) return; // wrapper was uninstalled between message dispatch + capture
+    ctx.chunkIndex += 1;
+    const isFirstChunk = ctx.chunkIndex === 0;
+    if (isFirstChunk) {
+      emitFirstChunkMarker(emitter, ctx, eventType);
+    }
+
     let parsedCache: ParsedRequestUrl | null | undefined;
     const getParsedUrl = (): ParsedRequestUrl | null => {
       if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
@@ -259,7 +355,7 @@ export function patchEventSource(
 
     if (findFiringRule<SSEDropConfig>(config.drops, url, eventType, random, counters, groups, emitter, getParsedUrl)) {
       msgEvt.stopImmediatePropagation();
-      emitDrop(emitter, url, eventType);
+      emitDrop(emitter, ctx, eventType);
       return;
     }
 
@@ -270,13 +366,14 @@ export function patchEventSource(
     if (corruptRule) {
       payload = corruptText(payload, corruptRule.strategy);
       mutated = true;
-      emitCorrupt(emitter, url, eventType, corruptRule.strategy);
+      emitCorrupt(emitter, ctx, eventType, corruptRule.strategy);
     }
 
     const delayRule = findFiringRule<SSEDelayConfig>(config.delays, url, eventType, random, counters, groups, emitter, getParsedUrl);
     if (delayRule) {
       msgEvt.stopImmediatePropagation();
-      emitDelay(emitter, url, eventType, delayRule.delayMs);
+      emitDelay(emitter, ctx, eventType, delayRule.delayMs);
+      const delayedChunkIndex = ctx.chunkIndex;
       const timer: PendingDelayTimer = {
         kind: 'delay',
         handle: setTimeout(() => {
@@ -289,9 +386,17 @@ export function patchEventSource(
           // CLOSED = 2 per spec; check via constant on the source instance to
           // avoid hard-coding the literal here.
           if (source.readyState === source.CLOSED) return;
+          emitStreamResumedMarker(
+            emitter,
+            { url, connectionId: ctx.connectionId, chunkIndex: delayedChunkIndex },
+            eventType,
+          );
           redispatch(source, msgEvt, payload);
         }, delayRule.delayMs),
-        url, eventType,
+        url,
+        eventType,
+        connectionId: ctx.connectionId,
+        chunkIndex: delayedChunkIndex,
       };
       trackTimer(source, timer);
       return;
@@ -347,7 +452,8 @@ export function patchEventSource(
     const fire = (): void => {
       if (!running) return;
       clearSourceTimers(source, 'close-interrupt');
-      emitClose(emitter, url, 'chaos-maker-close');
+      const ctx = contextBySource.get(source) ?? { url, connectionId: mintConnectionId(), chunkIndex: -1 };
+      emitClose(emitter, ctx, 'chaos-maker-close');
       // WHATWG SSE: on permanent failure, readyState must transition to
       // CLOSED *before* the error dispatch  -  so app onerror handlers that
       // branch on `readyState === CLOSED` see the correct state.
@@ -377,6 +483,7 @@ export function patchEventSource(
   function ChaosEventSource(this: unknown, url: string | URL, init?: EventSourceInit): EventSource {
     const source = new OriginalEventSource(url, init);
     const urlStr = typeof url === 'string' ? url : url.toString();
+    contextBySource.set(source, { url: urlStr, connectionId: mintConnectionId(), chunkIndex: -1 });
 
     // Capture-phase listener so we run before any user-attached message
     // handler; `stopImmediatePropagation` then prevents the raw event from
@@ -455,7 +562,12 @@ export function patchEventSource(
         for (const timer of timers) {
           clearTimeout(timer.handle);
           if (timer.kind === 'delay') {
-            emitDrop(emitter, timer.url, timer.eventType, 'stop-during-delay');
+            emitDrop(
+              emitter,
+              { url: timer.url, connectionId: timer.connectionId, chunkIndex: timer.chunkIndex },
+              timer.eventType,
+              'stop-during-delay',
+            );
           }
         }
       }

@@ -10,6 +10,7 @@ export function classifyTransport(event: ChaosEvent): TransportKind | null {
   if (type.startsWith('network:')) return 'network';
   if (type.startsWith('websocket:')) return 'websocket';
   if (type.startsWith('sse:')) return 'sse';
+  if (type.startsWith('fetch-stream:')) return 'fetch-stream';
   if (type.startsWith('ui:')) return 'ui';
   if (type.startsWith('rule-group:')) return 'rule-group';
   return null;

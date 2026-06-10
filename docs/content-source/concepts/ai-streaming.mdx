@@ -1,0 +1,102 @@
+---
+title: AI Streaming and Streaming Chaos
+description: Inject chunk-level chaos into AI chat, live captions, and other streaming UIs across fetch-stream, SSE, and WebSocket.
+---
+
+Streaming UIs read responses chunk by chunk. AI chat SDKs (Vercel AI SDK, OpenAI SDK, LangChain) reach for `fetch(...).body.getReader()`; live captions and ticker feeds use `EventSource`; collaborative editors use `WebSocket.onmessage`. Chaos Maker now treats all three as one streaming surface: chunk-level chaos applies regardless of which transport the consumer happens to read from.
+
+## Three transports, one mental model
+
+| Transport     | Browser API                       | Chaos slice    | Chunk model                              |
+|---------------|-----------------------------------|----------------|------------------------------------------|
+| `fetch-stream`| `fetch(...).body.getReader()`     | `fetchStream`  | Per-byte chunks emitted by `Response.body` |
+| `sse`         | `EventSource`                     | `sse`          | One chunk per `MessageEvent`             |
+| `websocket`   | `WebSocket` inbound `message`     | `websocket`    | One chunk per inbound message            |
+
+Each transport reports a stable `detail.connectionId` and a zero-based `detail.chunkIndex` on every emitted event so reporting and replay layers can correlate chunks across multiplexed transports.
+
+## Chunk vocabulary
+
+Chunks are the canonical unit. Tokens are tokenizer-dependent and invisible to the transport layer; the public API stays in chunk terms (`chunkIndex`, `pauseAfterChunk`, `truncateAfterChunk`, `duplicateChunkProbability`) so the same scenario reproduces across every SDK.
+
+## The `ai` shorthand
+
+`ChaosConfig.ai` is a thin DSL that compiles into transport rule arrays at engine init. The runtime never sees the `ai` slice; the compiler strips it after expanding into `fetchStream`, `sse`, and `websocket` rules.
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  ai: {
+    firstChunkDelayMs: 800,
+    pauseAfterChunk: 4,
+    pauseDurationMs: 2000,
+    truncateAfterChunk: 12,
+    duplicateChunkProbability: 0.05,
+    transport: 'auto', // default; 'fetch-stream' | 'sse' | 'websocket' to scope
+  },
+});
+```
+
+The `transport: 'auto'` default emits rules into every streaming transport so the same scenario fires whichever transport the SDK happens to use. Set an explicit transport when you know which one the consumer reads from and want to keep the event log lean.
+
+### Translation table
+
+| `ai` field                  | fetchStream rule                                        | sse rule                                          | websocket rule                                       |
+|-----------------------------|--------------------------------------------------------|--------------------------------------------------|------------------------------------------------------|
+| `firstChunkDelayMs: ms`     | `delays: [{ chunkIndex: 0, delayMs: ms, probability: 1 }]` | `delays: [{ delayMs: ms, probability: 1, onNth: 1 }]` | `delays: [{ direction: 'inbound', delayMs: ms, probability: 1, onNth: 1 }]` |
+| `pauseAfterChunk: K`        | `delays: [{ chunkIndex: K, delayMs: pauseDurationMs, probability: 1 }]` | `delays: [{ delayMs: pauseDurationMs, probability: 1, onNth: K + 1 }]` | `delays: [{ direction: 'inbound', delayMs: pauseDurationMs, probability: 1, onNth: K + 1 }]` |
+| `truncateAfterChunk: K`     | `closes: [{ afterChunk: K, probability: 1 }]`           | (skipped; no after-N-message close shape)         | (skipped; no after-N-message close shape)             |
+| `duplicateChunkProbability: p` | `corruptions: [{ strategy: 'duplicate', probability: p }]` | (skipped; `'duplicate'` is fetch-stream-only)     | (skipped; `'duplicate'` is fetch-stream-only)         |
+| `reconnectAfterDrop: bool`  | (passive flag for future drop annotation)               | (passive flag)                                    | (passive flag)                                        |
+
+Transports that cannot model an `ai` field skip silently; user-defined SSE / WebSocket rules continue to fire normally.
+
+## Phase markers
+
+Every streaming event carries `detail.phase` from a canonical `ChaosPhase` union:
+
+- `ai:first-chunk` — first chunk passed through a wrapped stream
+- `ai:stream-paused` — chunk was delayed by a delay rule
+- `ai:stream-resumed` — chunk dispatched after a delay resolved
+- `ai:stream-truncated` — stream closed by a close rule
+- `ai:chunk-duplicated` — chunk enqueued more than once
+
+Plus three lifecycle event types (`fetch-stream:lifecycle`, `sse:lifecycle`, `websocket:lifecycle`) so first-chunk and stream-resumed markers surface even when no chaos rule would otherwise emit an event. Reporting consumers map `detail.phase` directly without re-deriving from raw event types.
+
+## The hook strategy
+
+The fetch-stream interceptor uses two cooperating hooks:
+
+1. **Primary: `Response.prototype.body` getter patch.** Wraps every consumer that reads `.body`, including SDK wrappers that grab the stream before the user code sees the `Response`. Catches Vercel AI SDK, OpenAI SDK, LangChain reliably.
+2. **Request-side: `window.fetch` wrapper.** Tags each in-flight `Response` with chaos metadata in a `WeakMap` before returning, so the body getter does not re-run matchers on every access.
+
+Double-read safety is provided by `ReadableStream.tee()`: the first `.body` access hands out the chaos-wrapped branch; subsequent accesses hand out the un-mutated branch so consumers that read `.body` twice (cache layers, dev-tools panels) do not throw `TypeError: locked`.
+
+## Direct fetch-stream rules
+
+If the `ai` shorthand does not cover your case, drop down to the `fetchStream` slice directly:
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  fetchStream: {
+    drops: [{ urlPattern: '/chat', chunkIndex: 5, probability: 1 }],
+    delays: [{ urlPattern: '/chat', delayMs: 1500, probability: 0.3 }],
+    corruptions: [{ urlPattern: '/chat', strategy: 'duplicate', probability: 0.1 }],
+    closes: [{ urlPattern: '/chat', afterChunk: 20, probability: 1 }],
+  },
+});
+```
+
+Rule arrays support per-chunk `chunkIndex` targeting and the same `matcher` / counting / group fields as every other transport rule.
+
+## Cypress note
+
+Cypress fetch-stream chaos installs the page-injected `fetch` wrapper at `cy.visit` → `onBeforeLoad`, not via `cy.intercept`, because `cy.intercept` cannot stream chunks back to the consumer individually. This matches the existing core install path; no adapter API changes apply.
+
+## See also
+
+- [AI Chat Fetch-Stream recipe](/recipes/ai-chat-fetch-stream/)
+- [AI Chat Streaming under flaky SSE recipe](/recipes/ai-chat-streaming-sse/)
+- [SSE Chaos concept](/concepts/sse-chaos/)
+- [Timeline and Reporting concept](/concepts/timeline-and-reporting/)

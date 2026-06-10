@@ -1,5 +1,5 @@
 import { ChaosMaker } from './ChaosMaker';
-import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, TransportRuleMatchers, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher } from './config';
+import { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, TransportRuleMatchers, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, FetchStreamConfig, FetchStreamDropConfig, FetchStreamDelayConfig, FetchStreamCorruptConfig, FetchStreamCloseConfig, FetchStreamCorruptionStrategy, AiConfig, AiTransport } from './config';
 import { ChaosConfigError } from './errors';
 import { validateConfig, prepareChaosConfig, validateChaosConfig, VALIDATOR_BRAND_VERSION, type ValidateChaosConfigOptions, type PrepareChaosConfigOptions } from './validation';
 import { ChaosEvent, ChaosEventType, ChaosEventListener, ChaosEventEmitter } from './events';
@@ -57,6 +57,9 @@ export type { Preset, PresetConfigSlice } from './presets';
 export type { Profile, ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 export { SW_BRIDGE_SOURCE } from './sw-bridge-source';
 export { isSessionTeardownError, SESSION_TEARDOWN_PATTERNS } from './session-errors';
+export { compileAiToRules, AI_TRANSLATIONS } from './ai';
+export type { AiCompileContext, AiTranslation, AnyAiTranslation, TransportRuleAppender } from './ai';
+export type { ChaosPrng } from './prng';
 export { extractGraphQLOperation, parseOperationFromQueryString, operationNameMatches } from './graphql';
 export { serializeForTransport, deserializeForTransport } from './transport';
 export { DEFAULT_GROUP_NAME, RuleGroupRegistry } from './groups';
@@ -64,8 +67,8 @@ export { Logger, normalizeDebugOption, formatDebugMessage, buildRuleIdMap } from
 export type { RuleGroup, RuleGroupConfig } from './groups';
 export type { GraphQLExtractResult, GraphQLRuleOutcome } from './graphql';
 export type { DebugOptions, ChaosDebugStage, RuleIdEntry } from './debug';
-export type { ChaosLifecyclePhase } from './events';
-export type { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, TransportRuleMatchers, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, ChaosEvent, ChaosEventType, ChaosEventListener };
+export type { ChaosLifecyclePhase, ChaosPhase, StreamingChaosPhase } from './events';
+export type { ChaosConfig, CorruptionStrategy, GraphQLOperationMatcher, HostnameMatcher, NamedMatcher, NetworkFailureConfig, NetworkLatencyConfig, NetworkAbortConfig, NetworkCorruptionConfig, NetworkCorsConfig, NetworkConfig, NetworkRuleMatchers, RequestKvMatcher, RequestResourceType, RuleGroupAssignment, TransportRuleMatchers, UiAssaultConfig, UiConfig, WebSocketConfig, WebSocketDropConfig, WebSocketDelayConfig, WebSocketCorruptConfig, WebSocketCloseConfig, WebSocketDirection, WebSocketCorruptionStrategy, SSEConfig, SSEDropConfig, SSEDelayConfig, SSECorruptConfig, SSECloseConfig, SSECorruptionStrategy, SSEEventTypeMatcher, FetchStreamConfig, FetchStreamDropConfig, FetchStreamDelayConfig, FetchStreamCorruptConfig, FetchStreamCloseConfig, FetchStreamCorruptionStrategy, AiConfig, AiTransport, ChaosEvent, ChaosEventType, ChaosEventListener };
 export type { MatcherEntry, ParsedRequestUrl, RequestHeaderView } from './matchers';
 
 // --- NEW INTERFACE ---

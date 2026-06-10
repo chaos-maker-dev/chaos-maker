@@ -3,11 +3,18 @@ import type { ChaosDebugStage } from '../events';
 /** Coarse transport bucket used by the reporting layer. `'network'` is the
  *  union of fetch and XHR because the current `ChaosEvent.detail` shape does
  *  not distinguish them. Splitting that bucket requires a new `subtransport`
- *  field on `ChaosEvent.detail`, which is intentionally out of scope here. */
+ *  field on `ChaosEvent.detail`, which is intentionally out of scope here.
+ *
+ *  `'fetch-stream'` is its own bucket (NOT folded into `'network'`) because the
+ *  interceptor wraps `Response.body` AFTER the request has resolved, and the
+ *  reporting layer surfaces chunk-level lifecycle (`phase` / `chunkIndex`)
+ *  rather than request-level outcomes. Tools that aggregate by `kind` should
+ *  treat the two as distinct transports. */
 export type TransportKind =
   | 'network'
   | 'websocket'
   | 'sse'
+  | 'fetch-stream'
   | 'ui'
   | 'rule-group';
 
