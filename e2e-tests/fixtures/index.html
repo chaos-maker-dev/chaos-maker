@@ -77,6 +77,7 @@
     <button id="chat-start-short">Start /chat?n=3</button>
     <div id="chat-status">idle</div>
     <div id="chat-chunk-count">0</div>
+    <div id="chat-message-count">0</div>
     <div id="chat-first-chunk-ms"></div>
     <pre id="chat-text"></pre>
   </section>
@@ -274,15 +275,26 @@
     function setChatChunkCount(n) {
       document.getElementById('chat-chunk-count').textContent = String(n);
     }
+    function setChatMessageCount(n) {
+      document.getElementById('chat-message-count').textContent = String(n);
+    }
     function setChatFirstChunkMs(ms) {
       document.getElementById('chat-first-chunk-ms').textContent = String(ms);
     }
     function appendChatText(t) {
-      document.getElementById('chat-text').textContent += t;
+      var pre = document.getElementById('chat-text');
+      pre.textContent += t;
+      // One newline terminates one complete chat message. Counting messages
+      // (not raw stream chunks) keeps assertions stable across browsers:
+      // Firefox and WebKit may coalesce buffered network writes into a
+      // single ReadableStream chunk while Chromium delivers them separately.
+      var matches = pre.textContent.match(/\n/g);
+      setChatMessageCount(matches ? matches.length : 0);
     }
     function resetChatUi() {
       setChatStatus('connecting');
       setChatChunkCount(0);
+      setChatMessageCount(0);
       setChatFirstChunkMs('');
       document.getElementById('chat-text').textContent = '';
     }
@@ -304,6 +316,7 @@
           reader.read().then(function (result) {
             if (result.done) {
               setChatStatus('done');
+              reader.releaseLock();
               return;
             }
             if (firstChunkAt === null) {
@@ -316,6 +329,7 @@
             pump();
           }).catch(function () {
             setChatStatus('error');
+            try { reader.releaseLock(); } catch (e) { /* already released */ }
           });
         }
         pump();

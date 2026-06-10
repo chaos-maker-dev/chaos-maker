@@ -6,9 +6,15 @@ import { hasApplied } from './assertions';
  * Cross-adapter parity scenarios for fetch-stream chaos.
  *
  * Drives the `/chat` chunked-response fixture (port 8084) through the four
- * adapter interpreters. The fixture emits 5 chunks by default; each scenario
- * waits for `#chat-status` to settle on `done` before asserting on the
- * observed chunk count and the chaos event log.
+ * adapter interpreters. The fixture emits 5 newline-terminated messages by
+ * default; each scenario waits for `#chat-status` to settle on `done` before
+ * asserting on `#chat-message-count` and the chaos event log.
+ *
+ * Assertions count complete messages (newline-delimited lines in the
+ * accumulated text), never raw ReadableStream chunks: when a chaos delay
+ * stalls the consumer, Firefox and WebKit coalesce the buffered network
+ * writes into a single stream chunk while Chromium keeps them separate, so
+ * chunk counts are browser-dependent but message counts are not.
  *
  * Scenarios exercise the `ai` shorthand surface (rather than the lower-level
  * `fetchStream` slice) so both the compiler and the interceptor are covered
@@ -26,8 +32,8 @@ export const fetchStreamScenarios: Scenario[] = [
     steps: [
       click('#chat-start'),
       waitForText('#chat-status', 'done'),
-      // All 5 chunks should still arrive after the delay clears.
-      expectText('#chat-chunk-count', '5'),
+      // All 5 messages still arrive after the delay clears.
+      expectText('#chat-message-count', '5'),
     ],
     check: (ctx, assert) =>
       assert.ok(
@@ -46,9 +52,9 @@ export const fetchStreamScenarios: Scenario[] = [
     steps: [
       click('#chat-start'),
       waitForText('#chat-status', 'done'),
-      // afterChunk: 2 fires when chunk index 2 arrives; chunks 0 + 1 reach
-      // the consumer, chunk 2 is dropped and the stream is terminated.
-      expectText('#chat-chunk-count', '2'),
+      // afterChunk: 2 fires when chunk index 2 arrives; messages 0 + 1 reach
+      // the consumer, the rest are cut off with the stream.
+      expectText('#chat-message-count', '2'),
     ],
     check: (ctx, assert) =>
       assert.ok(
@@ -67,8 +73,10 @@ export const fetchStreamScenarios: Scenario[] = [
     steps: [
       click('#chat-start'),
       waitForText('#chat-status', 'done'),
-      // 5 upstream chunks * 2 = 10 observed chunks on the consumer side.
-      expectText('#chat-chunk-count', '10'),
+      // Every chunk is enqueued twice, so every message line appears twice:
+      // 5 upstream messages * 2 = 10. Holds even if a browser coalesces
+      // writes, because whatever text a chunk carries is duplicated whole.
+      expectText('#chat-message-count', '10'),
     ],
     check: (ctx, assert) =>
       assert.ok(

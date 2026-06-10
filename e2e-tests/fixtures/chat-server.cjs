@@ -24,43 +24,43 @@ function streamChat(req, res) {
   const n = Math.max(1, Math.min(50, Number(url.searchParams.get('n') || 5)));
   const intervalMs = Math.max(0, Math.min(2000, Number(url.searchParams.get('intervalMs') || 60)));
 
-  // Build every chunk upfront so a fixed Content-Length can be sent. A
-  // fixed-length response is delivered with Transfer-Encoding: identity, not
-  // chunked. Playwright's Firefox rejects a cross-origin CHUNKED response with
-  // NS_ERROR_DOM_BAD_URI when the request is initiated from page (DOM) context,
-  // but accepts a fixed-length one. The bytes are still written incrementally
-  // with a delay between them, so the browser's `body.getReader()` yields a
-  // chunk per write and the streaming-chaos pipeline still exercises each one.
-  const chunks = [];
-  for (let k = 0; k < n; k += 1) chunks.push(Buffer.from(`chunk-${k}\n`));
-  const total = chunks.reduce((sum, c) => sum + c.byteLength, 0);
-
+  // No Content-Length: Node streams the body with chunked framing, matching
+  // how a real chat backend delivers tokens. Consumers must not assert on raw
+  // ReadableStream chunk counts: Firefox and WebKit may coalesce buffered
+  // writes into one chunk, so the fixture page also exposes a per-message
+  // count derived from newline-terminated lines.
   res.writeHead(200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
-    'Content-Length': String(total),
     'Access-Control-Allow-Origin': '*',
   });
 
   let i = 0;
+  let timerId = null;
   const tick = () => {
-    if (i >= chunks.length) {
+    if (i >= n) {
       try { res.end(); } catch { /* socket already gone */ }
       return;
     }
     try {
-      res.write(chunks[i]);
+      res.write(`chunk-${i}\n`);
     } catch {
       return;
     }
     i += 1;
-    setTimeout(tick, intervalMs);
+    timerId = setTimeout(tick, intervalMs);
   };
   // Kick off async so the response headers flush first; the browser's
   // fetch promise resolves before any chunk arrives.
-  setTimeout(tick, intervalMs);
+  timerId = setTimeout(tick, intervalMs);
 
-  req.on('close', () => { i = chunks.length; });
+  req.on('close', () => {
+    i = n;
+    if (timerId !== null) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+  });
 }
 
 const server = http.createServer((req, res) => {
