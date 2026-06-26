@@ -15,6 +15,25 @@ export type ChaosEventType =
   | 'sse:delay'
   | 'sse:corrupt'
   | 'sse:close'
+  /** A chunk of a wrapped fetch-stream response was withheld from the consumer. */
+  | 'fetch-stream:chunk-dropped'
+  /** A chunk of a wrapped fetch-stream response was delayed before being enqueued. */
+  | 'fetch-stream:chunk-delayed'
+  /** A chunk of a wrapped fetch-stream response was mutated (truncate / malformed-json / empty / wrong-type). */
+  | 'fetch-stream:chunk-corrupted'
+  /** A chunk of a wrapped fetch-stream response was enqueued more than once. */
+  | 'fetch-stream:chunk-duplicated'
+  /** A wrapped fetch-stream response was closed before the upstream finished. */
+  | 'fetch-stream:truncated'
+  /** Streaming lifecycle marker for a wrapped fetch-stream response.
+   *  `detail.phase` carries the canonical phase string (e.g. `'ai:first-chunk'`). */
+  | 'fetch-stream:lifecycle'
+  /** Streaming lifecycle marker for an SSE connection. `detail.phase` carries
+   *  the canonical phase string. */
+  | 'sse:lifecycle'
+  /** Streaming lifecycle marker for inbound WebSocket traffic.
+   *  `detail.phase` carries the canonical phase string. */
+  | 'websocket:lifecycle'
   /** Emitted once per `enableGroup()` call. `applied: true`. */
   | 'rule-group:enabled'
   /** Emitted once per `disableGroup()` call. `applied: true`. */
@@ -42,8 +61,7 @@ export type ChaosDebugStage =
 
 /** Lifecycle phases. Set on `detail.phase` only when
  *  `detail.stage === 'lifecycle'`. WS/SSE direction continues to live on
- *  the existing `detail.direction` field  -  `phase` is intentionally
- *  lifecycle-only to avoid overloading. */
+ *  the existing `detail.direction` field. */
 export type ChaosLifecyclePhase =
   | 'engine:start'
   | 'engine:stop'
@@ -52,6 +70,32 @@ export type ChaosLifecyclePhase =
   | 'sw:config-applied'
   | 'sw:config-stopped'
   | 'sw:group-toggled';
+
+/** Streaming-lifecycle marker. Optional on `ChaosEvent.detail`.
+ *
+ *  Format: `<namespace>:<lifecycle>` in kebab-case. Namespaces:
+ *    - `ai:`  - streaming chaos (first-chunk, pause, resume, truncate, ...)
+ *    - `user:` - human-interaction chaos (reserved for the human-interaction
+ *      release; not emitted by the current build).
+ *
+ *  This type is OPTIONAL and ADDITIVE on every event detail. Consumers that
+ *  ignore it stay backward compatible. Reporting / replay layers read it
+ *  verbatim and MUST NOT reinterpret the canonical values listed below. */
+export type ChaosPhase =
+  | `ai:${string}`
+  | `user:${string}`;
+
+/** Canonical streaming phase values shipped today. Reporting renderers may
+ *  add styling for these specific strings; the runtime does NOT rename them
+ *  in future releases. New phases are appended as additional kebab strings
+ *  in the same namespace. */
+export type StreamingChaosPhase =
+  | 'ai:first-chunk'
+  | 'ai:stream-paused'
+  | 'ai:stream-resumed'
+  | 'ai:stream-truncated'
+  | 'ai:chunk-duplicated'
+  | 'ai:stream-replayed';
 
 export interface ChaosEvent {
   type: ChaosEventType;
@@ -93,8 +137,15 @@ export interface ChaosEvent {
     /** Concrete stage of a rule's decision pipeline. Set on every
      *  `type: 'debug'` event; unset on non-debug events. */
     stage?: ChaosDebugStage;
-    /** Lifecycle phase, set only when `stage === 'lifecycle'`. */
-    phase?: ChaosLifecyclePhase;
+    /** Lifecycle or streaming phase marker.
+     *
+     *  - `ChaosLifecyclePhase` values (`engine:start`, `sw:install`, ...) ride
+     *    only on `stage === 'lifecycle'` debug events.
+     *  - `ChaosPhase` values (`ai:first-chunk`, `user:cancel`, ...) ride on
+     *    transport events from streaming interceptors (fetch-stream, sse, ws)
+     *    so report consumers can surface a chunk-level timeline without
+     *    inspecting `type`. */
+    phase?: ChaosLifecyclePhase | ChaosPhase;
     /** Rule category  -  `'failure' | 'latency' | 'abort' | ...`. */
     ruleType?: string;
     /** Deterministic identifier for a specific rule WITHIN A SINGLE
@@ -117,6 +168,19 @@ export interface ChaosEvent {
     /** Name of the first matcher field that failed for a `rule-skip-match`
      *  debug event. One of the matcher field names. */
     skippedAt?: string;
+    /** Zero-based chunk index within a single streamed response or event
+     *  source. Populated by streaming interceptors so consumers can attribute
+     *  a chunk event back to its position in the stream. */
+    chunkIndex?: number;
+    /** Stable per-connection identifier minted by streaming interceptors
+     *  (UUID v4 when `crypto.randomUUID` is available, monotonic counter
+     *  otherwise). Lets reporting and replay layers correlate chunks
+     *  belonging to the same response when transports multiplex. */
+    connectionId?: string;
+    /** Source byte length of the chunk before any mutation. Set on
+     *  fetch-stream chunk events so reporting can compute total bytes
+     *  dropped/duplicated without re-reading the stream. */
+    chunkBytes?: number;
   };
 }
 

@@ -1,0 +1,131 @@
+---
+title: AI Chat Resilience via Fetch-Stream Chaos
+description: Verify a streaming chat UI when the underlying fetch response stalls, truncates, or duplicates chunks.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Vercel AI SDK, OpenAI SDK, and LangChain all read responses via `fetch(...).body.getReader()`. Drop, delay, truncate, or duplicate chunks at the source so the chat UI sees the same fragility every user eventually hits.
+
+## Scenario
+
+1. User sends a prompt.
+2. The first token takes 800 ms longer than usual.
+3. The stream pauses for 2 s after the 4th chunk.
+4. The stream cuts off after the 12th chunk.
+5. 5% of remaining chunks arrive duplicated.
+
+The `ai` shorthand below compiles into the matching transport rules; the runtime never sees the `ai` slice itself.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { injectChaos, getChaosLog } from '@chaos-maker/playwright';
+
+test('chat UI stays responsive across chunk stalls and truncations', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 42,
+    ai: {
+      firstChunkDelayMs: 800,
+      pauseAfterChunk: 4,
+      pauseDurationMs: 2000,
+      truncateAfterChunk: 12,
+      duplicateChunkProbability: 0.05,
+      transport: 'fetch-stream',
+    },
+  });
+
+  await page.goto('/chat');
+  await page.getByRole('textbox').fill('Summarize the incident report');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  // First-chunk delay marker
+  await expect(page.locator('[data-testid="streaming-indicator"]')).toBeVisible();
+  // Stream truncation handler
+  await expect(page.locator('[data-testid="truncated-banner"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  const phases = log
+    .filter((e) => e.type.startsWith('fetch-stream:'))
+    .map((e) => e.detail.phase);
+  expect(phases).toContain('ai:first-chunk');
+  expect(phases).toContain('ai:stream-paused');
+  expect(phases).toContain('ai:stream-truncated');
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+describe('AI chat resilience', () => {
+  beforeEach(() => {
+    cy.injectChaos({
+      seed: 42,
+      ai: {
+        firstChunkDelayMs: 800,
+        pauseAfterChunk: 4,
+        pauseDurationMs: 2000,
+        truncateAfterChunk: 12,
+        duplicateChunkProbability: 0.05,
+        transport: 'fetch-stream',
+      },
+    });
+  });
+
+  it('handles chunk stalls + truncation', () => {
+    cy.visit('/chat');
+    cy.findByRole('textbox').type('Summarize the incident report');
+    cy.findByRole('button', { name: 'Send' }).click();
+    cy.findByTestId('streaming-indicator').should('be.visible');
+    cy.findByTestId('truncated-banner').should('be.visible');
+    cy.getChaosLog().then((log) => {
+      const phases = log
+        .filter((e) => e.type.startsWith('fetch-stream:'))
+        .map((e) => e.detail.phase);
+      expect(phases).to.include('ai:first-chunk');
+      expect(phases).to.include('ai:stream-truncated');
+    });
+  });
+});
+```
+
+  </TabItem>
+</Tabs>
+
+## What the compiler emits
+
+The `ai` slice above compiles into the following `fetchStream` rules at engine init:
+
+```typescript
+fetchStream: {
+  delays: [
+    { urlPattern: '*', chunkIndex: 0, delayMs: 800, probability: 1 },
+    { urlPattern: '*', chunkIndex: 4, delayMs: 2000, probability: 1 },
+  ],
+  closes: [{ urlPattern: '*', afterChunk: 12, probability: 1 }],
+  corruptions: [{ urlPattern: '*', strategy: 'duplicate', probability: 0.05 }],
+}
+```
+
+You can write the same rules by hand if you need a urlPattern other than `'*'` or different counting / group fields. Reach for the shorthand when one scenario should fire across the three streaming transports; reach for `fetchStream` directly when you need per-URL targeting.
+
+## Why the body getter is patched
+
+SDKs do not always hand the `Response` to the user. Vercel AI SDK, OpenAI SDK, and LangChain reach for `Response.body.getReader()` inside their own helpers. A naive `fetch` wrapper that only swaps the `Response` after `.json()` resolves would never intercept those calls.
+
+The interceptor patches `Response.prototype.body` so every consumer hits the chaos pipeline. Double-read safety is provided by `ReadableStream.tee()`: the first `.body` access returns the chaos-wrapped branch; subsequent accesses return the un-mutated branch.
+
+## Assertion patterns
+
+- **First-chunk latency**: assert `ai:first-chunk` phase appears in the log AND that any user-facing "thinking" indicator shows for ≥ `firstChunkDelayMs`.
+- **Stream truncation**: assert `ai:stream-truncated` phase appears in the log AND that the UI shows a recoverable "stream ended early" treatment (banner, retry button, transcript flagged).
+- **Duplicated chunks**: assert the consumer is idempotent (no double-rendered tokens, no duplicate side effects).
+
+## See also
+
+- [AI Streaming concept](/concepts/ai-streaming/)
+- [AI Chat Streaming under flaky SSE recipe](/recipes/ai-chat-streaming-sse/)
+- [Reproduce a flaky failure recipe](/recipes/reproduce-flaky-failure/)

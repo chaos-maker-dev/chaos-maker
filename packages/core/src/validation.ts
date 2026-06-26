@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { ChaosConfigError } from './errors';
-import type { ChaosConfig } from './config';
+import type { AiConfig, ChaosConfig } from './config';
 import { PresetRegistry, expandPresets, type PresetConfigSlice } from './presets';
 import { ProfileRegistry, applyProfile, type ProfileConfigSlice } from './profiles';
 import { MatcherRegistry, resolveNamedMatchers } from './matchers';
+import { compileAiToRules } from './ai';
 import { formatZodIssue } from './validation-format';
 import type {
   CustomValidatorMap,
@@ -410,6 +411,131 @@ const buildSseConfig = (p: Policy) =>
     p,
   );
 
+/** Streams are unbounded; chunk indices are whole numbers and ms knobs are
+ *  whole milliseconds. Fractional values (e.g. `chunkIndex: 0.5`,
+ *  `delayMs: 200.4`) are rejected so users cannot smuggle fractional progress
+ *  semantics through a numeric knob. */
+const chunkIndexField = z
+  .number()
+  .int('chunkIndex must be a whole number; fractional progress is not supported on unbounded streams')
+  .min(0, 'chunkIndex must be >= 0');
+
+const wholeMs = (label: string) =>
+  z
+    .number()
+    .int(`${label} must be a whole number of milliseconds; fractional ms is not supported`)
+    .min(0, `${label} must be >= 0`);
+
+const buildFetchStreamDrop = (p: Policy) =>
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        chunkIndex: chunkIndexField.optional(),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
+
+const buildFetchStreamDelay = (p: Policy) =>
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        chunkIndex: chunkIndexField.optional(),
+        delayMs: wholeMs('delayMs'),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
+
+const buildFetchStreamCorrupt = (p: Policy) =>
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        chunkIndex: chunkIndexField.optional(),
+        // `duplicate` is fetch-stream-specific (emission-level, not text-level).
+        // SSE / WebSocket corruption stays at the four text strategies because
+        // their interceptors operate on already-decoded message text rather
+        // than raw byte chunks.
+        strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type', 'duplicate']),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    ).refine(...countingRefinement),
+  );
+
+const buildFetchStreamClose = (p: Policy) =>
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        afterMs: wholeMs('afterMs').optional(),
+        afterChunk: chunkIndexField.optional(),
+        probability,
+        ...countingFields,
+        ...groupField,
+      }),
+      p,
+    )
+      .refine(...countingRefinement)
+      .refine(
+        (data) => !(data.afterMs !== undefined && data.afterChunk !== undefined),
+        { message: 'afterMs and afterChunk are mutually exclusive on a fetch-stream close rule', path: ['afterChunk'] },
+      ),
+  );
+
+const buildFetchStreamConfig = (p: Policy) =>
+  withPolicy(
+    z.object({
+      drops: z.array(buildFetchStreamDrop(p)).optional(),
+      delays: z.array(buildFetchStreamDelay(p)).optional(),
+      corruptions: z.array(buildFetchStreamCorrupt(p)).optional(),
+      closes: z.array(buildFetchStreamClose(p)).optional(),
+    }),
+    p,
+  );
+
+const aiTransport = z.enum(['auto', 'fetch-stream', 'sse', 'websocket']);
+
+const buildAiConfig = (p: Policy) =>
+  withPolicy(
+    z.object({
+      firstChunkDelayMs: wholeMs('firstChunkDelayMs').optional(),
+      pauseAfterChunk: chunkIndexField.optional(),
+      pauseDurationMs: wholeMs('pauseDurationMs').optional(),
+      truncateAfterChunk: chunkIndexField.optional(),
+      duplicateChunkProbability: probability.optional(),
+      reconnectAfterDrop: z.boolean().optional(),
+      transport: aiTransport.optional(),
+    }),
+    p,
+  ).superRefine((data, ctx) => {
+    if (data.pauseAfterChunk !== undefined && data.pauseDurationMs === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pauseDurationMs'],
+        message: 'pauseDurationMs is required when pauseAfterChunk is set',
+      });
+    }
+    if (data.pauseDurationMs !== undefined && data.pauseAfterChunk === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pauseAfterChunk'],
+        message: 'pauseAfterChunk is required when pauseDurationMs is set',
+      });
+    }
+  });
+
 const buildGroupConfig = (p: Policy) =>
   withPolicy(
     z.object({
@@ -449,6 +575,7 @@ const buildSliceSchema = (p: Policy) =>
       ui: buildUiConfig(p).optional(),
       websocket: buildWebSocketConfig(p).optional(),
       sse: buildSseConfig(p).optional(),
+      fetchStream: buildFetchStreamConfig(p).optional(),
       groups: buildGroupConfigList(p).optional(),
     }),
     p,
@@ -526,13 +653,19 @@ const presetsArraySchema = z.array(presetNameSchema).transform((names) => {
  *  `unknown_field` issues; the `superRefine` below emits the dedicated
  *  `profile_chain` code instead, giving callers a precise, actionable error
  *  whenever a slice attempts to nest profile-related fields or re-introduce
- *  top-level-only fields. */
+ *  top-level-only fields.
+ *
+ *  `ai` is forbidden here because it is a top-level compiler shorthand: the
+ *  compiler runs after profile resolution + preset expansion, so the only
+ *  legal seat for `ai` is the post-resolution top-level config. Nesting it
+ *  inside a profile slice would silently bypass the compiler. */
 const PROFILE_CHAIN_FORBIDDEN_KEYS = [
   'profile',
   'profileOverrides',
   'customProfiles',
   'customPresets',
   'schemaVersion',
+  'ai',
 ] as const;
 
 /** Inner ZodObject for the scenario profile slice. Used as the drift-guard
@@ -553,6 +686,7 @@ const buildProfileSliceObject = (p: Policy) =>
       customProfiles: z.unknown().optional(),
       customPresets: z.unknown().optional(),
       schemaVersion: z.unknown().optional(),
+      ai: z.unknown().optional(),
     }),
     p,
   );
@@ -590,6 +724,7 @@ const buildChaosConfigSchema = (p: Policy) =>
       profileOverrides: buildProfileSliceSchema(p).optional(),
       customProfiles: z.record(profileNameSchema, buildProfileSliceSchema(p)).optional(),
       matchers: matchersRegistrySchema.optional(),
+      ai: buildAiConfig(p).optional(),
     }),
     p,
   );
@@ -648,6 +783,11 @@ const RULE_TYPE_TO_SCHEMA = {
   'sse.delay': buildSseDelay('strict'),
   'sse.corrupt': buildSseCorrupt('strict'),
   'sse.close': buildSseClose('strict'),
+  'fetch-stream.drop': buildFetchStreamDrop('strict'),
+  'fetch-stream.delay': buildFetchStreamDelay('strict'),
+  'fetch-stream.corrupt': buildFetchStreamCorrupt('strict'),
+  'fetch-stream.close': buildFetchStreamClose('strict'),
+  ai: buildAiConfig('strict'),
   group: buildGroupConfig('strict'),
   preset: chaosConfigSliceSchema,
   profile: chaosProfileSliceSchema,
@@ -681,6 +821,12 @@ const RULE_CATEGORY_TO_TYPE: Record<string, Partial<Record<string, RuleType>>> =
     delays: 'sse.delay',
     corruptions: 'sse.corrupt',
     closes: 'sse.close',
+  },
+  fetchStream: {
+    drops: 'fetch-stream.drop',
+    delays: 'fetch-stream.delay',
+    corruptions: 'fetch-stream.corrupt',
+    closes: 'fetch-stream.close',
   },
 };
 
@@ -818,7 +964,14 @@ export function prepareChaosConfig(
     }]);
   }
 
-  const finalValidated = validateConfig(expanded);
+  // Compile the `ai` slice into transport rule arrays AFTER preset expansion
+  // (so AI rules append onto the already-merged transport buckets) and
+  // BEFORE the second validation pass (so compiled rules go through Zod).
+  // `compileAiToRules` strips `config.ai` so the post-compile config has no
+  // residual AI surface; the runtime sees only transport rules.
+  const compiled = compileAiToRules(expanded);
+
+  const finalValidated = validateConfig(compiled);
 
   let matcherResolved: ChaosConfig;
   try {
@@ -863,6 +1016,12 @@ export interface ValidateChaosConfigOptions {
 function runCustomValidators(
   config: ChaosConfig,
   validators: CustomValidatorMap,
+  /** User-side `ai` slice captured from the input BEFORE `compileAiToRules`
+   *  stripped it. The compiler runs inside `prepareChaosConfig`, so
+   *  `config.ai` is always `undefined` by the time this function executes;
+   *  routing the pre-compile snapshot here keeps `customValidators.ai`
+   *  reachable. `undefined` when the user never declared an `ai` slice. */
+  preCompileAi?: AiConfig,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
@@ -909,6 +1068,10 @@ function runCustomValidators(
     });
   }
 
+  if (preCompileAi !== undefined) {
+    callValidator('ai', preCompileAi, 'ai');
+  }
+
   if (validators['top-level']) {
     callValidator('top-level', config, '');
   }
@@ -953,12 +1116,21 @@ export function validateChaosConfig(
     return input as ChaosConfig;
   }
 
+  // Capture the user-side `ai` slice BEFORE prepareChaosConfig compiles +
+  // strips it. Routing this snapshot into `runCustomValidators` keeps the
+  // `customValidators.ai` hook reachable; without it the validator would
+  // never fire because `config.ai` is gone by the time validators run.
+  const preCompileAi: AiConfig | undefined =
+    input && typeof input === 'object'
+      ? (input as { ai?: AiConfig }).ai
+      : undefined;
+
   const validated = prepareChaosConfig(input, { unknownFields: opts.unknownFields });
 
   checkDeprecations(validated, opts.onDeprecation);
 
   if (opts.customValidators) {
-    const customIssues = runCustomValidators(validated, opts.customValidators);
+    const customIssues = runCustomValidators(validated, opts.customValidators, preCompileAi);
     if (customIssues.length > 0) throw new ChaosConfigError(customIssues);
   }
 

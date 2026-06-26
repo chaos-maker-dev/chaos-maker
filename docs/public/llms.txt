@@ -40,6 +40,7 @@ This file provides a curated index of the Chaos Maker documentation, designed fo
 - [SSE Chaos](/chaos-maker/latest/concepts/sse-chaos/): Drop, delay, corrupt, or close Server-Sent Event streams.
 - [Timeline and reporting](/chaos-maker/latest/concepts/timeline-and-reporting/): Turn a chaos event log into deterministic JSON, Markdown, or HTML artifacts for CI and PR review.
 - [Rule Validation](/chaos-maker/latest/concepts/validation/): Structured config validation, the JSON Schema artifact, and forward-compat rails for ChaosConfig.
+- [WebSocket Chaos](/chaos-maker/latest/concepts/websocket-chaos/): Drop, delay, corrupt, or force-close WebSocket traffic in either direction.
 
 ## Getting Started
 

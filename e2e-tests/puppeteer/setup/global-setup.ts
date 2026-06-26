@@ -11,6 +11,7 @@ let httpServer: ChildProcess | null = null;
 let wsServer: ChildProcess | null = null;
 let sseServer: ChildProcess | null = null;
 let graphqlServer: ChildProcess | null = null;
+let chatServer: ChildProcess | null = null;
 
 function probeTcp(host: string, port: number, timeoutMs = 500): Promise<boolean> {
   return new Promise((resolve) => {
@@ -36,6 +37,7 @@ export async function setup(): Promise<void> {
   const wsReady = await probeTcp('127.0.0.1', 8081);
   const sseReady = await probeTcp('127.0.0.1', 8082);
   const graphqlReady = await probeTcp('127.0.0.1', 8083);
+  const chatReady = await probeTcp('127.0.0.1', 8084);
 
   if (!httpReady) {
     httpServer = spawn(
@@ -72,6 +74,15 @@ export async function setup(): Promise<void> {
     );
     await waitForTcp('127.0.0.1', 8083);
   }
+
+  if (!chatReady) {
+    chatServer = spawn(
+      'node',
+      [resolve(FIXTURES, 'chat-server.cjs')],
+      { stdio: 'inherit' },
+    );
+    await waitForTcp('127.0.0.1', 8084);
+  }
 }
 
 export async function teardown(): Promise<void> {
@@ -79,8 +90,10 @@ export async function teardown(): Promise<void> {
   wsServer?.kill();
   sseServer?.kill();
   graphqlServer?.kill();
+  chatServer?.kill();
   httpServer = null;
   wsServer = null;
   sseServer = null;
   graphqlServer = null;
+  chatServer = null;
 }

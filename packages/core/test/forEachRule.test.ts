@@ -9,7 +9,7 @@ describe('forEachRule', () => {
     expect(seen).toEqual([]);
   });
 
-  it('visits every rule across all 14 arrays exactly once', () => {
+  it('visits every rule across all 18 arrays exactly once', () => {
     // Single rule per array  -  count assertion guards future rule-array
     // additions to ChaosConfig that forget to register in forEachRule.
     const cfg: ChaosConfig = {
@@ -35,12 +35,19 @@ describe('forEachRule', () => {
         corruptions: [{ urlPattern: '*', strategy: 'truncate', probability: 1 }],
         closes: [{ urlPattern: '*', probability: 1 }],
       },
+      fetchStream: {
+        drops: [{ urlPattern: '*', probability: 1 }],
+        delays: [{ urlPattern: '*', delayMs: 1, probability: 1 }],
+        corruptions: [{ urlPattern: '*', strategy: 'truncate', probability: 1 }],
+        closes: [{ urlPattern: '*', probability: 1 }],
+      },
     };
     const seen: unknown[] = [];
     forEachRule(cfg, (r) => seen.push(r));
-    // 5 network + 1 ui + 4 websocket + 4 sse = 14. If a future rule array is
-    // added to ChaosConfig but not forEachRule, this count breaks.
-    expect(seen.length).toBe(14);
+    // 5 network + 1 ui + 4 websocket + 4 sse + 4 fetchStream = 18. If a
+    // future rule array is added to ChaosConfig but not forEachRule, this
+    // count breaks.
+    expect(seen.length).toBe(18);
   });
 
   it('visits each rule object exactly once (no duplicates from shared shapes)', () => {
