@@ -375,11 +375,83 @@ interface FetchStreamCloseRule {
 export type FetchStreamCloseConfig =
   TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamCloseRule;
 
+/** One captured chunk of a replay fixture. `data` is text (typically a JSON
+ *  string). Binary streams are out of scope for replay in this release. */
+export interface ReplayChunk {
+  /** Absolute offset (ms) from stream start at which the chunk was observed.
+   *  Drives inter-chunk timing on replay. */
+  offsetMs: number;
+  /** Chunk payload as text; encoded to UTF-8 bytes at emit time. */
+  data: string;
+}
+
+/** A captured stream fixture: plain JSON, committable to the repo, diffable in
+ *  PRs. `version` is REQUIRED; a missing or unknown major version is a hard
+ *  validation error. `version: 1` backward-compat is committed for the life of
+ *  the 0.x line. */
+export interface ReplayFixture {
+  /** Fixture format version. Only `1` is understood today. */
+  version: 1;
+  /** Transport the fixture was captured from. The same fixture is reusable
+   *  across transports where the wire format is compatible. */
+  transport: 'fetch-stream' | 'sse' | 'websocket';
+  /** Informational: the URL the stream was captured from. */
+  url?: string;
+  /** Informational: ISO-8601 capture timestamp. */
+  capturedAt?: string;
+  /** Synthetic-response status for `blockUpstream` mode (default 200). */
+  status?: number;
+  /** Synthetic-response headers for `blockUpstream` mode. */
+  headers?: Record<string, string>;
+  /** Convenience content-type folded into `headers` for `blockUpstream` mode.
+   *  Defaults per transport when omitted. */
+  contentType?: string;
+  /** Ordered captured chunks. Array order is emission order. */
+  chunks: ReplayChunk[];
+}
+
+/** Chunk-level mutations applied deterministically during replay.
+ *
+ *  Every mutation addresses ORIGINAL fixture chunk indices (never
+ *  running/shifted indices). The engine resolves them in a single pass, sorted
+ *  by `(target index, array index)`, so the same fixture + mutations always
+ *  yields identical bytes and timing regardless of seed.
+ *  - `delay`: pause after chunk N for `ms`, shifting later chunks.
+ *  - `truncate`: drop every chunk after N.
+ *  - `duplicate`: emit chunk N a second time.
+ *  - `split`: break chunk N into two at CHARACTER offset `at`.
+ *  - `coalesce`: merge `count` chunks starting at `startChunk` into one.
+ *  - `inject-malformed`: insert a new chunk (not in the fixture) after N. */
+export type ReplayMutation =
+  | { type: 'delay'; afterChunk: number; ms: number }
+  | { type: 'truncate'; afterChunk: number }
+  | { type: 'duplicate'; chunkIndex: number }
+  | { type: 'split'; chunkIndex: number; at: number }
+  | { type: 'coalesce'; startChunk: number; count: number }
+  | { type: 'inject-malformed'; afterChunk: number; payload: string };
+
+/** Replay directive at the fetch-stream transport level (post-compile). The
+ *  in-page core only ever sees inline `data`; a fixture PATH is resolved
+ *  adapter-side into `data` before the config crosses the page boundary. */
+export type FetchStreamReplayConfig = TransportRuleMatchers & {
+  /** Inline, already-resolved fixture. */
+  data: ReplayFixture;
+  /** Deterministic mutations applied during replay. */
+  mutations?: ReplayMutation[];
+  /** When true (DEFAULT), suppress the upstream request and return a fully
+   *  synthetic `Response`. When false, let the request fire and substitute the
+   *  response body on `.body` access. */
+  blockUpstream?: boolean;
+};
+
 export interface FetchStreamConfig {
   drops?: FetchStreamDropConfig[];
   delays?: FetchStreamDelayConfig[];
   corruptions?: FetchStreamCorruptConfig[];
   closes?: FetchStreamCloseConfig[];
+  /** Deterministic replay of a captured stream fixture. When set and a request
+   *  matches, the consumer is driven from the fixture instead of the network. */
+  replay?: FetchStreamReplayConfig;
 }
 
 /** Transport selection for AI-namespace rules.
