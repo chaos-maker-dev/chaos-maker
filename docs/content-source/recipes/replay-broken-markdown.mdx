@@ -1,0 +1,87 @@
+---
+title: Reproduce a Broken Markdown Render via Stream Replay
+description: Replay a captured chat stream and split a chunk mid-code-fence to reproduce a markdown rendering failure deterministically.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Markdown renderers in chat UIs break when a code fence arrives split across chunks: the opening ` ``` ` lands in one chunk and the language hint in the next, and a naive incremental renderer flips the whole rest of the message into a code block. This only reproduces with an exact chunk boundary, which is impossible to hit reliably against a live model. Replay a captured fixture and force the split.
+
+## Scenario
+
+1. Capture (or hand-author) a fixture whose message contains a fenced code block.
+2. Replay it deterministically, with a `split` mutation that cuts the chunk carrying the fence in half.
+3. Assert the rendered output recovers instead of running away into a code block.
+
+The fixture is loaded on the Node side and passed inline as `ai.replay.data`, so the run needs no live backend.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { injectChaos, getChaosLog, loadStreamFixture } from '@chaos-maker/playwright';
+
+test('markdown render recovers when a code fence is split across chunks', async ({ page }) => {
+  const fixture = loadStreamFixture('fixtures/chat-with-code-fence.json');
+
+  await injectChaos(page, {
+    seed: 42,
+    ai: {
+      transport: 'fetch-stream',
+      replay: {
+        data: fixture,
+        urlPattern: '/chat',
+        // Chunk 3 carries "```ts"; cut it after the third character so the
+        // fence and the language hint arrive as two separate chunks.
+        mutations: [{ type: 'split', chunkIndex: 3, at: 3 }],
+      },
+    },
+  });
+
+  await page.goto('/chat');
+  await page.click('#send');
+  await expect(page.locator('#chat-status')).toHaveText('done');
+
+  // The message renders a single code block, not a runaway one that swallows
+  // the trailing prose.
+  await expect(page.locator('pre code')).toHaveCount(1);
+
+  const log = await getChaosLog(page);
+  expect(log.some((e) => e.detail.phase === 'ai:stream-replayed')).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+// Cypress reads the fixture on the Node side with cy.readFile, then passes the
+// parsed object as ai.replay.data.
+it('markdown render recovers when a code fence is split across chunks', () => {
+  cy.readFile('fixtures/chat-with-code-fence.json').then((fixture) => {
+    cy.injectChaos({
+      seed: 42,
+      ai: {
+        transport: 'fetch-stream',
+        replay: {
+          data: fixture,
+          urlPattern: '/chat',
+          mutations: [{ type: 'split', chunkIndex: 3, at: 3 }],
+        },
+      },
+    });
+    cy.visit('/chat');
+    cy.get('#send').click();
+    cy.get('#chat-status').should('have.text', 'done');
+    cy.get('pre code').should('have.length', 1);
+  });
+});
+```
+
+  </TabItem>
+</Tabs>
+
+## Why replay, not live rules
+
+Replay makes the failure exact and repeatable: the split lands on the same byte on every run and every browser, so a fix can be verified and the test cannot flake. Recording the fixture once (`recordStreamFixture`) captures a real message shape without pinning the test to a live model.

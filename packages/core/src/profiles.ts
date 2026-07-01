@@ -163,14 +163,19 @@ function appendProfileSlice(target: ChaosConfig, slice: ProfileConfigSlice): voi
   for (const cat of ['network', 'ui', 'websocket', 'sse', 'fetchStream'] as const) {
     const src = slice[cat] as Record<string, unknown> | undefined;
     if (!src) continue;
-    const dst = (target[cat] ??= {}) as Record<string, unknown[]>;
+    const dst = (target[cat] ??= {}) as Record<string, unknown>;
     for (const [k, arr] of Object.entries(src)) {
+      // `replay` is a single directive object, not a rule array; last writer wins.
+      if (k === 'replay') {
+        dst[k] = arr;
+        continue;
+      }
       if (!Array.isArray(arr)) {
         throw new Error(
           `[chaos-maker] internal: profile slice category '${cat}.${k}' must be an array. Update appendProfileSlice when adding non-array category fields.`,
         );
       }
-      (dst[k] ??= []).push(...arr);
+      ((dst[k] ??= []) as unknown[]).push(...arr);
     }
   }
   if (slice.groups?.length) {

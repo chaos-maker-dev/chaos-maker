@@ -16,6 +16,7 @@ describe('AI compiler: AI_TRANSLATIONS drift guard', () => {
       truncateAfterChunk: 0,
       duplicateChunkProbability: 0,
       reconnectAfterDrop: false,
+      replay: { data: { version: 1, transport: 'fetch-stream', chunks: [] } },
       transport: 'auto',
     };
     const sampleKeys = Object.keys(sample).sort();

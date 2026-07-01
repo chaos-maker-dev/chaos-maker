@@ -36,6 +36,7 @@ import {
   RequestKvMatcher,
 } from '../config';
 import { ChaosEventEmitter } from '../events';
+import { resolveReplay, type ReplayPlan } from '../ai/replay';
 import { shouldApplyChaos, matchUrl, incrementCounter, checkCountingCondition, corruptText, gateGroup } from '../utils';
 import {
   parseRequestUrl,
@@ -63,7 +64,12 @@ interface PendingCloseTimer {
   handle: ReturnType<typeof setTimeout>;
 }
 
-type PendingTimer = PendingDelayTimer | PendingCloseTimer;
+interface PendingReplayTimer {
+  kind: 'replay';
+  handle: ReturnType<typeof setTimeout>;
+}
+
+type PendingTimer = PendingDelayTimer | PendingCloseTimer | PendingReplayTimer;
 
 export interface EventSourceLikeStatic {
   readonly CONNECTING: 0;
@@ -168,6 +174,9 @@ interface ConnectionContext {
   url: string;
   connectionId: string;
   chunkIndex: number;
+  /** True once replay takes over the source: real inbound events are then
+   *  suppressed and the fixture drives synthetic `message` events. */
+  replaying?: boolean;
 }
 
 function emitDrop(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string, reason?: string): void {
@@ -261,6 +270,36 @@ function emitStreamResumedMarker(emitter: ChaosEventEmitter, ctx: ConnectionCont
   });
 }
 
+function emitReplayStarted(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string): void {
+  emitter.emit({
+    type: 'sse:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: ctx.url,
+      eventType,
+      connectionId: ctx.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:stream-replayed',
+    },
+  });
+}
+
+function emitReplayDuplicate(emitter: ChaosEventEmitter, ctx: ConnectionContext, eventType: string): void {
+  emitter.emit({
+    type: 'sse:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: ctx.url,
+      eventType,
+      connectionId: ctx.connectionId,
+      chunkIndex: ctx.chunkIndex,
+      phase: 'ai:chunk-duplicated',
+    },
+  });
+}
+
 let _sseConnectionCounter = 0;
 function mintConnectionId(): string {
   const c = (typeof globalThis !== 'undefined' ? (globalThis as { crypto?: Crypto }).crypto : undefined);
@@ -286,6 +325,12 @@ export function patchEventSource(
   const pendingTimersBySource = new Map<EventSource, Set<PendingTimer>>();
   const contextBySource = new WeakMap<EventSource, ConnectionContext>();
   let running = true;
+
+  // Resolve the replay plan once; the same immutable plan drives every matched
+  // source.
+  const replayPlan: ReplayPlan | null = config.replay
+    ? resolveReplay(config.replay.data, config.replay.mutations)
+    : null;
 
   const trackTimer = (source: EventSource, timer: PendingTimer): void => {
     let set = pendingTimersBySource.get(source);
@@ -341,6 +386,12 @@ export function patchEventSource(
     const eventType = msgEvt.type || 'message';
     const ctx = contextBySource.get(source);
     if (!ctx) return; // wrapper was uninstalled between message dispatch + capture
+    // Replay owns this source: swallow every real inbound event so the app
+    // sees only the fixture-driven messages.
+    if (ctx.replaying) {
+      msgEvt.stopImmediatePropagation();
+      return;
+    }
     ctx.chunkIndex += 1;
     const isFirstChunk = ctx.chunkIndex === 0;
     if (isFirstChunk) {
@@ -480,6 +531,79 @@ export function patchEventSource(
     }
   };
 
+  const dispatchSyntheticMessage = (source: EventSource, data: string): void => {
+    const ev = new MessageEvent('message', { data });
+    (ev as unknown as Record<symbol, unknown>)[INTERCEPT_MARKER] = true;
+    source.dispatchEvent(ev);
+  };
+
+  const scheduleReplay = (source: EventSource, url: string): void => {
+    if (!config.replay || !replayPlan) return;
+    const directive = config.replay as {
+      urlPattern?: string;
+      hostname?: HostnameMatcher;
+      queryParams?: Record<string, RequestKvMatcher>;
+    };
+    const gate = gateSseRule(
+      { urlPattern: directive.urlPattern, eventType: '*', hostname: directive.hostname, queryParams: directive.queryParams },
+      url,
+      'message',
+      () => parseRequestUrl(url),
+    );
+    if (!gate.proceed) return;
+    const ctx = contextBySource.get(source);
+    if (!ctx) return;
+    ctx.replaying = true;
+    emitReplayStarted(emitter, ctx, 'message');
+
+    const plan = replayPlan;
+    plan.pieces.forEach((piece, i) => {
+      const timer: PendingReplayTimer = {
+        kind: 'replay',
+        handle: setTimeout(() => {
+          untrackTimer(source, timer);
+          if (!running) return;
+          if (source.readyState === source.CLOSED) return;
+          if (i === 0) emitFirstChunkMarker(emitter, ctx, 'message');
+          dispatchSyntheticMessage(source, piece.text);
+          if (piece.kind === 'duplicate') {
+            emitReplayDuplicate(
+              emitter,
+              { url: ctx.url, connectionId: ctx.connectionId, chunkIndex: piece.sourceIndex },
+              'message',
+            );
+          }
+        }, piece.emitAtMs),
+      };
+      trackTimer(source, timer);
+    });
+
+    if (plan.truncated) {
+      const lastAtMs = plan.pieces.reduce((max, p) => Math.max(max, p.emitAtMs), 0);
+      const lastSourceIndex = plan.pieces.length ? plan.pieces[plan.pieces.length - 1].sourceIndex : -1;
+      const timer: PendingReplayTimer = {
+        kind: 'replay',
+        handle: setTimeout(() => {
+          untrackTimer(source, timer);
+          if (!running) return;
+          if (source.readyState === source.CLOSED) return;
+          emitClose(emitter, { url: ctx.url, connectionId: ctx.connectionId, chunkIndex: lastSourceIndex }, 'replay-truncate');
+          try {
+            source.close();
+          } catch {
+            // already closed
+          }
+          try {
+            source.dispatchEvent(new Event('error'));
+          } catch {
+            // swallow defensively
+          }
+        }, lastAtMs),
+      };
+      trackTimer(source, timer);
+    }
+  };
+
   function ChaosEventSource(this: unknown, url: string | URL, init?: EventSourceInit): EventSource {
     const source = new OriginalEventSource(url, init);
     const urlStr = typeof url === 'string' ? url : url.toString();
@@ -540,6 +664,7 @@ export function patchEventSource(
     (source as unknown as { addEventListener: typeof patchedAddEventListener }).addEventListener =
       patchedAddEventListener;
 
+    scheduleReplay(source, urlStr);
     scheduleCloseChaos(source, urlStr);
 
     return source;

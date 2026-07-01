@@ -12,6 +12,7 @@ Inject controlled chaos into web applications to test frontend resilience. Works
 - **Per-chunk phase markers on SSE + WebSocket + fetch-stream**: every streaming event now carries `detail.phase` (`ai:first-chunk`, `ai:stream-paused`, `ai:stream-resumed`, `ai:stream-truncated`, `ai:chunk-duplicated`) and a stable `detail.connectionId`, so report consumers can reconstruct a chunk-level timeline without rerunning matchers.
 - **`ai` config shorthand**: a single `ai: { firstChunkDelayMs, pauseAfterChunk, truncateAfterChunk, duplicateChunkProbability, transport }` block compiles into transport rule arrays at engine init so the same scenario fires across fetch-stream, SSE, and WebSocket without per-transport duplication. See the [AI chat fetch-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/) and [AI chat SSE recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-streaming-sse/).
 - **`'duplicate'` corruption strategy on fetch-stream**: emission-level chunk duplication; consumers see the same chunk one additional time. Use for testing client-side idempotency under retry storms or replayed deltas.
+- **Stream replay and mutation**: capture a stream to a versioned JSON fixture and replay it deterministically with no live backend, across fetch-stream, SSE, and WebSocket. Six chunk mutations (`delay`, `truncate`, `duplicate`, `split`, `coalesce`, `inject-malformed`) rewrite the stream by original chunk index with no RNG. New `loadStreamFixture` / `recordStreamFixture` adapter helpers. See the [stream replay concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/).
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -289,6 +290,34 @@ consumers can reconstruct a chunk-level timeline. See the [AI streaming
 concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/)
 and the recipes for [fetch-stream](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/)
 and [SSE](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-streaming-sse/).
+
+### Replay captured streams
+
+Capture a stream to a plain JSON fixture and replay it deterministically with
+no live backend, then mutate chunks to reproduce broken responses. Load a
+fixture on the Node side with `loadStreamFixture` (Playwright, Puppeteer,
+WebdriverIO; Cypress uses `cy.readFile`) and pass it to `ai.replay`:
+
+```typescript
+import { injectChaos, loadStreamFixture } from '@chaos-maker/playwright';
+
+await injectChaos(page, {
+  ai: {
+    replay: {
+      data: loadStreamFixture('fixtures/chat-stream.json'),
+      mutations: [
+        { type: 'split', chunkIndex: 7, at: 32 },   // break a chunk in two
+        { type: 'truncate', afterChunk: 12 },        // cut the stream short
+      ],
+    },
+  },
+});
+```
+
+Replay works across fetch-stream (block or substitute mode), SSE, and
+WebSocket, and is fully deterministic (no RNG). See the [stream replay
+concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/)
+and the [broken-markdown recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/replay-broken-markdown/).
 
 ## Full docs
 

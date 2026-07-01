@@ -32,6 +32,7 @@ import {
   RequestKvMatcher,
 } from '../config';
 import { ChaosEventEmitter } from '../events';
+import { resolveReplay, type ReplayPlan } from '../ai/replay';
 import { shouldApplyChaos, matchUrl, incrementCounter, checkCountingCondition, gateGroup } from '../utils';
 import {
   parseRequestUrl,
@@ -61,7 +62,12 @@ interface PendingCloseTimer {
   handle: ReturnType<typeof setTimeout>;
 }
 
-type PendingTimer = PendingDelayTimer | PendingCloseTimer;
+interface PendingReplayTimer {
+  kind: 'replay';
+  handle: ReturnType<typeof setTimeout>;
+}
+
+type PendingTimer = PendingDelayTimer | PendingCloseTimer | PendingReplayTimer;
 
 export interface WebSocketPatchHandle {
   /** Wrapped WebSocket constructor suitable for `globalThis.WebSocket = …`. */
@@ -324,6 +330,36 @@ function emitStreamResumedMarker(emitter: ChaosEventEmitter, url: string, lifecy
   });
 }
 
+function emitReplayStarted(emitter: ChaosEventEmitter, url: string, lifecycle: InboundLifecycle): void {
+  emitter.emit({
+    type: 'websocket:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url,
+      direction: 'inbound',
+      connectionId: lifecycle.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:stream-replayed',
+    },
+  });
+}
+
+function emitReplayDuplicate(emitter: ChaosEventEmitter, url: string, lifecycle: InboundLifecycle): void {
+  emitter.emit({
+    type: 'websocket:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url,
+      direction: 'inbound',
+      connectionId: lifecycle.connectionId,
+      chunkIndex: lifecycle.chunkIndex,
+      phase: 'ai:chunk-duplicated',
+    },
+  });
+}
+
 let _wsConnectionCounter = 0;
 function mintConnectionId(): string {
   const c = (typeof globalThis !== 'undefined' ? (globalThis as { crypto?: Crypto }).crypto : undefined);
@@ -347,10 +383,19 @@ export function patchWebSocket(
   groups?: RuleGroupRegistry,
 ): WebSocketPatchHandle {
   const pendingTimersBySocket = new Map<WebSocket, Set<PendingTimer>>();
-  const inboundContextBySocket = new WeakMap<WebSocket, { connectionId: string; chunkIndex: number }>();
+  const inboundContextBySocket = new WeakMap<
+    WebSocket,
+    { connectionId: string; chunkIndex: number; replaying?: boolean }
+  >();
   // Set to false in uninstall() so that already-wrapped sockets stop applying
   // chaos on any subsequent message / scheduled close after ChaosMaker.stop().
   let running = true;
+
+  // Resolve the replay plan once; the same immutable plan drives every matched
+  // socket.
+  const replayPlan: ReplayPlan | null = config.replay
+    ? resolveReplay(config.replay.data, config.replay.mutations)
+    : null;
 
   const trackTimer = (socket: WebSocket, timer: PendingTimer): void => {
     let set = pendingTimersBySocket.get(socket);
@@ -477,6 +522,12 @@ export function patchWebSocket(
 
       const ctx = inboundContextBySocket.get(socket);
       if (!ctx) return; // wrapper was uninstalled between dispatch + capture
+      // Replay owns this socket: swallow every real inbound message so the app
+      // sees only the fixture-driven messages.
+      if (ctx.replaying) {
+        msgEvt.stopImmediatePropagation();
+        return;
+      }
       ctx.chunkIndex += 1;
       const lifecycle: InboundLifecycle = {
         connectionId: ctx.connectionId,
@@ -634,6 +685,92 @@ export function patchWebSocket(
     }
   };
 
+  const dispatchSyntheticInbound = (socket: WebSocket, data: string): void => {
+    const ev = new MessageEvent('message', { data });
+    (ev as unknown as Record<symbol, unknown>)[INTERCEPT_MARKER] = true;
+    socket.dispatchEvent(ev);
+  };
+
+  const scheduleReplay = (socket: WebSocket, url: string): void => {
+    if (!config.replay || !replayPlan) return;
+    const directive = config.replay as {
+      urlPattern?: string;
+      hostname?: HostnameMatcher;
+      queryParams?: Record<string, RequestKvMatcher>;
+    };
+    let parsedCache: ParsedRequestUrl | null | undefined;
+    const getParsedUrl = (): ParsedRequestUrl | null => {
+      if (parsedCache === undefined) parsedCache = parseRequestUrl(url);
+      return parsedCache;
+    };
+    const gate = gateWsRule(
+      { urlPattern: directive.urlPattern, direction: 'both', hostname: directive.hostname, queryParams: directive.queryParams },
+      url,
+      'inbound',
+      getParsedUrl,
+    );
+    if (!gate.proceed) return;
+    const ctx = inboundContextBySocket.get(socket);
+    if (!ctx) return;
+    ctx.replaying = true;
+    emitReplayStarted(emitter, url, { connectionId: ctx.connectionId });
+
+    const plan = replayPlan;
+    const dispatchAll = (): void => {
+      // `uninstall()` may have run while waiting for the socket to open; the
+      // `{ once: true }` open listener can still fire, so bail before scheduling.
+      if (!running) return;
+      plan.pieces.forEach((piece, i) => {
+        const timer: PendingReplayTimer = {
+          kind: 'replay',
+          handle: setTimeout(() => {
+            untrackTimer(socket, timer);
+            if (!running) return;
+            if (socket.readyState === socket.CLOSED) return;
+            if (i === 0) emitFirstInboundChunkMarker(emitter, url, { connectionId: ctx.connectionId, chunkIndex: 0 });
+            dispatchSyntheticInbound(socket, piece.text);
+            if (piece.kind === 'duplicate') {
+              emitReplayDuplicate(emitter, url, { connectionId: ctx.connectionId, chunkIndex: piece.sourceIndex });
+            }
+          }, piece.emitAtMs),
+        };
+        trackTimer(socket, timer);
+      });
+
+      if (plan.truncated) {
+        const lastAtMs = plan.pieces.reduce((max, p) => Math.max(max, p.emitAtMs), 0);
+        const lastSourceIndex = plan.pieces.length ? plan.pieces[plan.pieces.length - 1].sourceIndex : -1;
+        const timer: PendingReplayTimer = {
+          kind: 'replay',
+          handle: setTimeout(() => {
+            untrackTimer(socket, timer);
+            if (!running) return;
+            if (socket.readyState === socket.CLOSED) return;
+            emitClose(emitter, url, 1000, 'replay-truncate', { connectionId: ctx.connectionId, chunkIndex: lastSourceIndex });
+            try {
+              socket.close(1000, 'replay-truncate');
+            } catch {
+              try {
+                socket.close();
+              } catch {
+                // already closing
+              }
+            }
+          }, lastAtMs),
+        };
+        trackTimer(socket, timer);
+      }
+    };
+
+    // Fixture timing is relative to stream start; anchor it to the socket open
+    // so offsets line up with a real connection lifecycle.
+    if (socket.readyState === socket.OPEN) {
+      dispatchAll();
+    } else {
+      socket.addEventListener('open', dispatchAll, { once: true });
+    }
+  };
+
   function ChaosWebSocket(this: unknown, url: string | URL, protocols?: string | string[]): WebSocket {
     const socket = new OriginalWebSocket(url, protocols);
     const urlStr = typeof url === 'string' ? url : url.toString();
@@ -648,6 +785,7 @@ export function patchWebSocket(
     };
 
     attachInboundListener(socket, urlStr);
+    scheduleReplay(socket, urlStr);
     scheduleCloseChaos(socket, urlStr);
 
     return socket;

@@ -40,6 +40,7 @@ import type {
   ChaosConfig,
   FetchStreamConfig,
   SSEConfig,
+  StreamReplayConfig,
   WebSocketConfig,
 } from '../config';
 
@@ -256,6 +257,34 @@ const RECONNECT_AFTER_DROP: AiTranslation<'reconnectAfterDrop'> = {
   compile: () => [], // honored via AiCompileContext.reconnectAfterDrop
 };
 
+const REPLAY: AiTranslation<'replay'> = {
+  aiField: 'replay',
+  description: 'Replay a captured stream fixture (optionally mutated) on the target transport(s).',
+  compile: (replay, ctx) => {
+    const out: TransportRuleAppender[] = [];
+    const data = replay.data;
+    // A missing inline fixture means the adapter did not resolve the `fixture`
+    // path; validation surfaces that separately. Emit nothing here.
+    if (!data) return out;
+    const directive: StreamReplayConfig = {
+      urlPattern: replay.urlPattern ?? data.url ?? ctx.urlPattern,
+      data,
+      ...(replay.mutations !== undefined ? { mutations: replay.mutations } : {}),
+      ...(replay.blockUpstream !== undefined ? { blockUpstream: replay.blockUpstream } : {}),
+    };
+    if (ctx.transports.includes('fetch-stream')) {
+      out.push({ apply: (cfg) => { ensureFetchStream(cfg).replay = directive; } });
+    }
+    if (ctx.transports.includes('sse')) {
+      out.push({ apply: (cfg) => { ensureSse(cfg).replay = directive; } });
+    }
+    if (ctx.transports.includes('websocket')) {
+      out.push({ apply: (cfg) => { ensureWebsocket(cfg).replay = directive; } });
+    }
+    return out;
+  },
+};
+
 const TRANSPORT_TRANSLATION: AiTranslation<'transport'> = {
   aiField: 'transport',
   description: 'Resolved into AiCompileContext.transports before compilation; emits nothing.',
@@ -278,6 +307,7 @@ export const AI_TRANSLATIONS: ReadonlyArray<AnyAiTranslation> = [
   TRUNCATE_AFTER_CHUNK,
   DUPLICATE_CHUNK_PROBABILITY,
   RECONNECT_AFTER_DROP,
+  REPLAY,
   TRANSPORT_TRANSLATION,
 ] as unknown as ReadonlyArray<AnyAiTranslation>;
 

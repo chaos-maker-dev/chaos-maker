@@ -41,10 +41,12 @@ import {
   FetchStreamCorruptConfig,
   FetchStreamCloseConfig,
   FetchStreamCorruptionStrategy,
+  FetchStreamReplayConfig,
   RequestCountingOptions,
   HostnameMatcher,
   RequestKvMatcher,
 } from '../config';
+import { resolveReplay, type ReplayPlan } from '../ai/replay';
 import { ChaosEventEmitter } from '../events';
 import {
   shouldApplyChaos,
@@ -74,6 +76,11 @@ interface ResponseChaosMeta {
    *  is what lets a defensive `if (!r.body) ...; r.body.getReader()` apply
    *  chaos instead of consuming a one-shot branch on the truthy check. */
   wrappedBody?: ReadableStream<Uint8Array>;
+  /** When set, this response is served from a replay fixture: the body getter
+   *  returns a synthetic stream built from this plan and discards the native
+   *  body. Set only in substitute mode (`blockUpstream: false`); block mode
+   *  never creates a `RESPONSE_META` entry because it owns the whole Response. */
+  replayPlan?: ReplayPlan;
 }
 
 interface TransportRuleLike {
@@ -316,6 +323,20 @@ function emitStreamResumedMarker(emitter: ChaosEventEmitter, meta: ResponseChaos
   });
 }
 
+function emitReplayStarted(emitter: ChaosEventEmitter, meta: ResponseChaosMeta): void {
+  emitter.emit({
+    type: 'fetch-stream:lifecycle',
+    timestamp: Date.now(),
+    applied: true,
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex: 0,
+      phase: 'ai:stream-replayed',
+    },
+  });
+}
+
 function mutateChunkText(chunk: Uint8Array, strategy: FetchStreamCorruptionStrategy): { out: Uint8Array; binarySkip: boolean } {
   if (strategy === 'duplicate') {
     // Emission-level; caller enqueues twice. No text mutation.
@@ -519,6 +540,121 @@ function wrapChaosBranch(
   return source.pipeThrough(transform);
 }
 
+/** Lifecycle hooks a replay stream uses to register its timers + controller so
+ *  `uninstall()` can tear them down. */
+interface ReplayLifecycle {
+  terminated: () => boolean;
+  registerController: (c: ReadableStreamDefaultController<Uint8Array>) => void;
+  unregisterController: (c: ReadableStreamDefaultController<Uint8Array>) => void;
+  registerTimer: (h: ReturnType<typeof setTimeout>) => void;
+  unregisterTimer: (h: ReturnType<typeof setTimeout>) => void;
+}
+
+/** Constructable view of the realm's `Response` for block-mode replay, so the
+ *  synthetic response is built in the same realm the getter patch targets. */
+type ResponseConstructor = { new (body?: BodyInit | null, init?: ResponseInit): Response };
+
+/**
+ * Build a synthetic `ReadableStream` that emits a resolved replay plan on the
+ * fixture's own `offsetMs` schedule. Emits `ai:stream-replayed` at start, the
+ * first-chunk / pause / resume / duplicate / truncate lifecycle events as the
+ * plan dictates, and closes after the last piece. Timers register with the
+ * lifecycle so `uninstall()` cancels them; `cancel()` clears this stream's
+ * pending timers when the consumer aborts.
+ */
+function buildReplayStream(
+  plan: ReplayPlan,
+  meta: ResponseChaosMeta,
+  emitter: ChaosEventEmitter,
+  lifecycle: ReplayLifecycle,
+): ReadableStream<Uint8Array> {
+  const localTimers = new Set<ReturnType<typeof setTimeout>>();
+  let finished = false;
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const lastPiece = plan.pieces[plan.pieces.length - 1];
+  const lastSourceIndex = lastPiece ? lastPiece.sourceIndex : 0;
+  const lastAtMs = plan.pieces.reduce((max, p) => Math.max(max, p.emitAtMs), 0);
+
+  const schedule = (fn: () => void, atMs: number): void => {
+    const handle = setTimeout(() => {
+      localTimers.delete(handle);
+      lifecycle.unregisterTimer(handle);
+      if (finished || lifecycle.terminated()) return;
+      fn();
+    }, Math.max(0, atMs));
+    localTimers.add(handle);
+    lifecycle.registerTimer(handle);
+  };
+
+  const clearLocal = (): void => {
+    for (const handle of localTimers) {
+      clearTimeout(handle);
+      lifecycle.unregisterTimer(handle);
+    }
+    localTimers.clear();
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      lifecycle.registerController(controller);
+      emitReplayStarted(emitter, meta);
+      plan.pieces.forEach((piece, i) => {
+        if (piece.pauseBeforeMs) {
+          schedule(
+            () => emitDelay(emitter, meta, piece.sourceIndex, piece.pauseBeforeMs as number, piece.bytes.byteLength),
+            piece.emitAtMs - piece.pauseBeforeMs,
+          );
+        }
+        schedule(() => {
+          if (i === 0) emitFirstChunkMarker(emitter, meta);
+          if (piece.pauseBeforeMs) emitStreamResumedMarker(emitter, meta, piece.sourceIndex);
+          try {
+            controller.enqueue(piece.bytes);
+          } catch {
+            return;
+          }
+          if (piece.kind === 'duplicate') emitDuplicate(emitter, meta, piece.sourceIndex, piece.bytes.byteLength);
+        }, piece.emitAtMs);
+      });
+      schedule(() => {
+        finished = true;
+        if (plan.truncated) emitTruncate(emitter, meta, 'replay-truncate', lastSourceIndex);
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+        lifecycle.unregisterController(controller);
+      }, lastAtMs);
+      controllerRef = controller;
+    },
+    cancel() {
+      finished = true;
+      clearLocal();
+      if (controllerRef) lifecycle.unregisterController(controllerRef);
+    },
+  });
+}
+
+/** Build a fully synthetic `Response` for block-mode replay: no network call,
+ *  the body is the replay stream, status + headers come from the fixture. */
+function buildReplayResponse(
+  directive: FetchStreamReplayConfig,
+  plan: ReplayPlan,
+  meta: ResponseChaosMeta,
+  emitter: ChaosEventEmitter,
+  lifecycle: ReplayLifecycle,
+  ResponseCtor: ResponseConstructor,
+): Response {
+  const body = buildReplayStream(plan, meta, emitter, lifecycle);
+  const fixture = directive.data;
+  const headers = new Headers(fixture.headers ?? {});
+  if (!headers.has('content-type')) {
+    headers.set('content-type', fixture.contentType ?? 'text/plain; charset=utf-8');
+  }
+  return new ResponseCtor(body, { status: fixture.status ?? 200, headers });
+}
+
 export function patchFetchStream(
   originalFetch: typeof fetch,
   config: FetchStreamConfig,
@@ -536,6 +672,20 @@ export function patchFetchStream(
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
   const activeControllers = new Set<TransformStreamDefaultController<Uint8Array>>();
   const terminatedResponses = new WeakSet<object>();
+  const replayControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
+
+  // Resolve the replay plan once (fixture + mutations are fixed for the life of
+  // the config); the same immutable plan is reused across matched requests.
+  const replayPlan: ReplayPlan | null = config.replay
+    ? resolveReplay(config.replay.data, config.replay.mutations)
+    : null;
+  const replayLifecycle: ReplayLifecycle = {
+    terminated: () => !running,
+    registerController: (c) => replayControllers.add(c),
+    unregisterController: (c) => replayControllers.delete(c),
+    registerTimer: (h) => pendingTimers.add(h),
+    unregisterTimer: (h) => pendingTimers.delete(h),
+  };
 
   const ResponseCtor: ResponseCtorLike = targetResponse ?? (Response as unknown as ResponseCtorLike);
   const originalBodyDescriptor = Object.getOwnPropertyDescriptor(ResponseCtor.prototype, 'body');
@@ -554,6 +704,22 @@ export function patchFetchStream(
     if (!running) return native;
     const meta = RESPONSE_META.get(this);
     if (!meta) return native;
+
+    // Substitute-mode replay: discard the real body, serve the fixture stream.
+    if (meta.replayPlan) {
+      if (!meta.wrappedBody) {
+        try {
+          // Discard the real body. `cancel()` returns a promise that can reject
+          // on a locked/disturbed stream, so swallow it to avoid an unhandled
+          // rejection in addition to the synchronous guard.
+          native.cancel().catch(() => {});
+        } catch {
+          // native may already be locked / disturbed; ignore
+        }
+        meta.wrappedBody = buildReplayStream(meta.replayPlan, meta, emitter, replayLifecycle);
+      }
+      return meta.wrappedBody;
+    }
 
     if (!meta.wrappedBody) {
       const lifecycle = {
@@ -579,14 +745,42 @@ export function patchFetchStream(
   });
 
   const wrappedFetch: typeof fetch = async (input, init) => {
-    const response = await originalFetch(input as RequestInfo, init);
-    if (!running) return response;
     const url = typeof input === 'string'
       ? input
       : input instanceof URL
         ? input.toString()
         : (input as Request).url;
     const parsedUrl = parseRequestUrl(url);
+
+    // Replay: when a request matches the replay directive, the consumer is
+    // driven from the fixture rather than the network. Takes precedence over
+    // the per-chunk rules for that request.
+    if (running && config.replay && replayPlan) {
+      const gate = gateTransportRule(config.replay, url, () => parsedUrl);
+      if (gate.proceed) {
+        const meta: ResponseChaosMeta = { url, parsedUrl, connectionId: mintConnectionId() };
+        if (config.replay.blockUpstream ?? true) {
+          // Block mode: never touch the network; own the whole Response.
+          return buildReplayResponse(
+            config.replay,
+            replayPlan,
+            meta,
+            emitter,
+            replayLifecycle,
+            ResponseCtor as unknown as ResponseConstructor,
+          );
+        }
+        // Substitute mode: let the request fire, replace the body on `.body`.
+        const substituteResponse = await originalFetch(input as RequestInfo, init);
+        if (!running) return substituteResponse;
+        meta.replayPlan = replayPlan;
+        RESPONSE_META.set(substituteResponse, meta);
+        return substituteResponse;
+      }
+    }
+
+    const response = await originalFetch(input as RequestInfo, init);
+    if (!running) return response;
     const matches = urlMatchesAnyRule(config, url, parsedUrl);
     if (!matches.matched) return response;
     RESPONSE_META.set(response, {
@@ -611,6 +805,14 @@ export function patchFetchStream(
         }
       }
       activeControllers.clear();
+      for (const controller of replayControllers) {
+        try {
+          controller.close();
+        } catch {
+          // already closed
+        }
+      }
+      replayControllers.clear();
       // Restore the body getter to whatever was there before patching.
       if (originalBodyDescriptor) {
         Object.defineProperty(ResponseCtor.prototype, 'body', originalBodyDescriptor);

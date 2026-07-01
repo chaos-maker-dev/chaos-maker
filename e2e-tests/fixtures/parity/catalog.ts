@@ -4,6 +4,7 @@ import { builtInScenarios } from './built-in';
 import { webSocketScenarios } from './websocket';
 import { sseScenarios } from './sse';
 import { fetchStreamScenarios } from './fetch-stream';
+import { replayScenarios } from './replay';
 
 /** The single source of truth for cross-adapter matcher parity. Every
  *  adapter's E2E suite runs this exact catalog through its own thin
@@ -15,4 +16,5 @@ export const catalog: Scenario[] = [
   ...webSocketScenarios,
   ...sseScenarios,
   ...fetchStreamScenarios,
+  ...replayScenarios,
 ];

@@ -1,0 +1,95 @@
+---
+title: Stream Replay and Mutation
+description: Capture a stream to a JSON fixture, replay it deterministically without a live backend, and mutate chunks to reproduce broken responses.
+---
+
+Streaming failures are hard to reproduce once they only happen against a live backend: a chunk arrives malformed, a response truncates halfway, a token duplicates. Stream replay captures a stream to a plain JSON fixture, then replays it deterministically in a test, with optional chunk-level mutations. No live model call, byte-for-byte the same run every time.
+
+Replay layers on the streaming transports (`fetch-stream`, `sse`, `websocket`): the same fixture drives whichever transport your UI reads from.
+
+## Fixture format
+
+A fixture is plain JSON you commit next to your tests. `version` is required; a missing or unknown version is a hard error.
+
+```json
+{
+  "version": 1,
+  "transport": "fetch-stream",
+  "url": "https://api.example.com/v1/chat/completions",
+  "capturedAt": "2026-07-01T10:00:00Z",
+  "chunks": [
+    { "offsetMs": 0,   "data": "data: {\"delta\":\"Hel\"}\n\n" },
+    { "offsetMs": 120, "data": "data: {\"delta\":\"lo\"}\n\n" }
+  ]
+}
+```
+
+`chunks[].offsetMs` is the time from stream start at which each chunk was observed; it drives inter-chunk timing on replay and must be non-decreasing. `data` is text. For `blockUpstream` mode the optional `status`, `headers`, and `contentType` fields shape the synthetic response.
+
+## The `ai.replay` surface
+
+Point the `ai.replay` block at an inline fixture and, optionally, a list of mutations:
+
+```typescript
+await injectChaos(page, {
+  ai: {
+    replay: {
+      data: fixture,            // inline fixture object
+      urlPattern: '/chat',      // which requests to replay; defaults to fixture.url
+      mutations: [
+        { type: 'truncate', afterChunk: 48 },
+        { type: 'duplicate', chunkIndex: 12 },
+        { type: 'delay', afterChunk: 1, ms: 2000 },
+        { type: 'split', chunkIndex: 7, at: 32 },
+        { type: 'coalesce', startChunk: 3, count: 2 },
+        { type: 'inject-malformed', afterChunk: 9, payload: '{"broken' },
+      ],
+    },
+  },
+});
+```
+
+## Mutations
+
+Every mutation addresses original fixture chunk indices and is applied in a stable order, so the same fixture plus mutations always yields identical bytes and timing regardless of seed.
+
+| Mutation | Fields | Effect |
+|---|---|---|
+| `delay` | `afterChunk`, `ms` | Pause after chunk N for `ms`, shifting later chunks. |
+| `truncate` | `afterChunk` | Drop every chunk after N. |
+| `duplicate` | `chunkIndex` | Emit chunk N a second time. |
+| `split` | `chunkIndex`, `at` | Break chunk N into two at character offset `at`. |
+| `coalesce` | `startChunk`, `count` | Merge a run of chunks into one. |
+| `inject-malformed` | `afterChunk`, `payload` | Insert a chunk that was never in the fixture (negative testing). |
+
+`split` cuts on code-point boundaries, so a cut inside an emoji or other multi-byte character never produces corrupt bytes.
+
+## Block vs substitute (fetch-stream)
+
+For `fetch-stream`, replay runs in one of two modes:
+
+- **Block (default)**: the request never touches the network. The wrapper returns a fully synthetic `Response` built from the fixture, so replay works offline even against a real provider URL.
+- **Substitute (`blockUpstream: false`)**: the real request fires (point it at a mock), and the response body is replaced with the fixture on `.body` access. Use this when the test needs the real response's status or headers.
+
+## SSE and WebSocket replay
+
+For `sse` and `websocket`, replay always substitutes inbound messages: the connection opens as usual, real inbound events are suppressed, and the fixture chunks are dispatched as `message` events on their own timing. `blockUpstream` does not apply, since these APIs always open a connection.
+
+## Loading and recording fixtures
+
+The in-page engine cannot read files, so a fixture path is resolved on the Node side before it reaches the page. The Playwright, Puppeteer, and WebdriverIO adapters export `loadStreamFixture(path)`:
+
+```typescript
+import { injectChaos, loadStreamFixture } from '@chaos-maker/playwright';
+
+const fixture = loadStreamFixture('fixtures/chat-stream.json');
+await injectChaos(page, { ai: { replay: { data: fixture } } });
+```
+
+In Cypress, read the file with `cy.readFile()` and pass the parsed object as `data`; `parseFixture` (also re-exported) validates it.
+
+To capture a fixture from a live stream, `recordStreamFixture(url, { outFile })` runs the stream once and writes a version 1 fixture you can commit.
+
+## Observability
+
+Replay emits an `ai:stream-replayed` phase when it takes over a connection, plus the usual `ai:first-chunk`, `ai:chunk-duplicated`, and `ai:stream-truncated` phases as mutations fire, so the report timeline shows exactly what the consumer saw.
