@@ -15,6 +15,10 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
+// Stream replay: browser-safe fixture validation + mutation resolution. Read
+// fixture files with `cy.readFile()` (Node side) and pass the parsed object as
+// `ai.replay.data`; `parseFixture` validates it and rejects bad versions.
+export { parseFixture, applyMutations, resolveReplay } from '@chaos-maker/core';
 // Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
@@ -71,7 +75,13 @@ export type {
   FetchStreamCloseConfig,
   FetchStreamCorruptionStrategy,
   AiConfig,
+  AiReplayConfig,
   AiTransport,
+  ReplayFixture,
+  ReplayChunk,
+  ReplayMutation,
+  StreamReplayConfig,
+  FetchStreamReplayConfig,
   ChaosDebugStage,
   ChaosLifecyclePhase,
   ChaosPhase,

@@ -305,7 +305,13 @@ export type {
   FetchStreamCloseConfig,
   FetchStreamCorruptionStrategy,
   AiConfig,
+  AiReplayConfig,
   AiTransport,
+  ReplayFixture,
+  ReplayChunk,
+  ReplayMutation,
+  StreamReplayConfig,
+  FetchStreamReplayConfig,
   ChaosDebugStage,
   ChaosLifecyclePhase,
   ChaosPhase,
@@ -341,6 +347,10 @@ export { validateChaosConfig, ChaosConfigError, formatSeedReproduction } from '@
 // Built-in named matchers usable by name (e.g. `matcher: 'graphql'`) without
 // declaring a `matchers` entry of your own.
 export { BUILT_IN_MATCHERS } from '@chaos-maker/core';
+// Stream replay helpers: validate/normalize fixtures and record new ones.
+export { parseFixture, applyMutations, resolveReplay } from '@chaos-maker/core';
+export { loadStreamFixture, recordStreamFixture } from './replay';
+export type { RecordStreamFixtureOptions } from './replay';
 // Reporting utilities  -  turn an event log into a structured report and
 // emit JSON/Markdown/HTML artifacts for CI and debugging.
 export {
