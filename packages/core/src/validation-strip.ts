@@ -38,6 +38,30 @@ const SSE_DELAY_KEYS = new Set(['urlPattern', 'eventType', 'delayMs', 'probabili
 const SSE_CORRUPT_KEYS = new Set(['urlPattern', 'eventType', 'strategy', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
 const SSE_CLOSE_KEYS = new Set(['urlPattern', 'afterMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
 
+const FS_TRANSPORT_MATCHERS = ['urlPattern', 'hostname', 'queryParams', 'matcher'];
+const FS_DROP_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const FS_DELAY_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'delayMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const FS_CORRUPT_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'strategy', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const FS_CLOSE_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'afterMs', 'afterChunk', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+
+/** `replay` is a single directive object, not a rule array; strip preserves it
+ *  as-is (the strict pass validates its internals). Listed so the category
+ *  projection/walk treat it as a known, non-array field. */
+const REPLAY_KEY = 'replay';
+
+/** Flat `ai` shorthand fields. `replay` is preserved as-is; the others are
+ *  scalars. */
+const AI_KEYS = new Set([
+  'firstChunkDelayMs',
+  'pauseAfterChunk',
+  'pauseDurationMs',
+  'truncateAfterChunk',
+  'duplicateChunkProbability',
+  'reconnectAfterDrop',
+  'replay',
+  'transport',
+]);
+
 const GROUP_KEYS = new Set(['name', 'enabled']);
 
 const NETWORK_KEYS: KnownKeyMap = {
@@ -66,11 +90,20 @@ const SSE_KEYS: KnownKeyMap = {
   closes: SSE_CLOSE_KEYS,
 };
 
+const FETCH_STREAM_KEYS: KnownKeyMap = {
+  drops: FS_DROP_KEYS,
+  delays: FS_DELAY_KEYS,
+  corruptions: FS_CORRUPT_KEYS,
+  closes: FS_CLOSE_KEYS,
+};
+
 const TOP_LEVEL_KEYS = new Set([
   'network',
   'ui',
   'websocket',
   'sse',
+  'fetchStream',
+  'ai',
   'groups',
   'presets',
   'customPresets',
@@ -85,8 +118,10 @@ const TOP_LEVEL_KEYS = new Set([
 const CATEGORY_KEYS: Record<string, ReadonlySet<string>> = {
   network: new Set(Object.keys(NETWORK_KEYS)),
   ui: new Set(Object.keys(UI_KEYS)),
-  websocket: new Set(Object.keys(WS_KEYS)),
-  sse: new Set(Object.keys(SSE_KEYS)),
+  // websocket, sse, and fetchStream also carry the non-array `replay` directive.
+  websocket: new Set([...Object.keys(WS_KEYS), REPLAY_KEY]),
+  sse: new Set([...Object.keys(SSE_KEYS), REPLAY_KEY]),
+  fetchStream: new Set([...Object.keys(FETCH_STREAM_KEYS), REPLAY_KEY]),
 };
 
 const CATEGORY_RULE_KEYS: Record<string, KnownKeyMap> = {
@@ -94,6 +129,7 @@ const CATEGORY_RULE_KEYS: Record<string, KnownKeyMap> = {
   ui: UI_KEYS,
   websocket: WS_KEYS,
   sse: SSE_KEYS,
+  fetchStream: FETCH_STREAM_KEYS,
 };
 
 function projectObject(input: unknown, keys: ReadonlySet<string>): Record<string, unknown> {
@@ -117,6 +153,12 @@ function projectCategory(input: unknown, ruleMap: KnownKeyMap, allowed: Readonly
   const src = input as Record<string, unknown>;
   for (const k of Object.keys(src)) {
     if (!allowed.has(k)) continue;
+    if (k === REPLAY_KEY) {
+      // Non-array directive; preserved as-is. Its internals are validated by
+      // the strict pass that runs after stripping.
+      out[k] = src[k];
+      continue;
+    }
     const ruleKeys = ruleMap[k];
     if (!ruleKeys) continue;
     out[k] = projectRuleArray(src[k], ruleKeys);
@@ -178,6 +220,9 @@ export function stripUnknownKeys(input: unknown): ChaosConfig {
     if (!TOP_LEVEL_KEYS.has(k)) continue;
     if (k in CATEGORY_RULE_KEYS) {
       out[k] = projectCategory(src[k], CATEGORY_RULE_KEYS[k], CATEGORY_KEYS[k]);
+    } else if (k === 'ai') {
+      // Flat shorthand; keep known fields (`replay` preserved as-is).
+      out[k] = projectObject(src[k], AI_KEYS);
     } else if (k === 'groups') {
       out[k] = projectGroups(src[k]);
     } else if (k === 'customPresets') {
@@ -226,6 +271,8 @@ function walk(value: unknown, prefix: string, out: string[]): void {
       }
       if (k in CATEGORY_RULE_KEYS) {
         walkCategory(src[k], k, CATEGORY_RULE_KEYS[k], CATEGORY_KEYS[k], out);
+      } else if (k === 'ai') {
+        walkObject(src[k], 'ai', AI_KEYS, out);
       } else if (k === 'groups') {
         walkGroups(src[k], 'groups', out);
       } else if (k === 'customPresets') {
@@ -264,6 +311,17 @@ function walkCategory(
         if (!ruleKeys.has(rk)) out.push(`${sub}[${idx}].${rk}`);
       }
     });
+  }
+}
+
+/** Report unknown keys of a flat object (e.g. the `ai` shorthand). Does not
+ *  descend into known object-valued fields such as `ai.replay`; the strict pass
+ *  validates those. */
+function walkObject(value: unknown, prefix: string, allowed: ReadonlySet<string>, out: string[]): void {
+  if (!value || typeof value !== 'object') return;
+  const src = value as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!allowed.has(k)) out.push(`${prefix}.${k}`);
   }
 }
 

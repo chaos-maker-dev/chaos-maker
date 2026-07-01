@@ -90,3 +90,30 @@ describe('ai.replay validation via prepareChaosConfig', () => {
     expect(twice.ai).toBeUndefined();
   });
 });
+
+describe('replay survives the unknownFields strip policies', () => {
+  it('retains fetchStream.replay under ignore', () => {
+    const out = prepareChaosConfig(
+      { fetchStream: { replay: { urlPattern: '/x', data: fx() } } },
+      { unknownFields: 'ignore' },
+    );
+    expect(out.fetchStream?.replay?.data.version).toBe(1);
+  });
+
+  it('retains ai.replay (compiled) under warn', () => {
+    const out = prepareChaosConfig(
+      { ai: { transport: 'fetch-stream', replay: { data: fx() } } },
+      { unknownFields: 'warn' },
+    );
+    expect(out.fetchStream?.replay?.data.version).toBe(1);
+  });
+
+  it('still strips an unknown sibling field while keeping replay under ignore', () => {
+    const out = prepareChaosConfig(
+      { fetchStream: { replay: { urlPattern: '/x', data: fx() }, bogus: 1 } } as Record<string, unknown>,
+      { unknownFields: 'ignore' },
+    );
+    expect(out.fetchStream?.replay).toBeDefined();
+    expect((out.fetchStream as Record<string, unknown>).bogus).toBeUndefined();
+  });
+});
