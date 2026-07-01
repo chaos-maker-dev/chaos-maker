@@ -98,6 +98,19 @@ describe('parseFixture', () => {
       parseFixture({ version: 1, transport: 'fetch-stream', chunks: [{ offsetMs: -1, data: 'x' }] }),
     ).toThrow(/`offsetMs`/);
   });
+
+  it('rejects non-monotonic chunk offsets', () => {
+    expect(() =>
+      parseFixture({
+        version: 1,
+        transport: 'fetch-stream',
+        chunks: [
+          { offsetMs: 100, data: 'a' },
+          { offsetMs: 50, data: 'b' },
+        ],
+      }),
+    ).toThrow(/offsetMs/);
+  });
 });
 
 describe('applyMutations - baseline', () => {
@@ -141,6 +154,16 @@ describe('applyMutations - individual mutations', () => {
     expect(plan.pieces.every((p) => p.emitAtMs === 0 && p.sourceIndex === 0)).toBe(true);
   });
 
+  it('splits at code-point boundaries without corrupting non-BMP characters', () => {
+    // code points: 'a', '😀', 'b'; splitting at offset 2 keeps the emoji intact
+    const plan = applyMutations(fixture({ chunks: [{ offsetMs: 0, data: 'a\u{1F600}b' }] }), [
+      { type: 'split', chunkIndex: 0, at: 2 },
+    ]);
+    expect(plan.pieces.map((p) => p.text)).toEqual(['a\u{1F600}', 'b']);
+    // round-trips through bytes with no U+FFFD replacement characters
+    expect(decoder.decode(plan.pieces[0].bytes)).toBe('a\u{1F600}');
+  });
+
   it('coalesce merges a run of chunks into one and drops the merged-away chunks', () => {
     const plan = applyMutations(fixture(), [{ type: 'coalesce', startChunk: 1, count: 2 }]);
     expect(plan.pieces.map((p) => `${p.sourceIndex}:${p.kind}:${p.text}`)).toEqual([
@@ -170,8 +193,9 @@ describe('applyMutations - individual mutations', () => {
 });
 
 describe('applyMutations - determinism + composition', () => {
+  // Distinct target indices so array order does not affect the outcome.
   const mutations: ReplayMutation[] = [
-    { type: 'duplicate', chunkIndex: 2 },
+    { type: 'duplicate', chunkIndex: 3 },
     { type: 'delay', afterChunk: 0, ms: 500 },
     { type: 'split', chunkIndex: 1, at: 1 },
     { type: 'inject-malformed', afterChunk: 2, payload: 'X' },
@@ -187,6 +211,51 @@ describe('applyMutations - determinism + composition', () => {
     const forward = simplify(applyMutations(fixture(), mutations));
     const reversed = simplify(applyMutations(fixture(), [...mutations].reverse()));
     expect(forward).toEqual(reversed);
+  });
+
+  it('composes same-target duplicate and inject in array order', () => {
+    const dupFirst = applyMutations(fixture(), [
+      { type: 'duplicate', chunkIndex: 1 },
+      { type: 'inject-malformed', afterChunk: 1, payload: 'X' },
+    ]);
+    expect(dupFirst.pieces.map((p) => `${p.sourceIndex}:${p.kind}:${p.text}`)).toEqual([
+      '0:original:AA',
+      '1:original:BB',
+      '1:duplicate:BB',
+      '-1:inject-malformed:X',
+      '2:original:CC',
+      '3:original:DD',
+    ]);
+
+    const injFirst = applyMutations(fixture(), [
+      { type: 'inject-malformed', afterChunk: 1, payload: 'X' },
+      { type: 'duplicate', chunkIndex: 1 },
+    ]);
+    expect(injFirst.pieces.map((p) => `${p.sourceIndex}:${p.kind}:${p.text}`)).toEqual([
+      '0:original:AA',
+      '1:original:BB',
+      '-1:inject-malformed:X',
+      '1:duplicate:BB',
+      '2:original:CC',
+      '3:original:DD',
+    ]);
+  });
+
+  it('emits a chunk once per duplicate mutation', () => {
+    const plan = applyMutations(fixture(), [
+      { type: 'duplicate', chunkIndex: 0 },
+      { type: 'duplicate', chunkIndex: 0 },
+    ]);
+    expect(plan.pieces.filter((p) => p.sourceIndex === 0).map((p) => p.kind)).toEqual([
+      'original',
+      'duplicate',
+      'duplicate',
+    ]);
+  });
+
+  it('ignores non-integer mutation indices', () => {
+    const plan = applyMutations(fixture(), [{ type: 'duplicate', chunkIndex: 1.5 }]);
+    expect(plan.pieces.map((p) => p.text)).toEqual(['AA', 'BB', 'CC', 'DD']);
   });
 
   it('applies conflicting mutations on the same index in array order', () => {

@@ -70,6 +70,8 @@ export interface ReplayPlan {
   truncated: boolean;
 }
 
+/** Build a validation issue for a fixture problem, tagged to the `ai` rule
+ *  type so it sorts and renders alongside other config errors. */
 function issue(path: string, message: string, extra: Partial<ValidationIssue> = {}): ValidationIssue {
   return { path, code: 'custom', ruleType: 'ai', message, ...extra };
 }
@@ -117,6 +119,7 @@ export function parseFixture(raw: unknown): ReplayFixture {
     throw new ChaosConfigError([issue('ai.replay.data.chunks', 'replay fixture `chunks` must be an array')]);
   }
 
+  let previousOffsetMs = -Infinity;
   const chunks: ReplayChunk[] = f.chunks.map((c, i) => {
     if (typeof c !== 'object' || c === null) {
       throw new ChaosConfigError([issue(`ai.replay.data.chunks[${i}]`, 'each replay chunk must be an object')]);
@@ -132,6 +135,18 @@ export function parseFixture(raw: unknown): ReplayFixture {
         issue(`ai.replay.data.chunks[${i}].offsetMs`, 'replay chunk `offsetMs` must be a finite number >= 0'),
       ]);
     }
+    // `offsetMs` is an absolute time from stream start and array order is
+    // emission order, so the offsets must be non-decreasing; otherwise the plan
+    // would emit pieces whose `emitAtMs` runs backwards.
+    if (chunk.offsetMs < previousOffsetMs) {
+      throw new ChaosConfigError([
+        issue(
+          `ai.replay.data.chunks[${i}].offsetMs`,
+          'replay chunk `offsetMs` must be >= the previous chunk offset (chunks are ordered by stream time)',
+        ),
+      ]);
+    }
+    previousOffsetMs = chunk.offsetMs;
     return { offsetMs: chunk.offsetMs, data: chunk.data };
   });
 
@@ -163,18 +178,28 @@ function mutationTargetIndex(m: ReplayMutation): number {
   }
 }
 
+/** A post-content operation on a segment, recorded in the order its mutation
+ *  appeared in the input array so same-target mutations compose deterministically
+ *  and repeat correctly. `duplicate` re-emits the chunk's content; `inject`
+ *  emits a synthetic malformed chunk after it. */
+type SegmentOp = { kind: 'duplicate' } | { kind: 'inject'; payload: string };
+
+/** Working state for one original fixture chunk while mutations fold in.
+ *  `content` holds the chunk's own text pieces (rewritten by `split` /
+ *  `coalesce`); `postOps` holds `duplicate` / `inject-malformed` operations in
+ *  input-array order. */
 interface Segment {
   baseOffsetMs: number;
   /** Removed because an earlier chunk coalesced this one away. */
   dropped: boolean;
-  /** Emit this segment's pieces a second time. */
-  duplicate: boolean;
-  /** Text pieces in order; a single `original` piece until `split` runs. */
-  pieces: { text: string; kind: ReplayPieceKind }[];
-  /** Extra chunks injected after this segment's content. */
-  injected: string[];
+  /** The chunk's own content pieces; a single `original` piece until `split`
+   *  or `coalesce` rewrites it. */
+  content: { text: string; kind: ReplayPieceKind }[];
+  /** Post-content operations, in the order their mutations appeared. */
+  postOps: SegmentOp[];
 }
 
+/** Encode one text piece into an emitted plan piece. */
 function makePiece(
   text: string,
   emitAtMs: number,
@@ -196,9 +221,8 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
   const segs: Segment[] = fixture.chunks.map((c) => ({
     baseOffsetMs: c.offsetMs,
     dropped: false,
-    duplicate: false,
-    pieces: [{ text: c.data, kind: 'original' }],
-    injected: [],
+    content: [{ text: c.data, kind: 'original' }],
+    postOps: [],
   }));
 
   const ordered = mutations
@@ -209,18 +233,23 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
   const delays: { after: number; ms: number }[] = [];
   let truncateAfter = Infinity;
 
-  const inRange = (idx: number): boolean => idx >= 0 && idx < n;
+  // Only integer, in-bounds indices are valid; non-integers (e.g. 1.5) are
+  // ignored rather than allowed to index `segs` and read `undefined`.
+  const inRange = (idx: number): boolean => Number.isInteger(idx) && idx >= 0 && idx < n;
 
   for (const { m } of ordered) {
     switch (m.type) {
       case 'split': {
         if (!inRange(m.chunkIndex)) break;
         const seg = segs[m.chunkIndex];
-        const full = seg.pieces.map((p) => p.text).join('');
-        const at = Math.max(0, Math.min(m.at, full.length));
-        seg.pieces = [
-          { text: full.slice(0, at), kind: 'split-head' },
-          { text: full.slice(at), kind: 'split-tail' },
+        // `at` is a character offset. Split on code points (via the string
+        // iterator) so a cut inside a surrogate pair cannot produce lone
+        // surrogates that `TextEncoder` would turn into replacement bytes.
+        const codePoints = Array.from(seg.content.map((p) => p.text).join(''));
+        const at = Math.max(0, Math.min(m.at, codePoints.length));
+        seg.content = [
+          { text: codePoints.slice(0, at).join(''), kind: 'split-head' },
+          { text: codePoints.slice(at).join(''), kind: 'split-tail' },
         ];
         break;
       }
@@ -228,20 +257,20 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
         if (!inRange(m.startChunk) || m.count <= 0) break;
         const end = Math.min(m.startChunk + m.count, n);
         const target = segs[m.startChunk];
-        let merged = target.pieces.map((p) => p.text).join('');
+        let merged = target.content.map((p) => p.text).join('');
         for (let i = m.startChunk + 1; i < end; i++) {
-          merged += segs[i].pieces.map((p) => p.text).join('');
+          merged += segs[i].content.map((p) => p.text).join('');
           segs[i].dropped = true;
         }
-        target.pieces = [{ text: merged, kind: 'coalesce' }];
+        target.content = [{ text: merged, kind: 'coalesce' }];
         break;
       }
       case 'duplicate': {
-        if (inRange(m.chunkIndex)) segs[m.chunkIndex].duplicate = true;
+        if (inRange(m.chunkIndex)) segs[m.chunkIndex].postOps.push({ kind: 'duplicate' });
         break;
       }
       case 'inject-malformed': {
-        if (inRange(m.afterChunk)) segs[m.afterChunk].injected.push(m.payload);
+        if (inRange(m.afterChunk)) segs[m.afterChunk].postOps.push({ kind: 'inject', payload: m.payload });
         break;
       }
       case 'delay': {
@@ -271,23 +300,26 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
     const emitAt = seg.baseOffsetMs + shift;
 
     let firstOfChunk = true;
-    for (const p of seg.pieces) {
+    for (const p of seg.content) {
       const piece = makePiece(p.text, emitAt, idx, p.kind, encoder);
       if (firstOfChunk && pauseBeforeMs > 0) {
         piece.pauseBeforeMs = pauseBeforeMs;
-        firstOfChunk = false;
       }
+      firstOfChunk = false;
       pieces.push(piece);
     }
 
-    if (seg.duplicate) {
-      for (const p of seg.pieces) {
-        pieces.push(makePiece(p.text, emitAt, idx, 'duplicate', encoder));
+    // Post-content operations emit in input-array order, so repeated
+    // duplicates each add an emission and duplicate/inject interleave as
+    // written.
+    for (const op of seg.postOps) {
+      if (op.kind === 'duplicate') {
+        for (const p of seg.content) {
+          pieces.push(makePiece(p.text, emitAt, idx, 'duplicate', encoder));
+        }
+      } else {
+        pieces.push(makePiece(op.payload, emitAt, -1, 'inject-malformed', encoder));
       }
-    }
-
-    for (const injected of seg.injected) {
-      pieces.push(makePiece(injected, emitAt, -1, 'inject-malformed', encoder));
     }
   }
 
