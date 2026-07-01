@@ -73,4 +73,20 @@ describe('ai.replay validation via prepareChaosConfig', () => {
       }),
     ).toThrow(ChaosConfigError);
   });
+
+  it('accepts a direct fetchStream.replay directive through preset expansion', () => {
+    // The replay directive is a single object, not a rule array; the slice
+    // merge in preset/profile expansion must pass it through, not concat it.
+    const out = prepareChaosConfig({ fetchStream: { replay: { urlPattern: '/chat', data: fx() } } });
+    expect(out.fetchStream?.replay?.data.chunks).toHaveLength(1);
+  });
+
+  it('is idempotent when re-prepared (adapter compiles, then the page re-prepares)', () => {
+    // The adapter runs prepareChaosConfig in Node (compiling ai.replay into
+    // fetchStream.replay), then the in-page engine prepares the result again.
+    const once = prepareChaosConfig({ ai: { transport: 'fetch-stream', replay: { data: fx() } } });
+    const twice = prepareChaosConfig(once);
+    expect(twice.fetchStream?.replay?.data.version).toBe(1);
+    expect(twice.ai).toBeUndefined();
+  });
 });
