@@ -262,6 +262,10 @@ export interface WebSocketConfig {
   delays?: WebSocketDelayConfig[];
   corruptions?: WebSocketCorruptConfig[];
   closes?: WebSocketCloseConfig[];
+  /** Deterministic replay of a captured stream fixture. When a socket URL
+   *  matches, real inbound messages are suppressed and the fixture chunks are
+   *  dispatched as inbound messages on their own timing. */
+  replay?: StreamReplayConfig;
 }
 
 /** Strategies for corrupting Server-Sent Event payloads.
@@ -315,6 +319,10 @@ export interface SSEConfig {
   delays?: SSEDelayConfig[];
   corruptions?: SSECorruptConfig[];
   closes?: SSECloseConfig[];
+  /** Deterministic replay of a captured stream fixture. When a source URL
+   *  matches, real inbound events are suppressed and the fixture chunks are
+   *  dispatched as `message` events on their own timing. */
+  replay?: StreamReplayConfig;
 }
 
 /** Strategies for corrupting fetch-stream chunks.
@@ -430,19 +438,25 @@ export type ReplayMutation =
   | { type: 'coalesce'; startChunk: number; count: number }
   | { type: 'inject-malformed'; afterChunk: number; payload: string };
 
-/** Replay directive at the fetch-stream transport level (post-compile). The
- *  in-page core only ever sees inline `data`; a fixture PATH is resolved
- *  adapter-side into `data` before the config crosses the page boundary. */
-export type FetchStreamReplayConfig = TransportRuleMatchers & {
+/** Replay directive at the transport level (post-compile). The in-page core
+ *  only ever sees inline `data`; a fixture PATH is resolved adapter-side into
+ *  `data` before the config crosses the page boundary. The same shape is reused
+ *  by fetch-stream, SSE, and WebSocket replay. */
+export type StreamReplayConfig = TransportRuleMatchers & {
   /** Inline, already-resolved fixture. */
   data: ReplayFixture;
   /** Deterministic mutations applied during replay. */
   mutations?: ReplayMutation[];
-  /** When true (DEFAULT), suppress the upstream request and return a fully
-   *  synthetic `Response`. When false, let the request fire and substitute the
-   *  response body on `.body` access. */
+  /** fetch-stream only. When true (DEFAULT), suppress the upstream request and
+   *  return a fully synthetic `Response`. When false, let the request fire and
+   *  substitute the response body on `.body` access. Ignored by SSE and
+   *  WebSocket replay, where the connection always opens and inbound messages
+   *  are substituted. */
   blockUpstream?: boolean;
 };
+
+/** Alias kept for the fetch-stream surface; identical to {@link StreamReplayConfig}. */
+export type FetchStreamReplayConfig = StreamReplayConfig;
 
 export interface FetchStreamConfig {
   drops?: FetchStreamDropConfig[];
