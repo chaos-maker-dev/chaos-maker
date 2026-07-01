@@ -545,9 +545,14 @@ function wrapChaosBranch(
 interface ReplayLifecycle {
   terminated: () => boolean;
   registerController: (c: ReadableStreamDefaultController<Uint8Array>) => void;
+  unregisterController: (c: ReadableStreamDefaultController<Uint8Array>) => void;
   registerTimer: (h: ReturnType<typeof setTimeout>) => void;
   unregisterTimer: (h: ReturnType<typeof setTimeout>) => void;
 }
+
+/** Constructable view of the realm's `Response` for block-mode replay, so the
+ *  synthetic response is built in the same realm the getter patch targets. */
+type ResponseConstructor = { new (body?: BodyInit | null, init?: ResponseInit): Response };
 
 /**
  * Build a synthetic `ReadableStream` that emits a resolved replay plan on the
@@ -565,6 +570,7 @@ function buildReplayStream(
 ): ReadableStream<Uint8Array> {
   const localTimers = new Set<ReturnType<typeof setTimeout>>();
   let finished = false;
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
   const lastPiece = plan.pieces[plan.pieces.length - 1];
   const lastSourceIndex = lastPiece ? lastPiece.sourceIndex : 0;
   const lastAtMs = plan.pieces.reduce((max, p) => Math.max(max, p.emitAtMs), 0);
@@ -618,11 +624,14 @@ function buildReplayStream(
         } catch {
           // already closed
         }
+        lifecycle.unregisterController(controller);
       }, lastAtMs);
+      controllerRef = controller;
     },
     cancel() {
       finished = true;
       clearLocal();
+      if (controllerRef) lifecycle.unregisterController(controllerRef);
     },
   });
 }
@@ -635,6 +644,7 @@ function buildReplayResponse(
   meta: ResponseChaosMeta,
   emitter: ChaosEventEmitter,
   lifecycle: ReplayLifecycle,
+  ResponseCtor: ResponseConstructor,
 ): Response {
   const body = buildReplayStream(plan, meta, emitter, lifecycle);
   const fixture = directive.data;
@@ -642,7 +652,7 @@ function buildReplayResponse(
   if (!headers.has('content-type')) {
     headers.set('content-type', fixture.contentType ?? 'text/plain; charset=utf-8');
   }
-  return new Response(body, { status: fixture.status ?? 200, headers });
+  return new ResponseCtor(body, { status: fixture.status ?? 200, headers });
 }
 
 export function patchFetchStream(
@@ -672,6 +682,7 @@ export function patchFetchStream(
   const replayLifecycle: ReplayLifecycle = {
     terminated: () => !running,
     registerController: (c) => replayControllers.add(c),
+    unregisterController: (c) => replayControllers.delete(c),
     registerTimer: (h) => pendingTimers.add(h),
     unregisterTimer: (h) => pendingTimers.delete(h),
   };
@@ -698,7 +709,10 @@ export function patchFetchStream(
     if (meta.replayPlan) {
       if (!meta.wrappedBody) {
         try {
-          void native.cancel();
+          // Discard the real body. `cancel()` returns a promise that can reject
+          // on a locked/disturbed stream, so swallow it to avoid an unhandled
+          // rejection in addition to the synchronous guard.
+          native.cancel().catch(() => {});
         } catch {
           // native may already be locked / disturbed; ignore
         }
@@ -747,7 +761,14 @@ export function patchFetchStream(
         const meta: ResponseChaosMeta = { url, parsedUrl, connectionId: mintConnectionId() };
         if (config.replay.blockUpstream ?? true) {
           // Block mode: never touch the network; own the whole Response.
-          return buildReplayResponse(config.replay, replayPlan, meta, emitter, replayLifecycle);
+          return buildReplayResponse(
+            config.replay,
+            replayPlan,
+            meta,
+            emitter,
+            replayLifecycle,
+            ResponseCtor as unknown as ResponseConstructor,
+          );
         }
         // Substitute mode: let the request fire, replace the body on `.body`.
         const substituteResponse = await originalFetch(input as RequestInfo, init);

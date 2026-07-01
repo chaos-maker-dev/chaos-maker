@@ -13,8 +13,9 @@ export function loadStreamFixture(path: string): ReplayFixture {
 }
 
 export interface RecordStreamFixtureOptions {
-  /** Transport label written into the fixture. Default `'fetch-stream'`. */
-  transport?: ReplayFixture['transport'];
+  /** Transport label written into the fixture. `'websocket'` is not recordable
+   *  here (recording drains an HTTP response body). Default `'fetch-stream'`. */
+  transport?: Exclude<ReplayFixture['transport'], 'websocket'>;
   /** When set, the fixture JSON is written to this path (pretty-printed). */
   outFile?: string;
 }
@@ -30,6 +31,9 @@ export async function recordStreamFixture(
   url: string,
   options: RecordStreamFixtureOptions = {},
 ): Promise<ReplayFixture> {
+  if ((options.transport as string) === 'websocket') {
+    throw new Error('[chaos-maker] recordStreamFixture cannot capture WebSocket traffic; record fetch-stream or sse');
+  }
   const response = await fetch(url);
   if (!response.ok || !response.body) {
     throw new Error(`[chaos-maker] cannot record stream fixture: ${url} responded ${response.status}`);
@@ -43,11 +47,21 @@ export async function recordStreamFixture(
     if (done) break;
     chunks.push({ offsetMs: Date.now() - start, data: decoder.decode(value, { stream: true }) });
   }
+  // Flush bytes buffered mid multi-byte sequence at the end of the stream so a
+  // character split across the last two reads is not silently dropped.
+  const tail = decoder.decode();
+  if (tail) chunks.push({ offsetMs: Date.now() - start, data: tail });
+
+  const contentType = response.headers.get('content-type');
   const fixture: ReplayFixture = {
     version: 1,
     transport: options.transport ?? 'fetch-stream',
     url,
     capturedAt: new Date(start).toISOString(),
+    status: response.status,
+    // Capture content-type only: raw headers would carry content-length /
+    // transfer-encoding that conflict with the replayed synthetic response.
+    ...(contentType ? { contentType } : {}),
     chunks,
   };
   if (options.outFile) {

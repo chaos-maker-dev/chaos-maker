@@ -717,6 +717,9 @@ export function patchWebSocket(
 
     const plan = replayPlan;
     const dispatchAll = (): void => {
+      // `uninstall()` may have run while waiting for the socket to open; the
+      // `{ once: true }` open listener can still fire, so bail before scheduling.
+      if (!running) return;
       plan.pieces.forEach((piece, i) => {
         const timer: PendingReplayTimer = {
           kind: 'replay',
@@ -736,13 +739,14 @@ export function patchWebSocket(
 
       if (plan.truncated) {
         const lastAtMs = plan.pieces.reduce((max, p) => Math.max(max, p.emitAtMs), 0);
+        const lastSourceIndex = plan.pieces.length ? plan.pieces[plan.pieces.length - 1].sourceIndex : -1;
         const timer: PendingReplayTimer = {
           kind: 'replay',
           handle: setTimeout(() => {
             untrackTimer(socket, timer);
             if (!running) return;
             if (socket.readyState === socket.CLOSED) return;
-            emitClose(emitter, url, 1000, 'replay-truncate', { connectionId: ctx.connectionId });
+            emitClose(emitter, url, 1000, 'replay-truncate', { connectionId: ctx.connectionId, chunkIndex: lastSourceIndex });
             try {
               socket.close(1000, 'replay-truncate');
             } catch {

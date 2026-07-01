@@ -61,6 +61,32 @@ describe('recordStreamFixture', () => {
     expect(fixture.version).toBe(1);
     expect(fixture.transport).toBe('fetch-stream');
     expect(fixture.url).toBe('http://example.test/chat');
+    expect(fixture.status).toBe(200);
     expect(fixture.chunks.map((c) => c.data)).toEqual(['a', 'b']);
+  });
+
+  it('preserves a multi-byte character split across reads', async () => {
+    const emoji = new TextEncoder().encode('\u{1F600}'); // 4 UTF-8 bytes
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(emoji.slice(0, 2));
+            controller.enqueue(emoji.slice(2));
+            controller.close();
+          },
+        });
+        return new Response(body, { status: 200 });
+      }),
+    );
+    const fixture = await recordStreamFixture('http://example.test/chat');
+    expect(fixture.chunks.map((c) => c.data).join('')).toBe('\u{1F600}');
+  });
+
+  it('rejects a websocket transport (not recordable via fetch)', async () => {
+    await expect(
+      recordStreamFixture('http://example.test/chat', { transport: 'websocket' as never }),
+    ).rejects.toThrow(/WebSocket/i);
   });
 });

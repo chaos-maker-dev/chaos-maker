@@ -434,14 +434,26 @@ const replayChunkSchema = z.object({
   data: z.string(),
 });
 
+// Valid HTTP field name per RFC 7230 token grammar; `new Headers()` throws a
+// TypeError on anything else, and `new Response()` throws a RangeError outside
+// 200..599, so both are rejected up front rather than at replay time.
+const headerNameSchema = z
+  .string()
+  .regex(/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/, 'invalid HTTP header name');
+
 const replayFixtureSchema = z
   .object({
     version: z.number(),
     transport: z.enum(['fetch-stream', 'sse', 'websocket']),
     url: z.string().optional(),
     capturedAt: z.string().optional(),
-    status: z.number().int().optional(),
-    headers: z.record(z.string()).optional(),
+    status: z
+      .number()
+      .int('replay fixture status must be an integer')
+      .min(200, 'replay fixture status must be in 200..599')
+      .max(599, 'replay fixture status must be in 200..599')
+      .optional(),
+    headers: z.record(headerNameSchema, z.string()).optional(),
     contentType: z.string().optional(),
     chunks: z.array(replayChunkSchema),
   })
