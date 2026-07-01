@@ -336,6 +336,7 @@ const buildWebSocketConfig = (p: Policy) =>
       delays: z.array(buildWsDelay(p)).optional(),
       corruptions: z.array(buildWsCorrupt(p)).optional(),
       closes: z.array(buildWsClose(p)).optional(),
+      replay: buildStreamReplay(p).optional(),
     }),
     p,
   );
@@ -407,6 +408,7 @@ const buildSseConfig = (p: Policy) =>
       delays: z.array(buildSseDelay(p)).optional(),
       corruptions: z.array(buildSseCorrupt(p)).optional(),
       closes: z.array(buildSseClose(p)).optional(),
+      replay: buildStreamReplay(p).optional(),
     }),
     p,
   );
@@ -425,6 +427,78 @@ const wholeMs = (label: string) =>
     .number()
     .int(`${label} must be a whole number of milliseconds; fractional ms is not supported`)
     .min(0, `${label} must be >= 0`);
+
+// --- Stream replay -------------------------------------------------------
+const replayChunkSchema = z.object({
+  offsetMs: wholeMs('offsetMs'),
+  data: z.string(),
+});
+
+const replayFixtureSchema = z
+  .object({
+    version: z.number(),
+    transport: z.enum(['fetch-stream', 'sse', 'websocket']),
+    url: z.string().optional(),
+    capturedAt: z.string().optional(),
+    status: z.number().int().optional(),
+    headers: z.record(z.string()).optional(),
+    contentType: z.string().optional(),
+    chunks: z.array(replayChunkSchema),
+  })
+  .superRefine((data, ctx) => {
+    if (data.version !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['version'],
+        message: `unsupported replay fixture version ${JSON.stringify(
+          data.version,
+        )}; this build understands version 1. See the stream replay docs for the fixture upgrade path.`,
+      });
+    }
+  });
+
+const replayMutationSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('delay'), afterChunk: chunkIndexField, ms: wholeMs('ms') }),
+  z.object({ type: z.literal('truncate'), afterChunk: chunkIndexField }),
+  z.object({ type: z.literal('duplicate'), chunkIndex: chunkIndexField }),
+  z.object({ type: z.literal('split'), chunkIndex: chunkIndexField, at: z.number().int('at must be a whole number').min(0, 'at must be >= 0') }),
+  z.object({ type: z.literal('coalesce'), startChunk: chunkIndexField, count: z.number().int('count must be a whole number').min(1, 'count must be >= 1') }),
+  z.object({ type: z.literal('inject-malformed'), afterChunk: chunkIndexField, payload: z.string() }),
+]);
+
+const buildStreamReplay = (p: Policy) =>
+  applyTransportMatcherRefinement(
+    withPolicy(
+      z.object({
+        ...transportMatcherFields,
+        data: replayFixtureSchema,
+        mutations: z.array(replayMutationSchema).optional(),
+        blockUpstream: z.boolean().optional(),
+      }),
+      p,
+    ),
+  );
+
+const buildAiReplay = (p: Policy) =>
+  withPolicy(
+    z.object({
+      fixture: z.string().optional(),
+      data: replayFixtureSchema.optional(),
+      mutations: z.array(replayMutationSchema).optional(),
+      blockUpstream: z.boolean().optional(),
+      urlPattern: z.string().min(1, 'urlPattern must not be empty').optional(),
+    }),
+    p,
+  ).superRefine((data, ctx) => {
+    if (!data.data) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['data'],
+        message:
+          'ai.replay requires an inline `data` fixture; resolve the `fixture` path adapter-side with loadStreamFixture()',
+      });
+    }
+  });
 
 const buildFetchStreamDrop = (p: Policy) =>
   applyTransportMatcherRefinement(
@@ -501,6 +575,7 @@ const buildFetchStreamConfig = (p: Policy) =>
       delays: z.array(buildFetchStreamDelay(p)).optional(),
       corruptions: z.array(buildFetchStreamCorrupt(p)).optional(),
       closes: z.array(buildFetchStreamClose(p)).optional(),
+      replay: buildStreamReplay(p).optional(),
     }),
     p,
   );
@@ -516,6 +591,7 @@ const buildAiConfig = (p: Policy) =>
       truncateAfterChunk: chunkIndexField.optional(),
       duplicateChunkProbability: probability.optional(),
       reconnectAfterDrop: z.boolean().optional(),
+      replay: buildAiReplay(p).optional(),
       transport: aiTransport.optional(),
     }),
     p,

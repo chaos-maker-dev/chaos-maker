@@ -483,6 +483,23 @@ export type AiTransport = 'auto' | 'fetch-stream' | 'sse' | 'websocket';
  *  No field on this interface emits a new transport kind. Every value lands
  *  on `fetchStream` / `sse` / `websocket` so existing report consumers stay
  *  backward compatible; the semantic overlay rides on `detail.phase`. */
+/** Replay directive under the `ai` namespace. `fixture` (a path) is resolved
+ *  ADAPTER-side into `data`; the in-page core replays only inline `data`. */
+export interface AiReplayConfig {
+  /** Fixture path, resolved by the adapter's `loadStreamFixture` into `data`.
+   *  A path that reaches the in-page core is a validation error. */
+  fixture?: string;
+  /** Inline, already-resolved fixture. Required at the core boundary. */
+  data?: ReplayFixture;
+  /** Deterministic mutations applied during replay. */
+  mutations?: ReplayMutation[];
+  /** fetch-stream only. When true (DEFAULT), suppress the upstream request and
+   *  return a fully synthetic `Response`. */
+  blockUpstream?: boolean;
+  /** URL scope for the replay. Defaults to the fixture's `url`, then `'*'`. */
+  urlPattern?: string;
+}
+
 export interface AiConfig {
   /** Delay (ms) applied before the first chunk of a matched streaming
    *  response. Compiles to a delay rule gated to `chunkIndex === 0`. */
@@ -502,6 +519,9 @@ export interface AiConfig {
   /** When true, the compiler annotates emitted drop rules so the streaming
    *  interceptor reconnects (rather than abandons) the dropped stream. */
   reconnectAfterDrop?: boolean;
+  /** Replay a captured stream fixture (optionally mutated) instead of the live
+   *  stream. Compiles to a `replay` directive on the target transport(s). */
+  replay?: AiReplayConfig;
   /** Which streaming transport(s) to target. Default `'auto'`. */
   transport?: AiTransport;
 }
