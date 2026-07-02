@@ -158,6 +158,24 @@ describe('Zod schema: fetch-stream corruption chunkPattern + phase', () => {
     });
     expect(issues.some((i) => i.message.includes('phase must be a kebab-case lifecycle tag'))).toBe(true);
   });
+
+  it('rejects a phase tag combined with the duplicate strategy', () => {
+    const issues = parseExpectIssues({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', strategy: 'duplicate', probability: 1, phase: 'ai:my-tag' }],
+      },
+    });
+    expect(issues.some((i) => i.message.includes("phase is not supported with strategy 'duplicate'"))).toBe(true);
+  });
+
+  it('accepts the duplicate strategy without a phase tag', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', strategy: 'duplicate', probability: 1 }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
 });
 
 describe('Zod schema: ai DSL surface', () => {

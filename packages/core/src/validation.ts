@@ -575,7 +575,15 @@ const buildFetchStreamCorrupt = (p: Policy) =>
         ...groupField,
       }),
       p,
-    ).refine(...countingRefinement),
+    )
+      .refine(...countingRefinement)
+      .refine(
+        (data) => !(data.strategy === 'duplicate' && data.phase !== undefined),
+        {
+          message: "phase is not supported with strategy 'duplicate'; duplicated chunks always emit the canonical ai:chunk-duplicated phase",
+          path: ['phase'],
+        },
+      ),
   );
 
 const buildFetchStreamClose = (p: Policy) =>

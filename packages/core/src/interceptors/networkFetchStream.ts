@@ -365,7 +365,11 @@ function emitReplayStarted(emitter: ChaosEventEmitter, meta: ResponseChaosMeta):
   });
 }
 
-function mutateChunkText(chunk: Uint8Array, strategy: FetchStreamCorruptionStrategy): { out: Uint8Array; binarySkip: boolean } {
+function mutateChunkText(
+  chunk: Uint8Array,
+  strategy: FetchStreamCorruptionStrategy,
+  preDecoded?: string | null,
+): { out: Uint8Array; binarySkip: boolean } {
   if (strategy === 'duplicate') {
     // Emission-level; caller enqueues twice. No text mutation.
     return { out: chunk, binarySkip: false };
@@ -377,11 +381,20 @@ function mutateChunkText(chunk: Uint8Array, strategy: FetchStreamCorruptionStrat
   // misclassified as binary. Streaming chaos consumers that need byte-perfect
   // text reassembly should reach for fetch-stream directly with their own
   // decoder rather than the corruption strategies below.
+  // `preDecoded` reuses the chunkPattern gate's decode of the same bytes:
+  // a string skips the decode, `null` means that decode already failed.
   let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(chunk);
-  } catch {
-    return { out: chunk, binarySkip: true };
+  if (preDecoded !== undefined) {
+    if (preDecoded === null) {
+      return { out: chunk, binarySkip: true };
+    }
+    text = preDecoded;
+  } else {
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(chunk);
+    } catch {
+      return { out: chunk, binarySkip: true };
+    }
   }
   let mutated: string;
   switch (strategy) {
@@ -552,7 +565,7 @@ function wrapChaosBranch(
         if (corruptRule.strategy === 'duplicate') {
           duplicate = true;
         } else {
-          const { out, binarySkip } = mutateChunkText(chunk, corruptRule.strategy);
+          const { out, binarySkip } = mutateChunkText(chunk, corruptRule.strategy, decodedText);
           if (binarySkip) {
             // Binary chunk + text strategy: skip silently with a diagnostic event.
             emitter.emit({

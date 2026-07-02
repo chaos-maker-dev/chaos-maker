@@ -379,9 +379,9 @@ interface FetchStreamCorruptRule {
   probability: number;
   /** Optional lifecycle tag stamped onto the emitted corruption event's
    *  `detail.phase`. Lets rule authors (and presets) surface semantic markers
-   *  such as `ai:tool-call-failed` without a bespoke event type. Ignored by
-   *  the `duplicate` strategy, which keeps its canonical
-   *  `ai:chunk-duplicated` phase. */
+   *  such as `ai:tool-call-failed` without a bespoke event type. Rejected at
+   *  validation time when combined with the `duplicate` strategy, which keeps
+   *  its canonical `ai:chunk-duplicated` phase. */
   phase?: ChaosPhase;
 }
 export type FetchStreamCorruptConfig =
