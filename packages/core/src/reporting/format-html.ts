@@ -104,11 +104,12 @@ ${body}
 </table>`;
 }
 
-function phaseChip(phase: string | null, chunkIndex: number | null): string {
-  if (!phase && chunkIndex === null) return '';
+function phaseChip(phase: string | null, chunkIndex: number | null, mutationIndex: number | null = null): string {
+  if (!phase && chunkIndex === null && mutationIndex === null) return '';
   const chunk = chunkIndex !== null ? `<span class="chunk">chunk ${chunkIndex}</span>` : '';
   const tag = phase ? `<span class="phase">${escapeHtml(phase)}</span>` : '';
-  return `${tag}${chunk}`;
+  const mutation = mutationIndex !== null ? `<span class="chunk">mutation ${mutationIndex}</span>` : '';
+  return `${tag}${chunk}${mutation}`;
 }
 
 function timelineBlock(rows: TimelineEntry[]): string {
@@ -118,7 +119,7 @@ function timelineBlock(rows: TimelineEntry[]): string {
       (entry) => `<li class="${entry.applied ? 'applied' : 'skipped'}">
   <span class="offset">+${entry.offsetMs}ms</span>
   <span class="title">${escapeHtml(entry.title)}</span>
-  ${phaseChip(entry.phase, entry.chunkIndex)}
+  ${phaseChip(entry.phase, entry.chunkIndex, entry.mutationIndex)}
   ${entry.ruleId ? `<span class="rule">rule <code>${escapeHtml(entry.ruleId)}</code></span>` : ''}
 </li>`,
     )
@@ -175,7 +176,7 @@ function connectionsBlock(rows: ConnectionSummary[]): string {
           (e) => `<li class="${e.applied ? 'applied' : 'skipped'}">
   <span class="offset">+${e.offsetMs}ms</span>
   <span class="title">${escapeHtml(e.title)}</span>
-  ${phaseChip(e.phase, e.chunkIndex)}
+  ${phaseChip(e.phase, e.chunkIndex, e.mutationIndex)}
 </li>`,
         )
         .join('\n');

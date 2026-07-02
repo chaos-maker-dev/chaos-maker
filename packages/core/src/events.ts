@@ -182,6 +182,11 @@ export interface ChaosEvent {
      *  fetch-stream chunk events so reporting can compute total bytes
      *  dropped/duplicated without re-reading the stream. */
     chunkBytes?: number;
+    /** Zero-based index into the replay `mutations` array of the mutation
+     *  that caused this event. Set on replay-driven pause/duplicate/truncate
+     *  events so reports can link a mutated chunk back to the exact mutation
+     *  list entry. Absent on live (non-replay) chaos events. */
+    mutationIndex?: number;
   };
 }
 

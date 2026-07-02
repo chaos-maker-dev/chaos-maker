@@ -254,7 +254,14 @@ function emitDrop(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkInde
   });
 }
 
-function emitDelay(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkIndex: number, delayMs: number, bytes: number): void {
+function emitDelay(
+  emitter: ChaosEventEmitter,
+  meta: ResponseChaosMeta,
+  chunkIndex: number,
+  delayMs: number,
+  bytes: number,
+  mutationIndex?: number,
+): void {
   emitter.emit({
     type: 'fetch-stream:chunk-delayed',
     timestamp: Date.now(),
@@ -266,6 +273,7 @@ function emitDelay(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkInd
       delayMs,
       chunkBytes: bytes,
       phase: 'ai:stream-paused',
+      ...(mutationIndex !== undefined ? { mutationIndex } : {}),
     },
   });
 }
@@ -293,7 +301,13 @@ function emitCorrupt(
   });
 }
 
-function emitDuplicate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chunkIndex: number, bytes: number): void {
+function emitDuplicate(
+  emitter: ChaosEventEmitter,
+  meta: ResponseChaosMeta,
+  chunkIndex: number,
+  bytes: number,
+  mutationIndex?: number,
+): void {
   emitter.emit({
     type: 'fetch-stream:chunk-duplicated',
     timestamp: Date.now(),
@@ -304,11 +318,18 @@ function emitDuplicate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, chun
       chunkIndex,
       chunkBytes: bytes,
       phase: 'ai:chunk-duplicated',
+      ...(mutationIndex !== undefined ? { mutationIndex } : {}),
     },
   });
 }
 
-function emitTruncate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, reason: string, chunkIndex: number): void {
+function emitTruncate(
+  emitter: ChaosEventEmitter,
+  meta: ResponseChaosMeta,
+  reason: string,
+  chunkIndex: number,
+  mutationIndex?: number,
+): void {
   emitter.emit({
     type: 'fetch-stream:truncated',
     timestamp: Date.now(),
@@ -319,6 +340,7 @@ function emitTruncate(emitter: ChaosEventEmitter, meta: ResponseChaosMeta, reaso
       chunkIndex,
       reason,
       phase: 'ai:stream-truncated',
+      ...(mutationIndex !== undefined ? { mutationIndex } : {}),
     },
   });
 }
@@ -684,7 +706,15 @@ function buildReplayStream(
       plan.pieces.forEach((piece, i) => {
         if (piece.pauseBeforeMs) {
           schedule(
-            () => emitDelay(emitter, meta, piece.sourceIndex, piece.pauseBeforeMs as number, piece.bytes.byteLength),
+            () =>
+              emitDelay(
+                emitter,
+                meta,
+                piece.sourceIndex,
+                piece.pauseBeforeMs as number,
+                piece.bytes.byteLength,
+                piece.pauseMutationIndex,
+              ),
             piece.emitAtMs - piece.pauseBeforeMs,
           );
         }
@@ -696,12 +726,14 @@ function buildReplayStream(
           } catch {
             return;
           }
-          if (piece.kind === 'duplicate') emitDuplicate(emitter, meta, piece.sourceIndex, piece.bytes.byteLength);
+          if (piece.kind === 'duplicate') {
+            emitDuplicate(emitter, meta, piece.sourceIndex, piece.bytes.byteLength, piece.mutationIndex);
+          }
         }, piece.emitAtMs);
       });
       schedule(() => {
         finished = true;
-        if (plan.truncated) emitTruncate(emitter, meta, 'replay-truncate', lastSourceIndex);
+        if (plan.truncated) emitTruncate(emitter, meta, 'replay-truncate', lastSourceIndex, plan.truncatedBy);
         try {
           controller.close();
         } catch {

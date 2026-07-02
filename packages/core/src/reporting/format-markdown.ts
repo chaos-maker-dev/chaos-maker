@@ -92,7 +92,8 @@ function timelineList(rows: TimelineEntry[]): string {
       const rule = entry.ruleId ? ` (rule ${code(entry.ruleId)})` : '';
       const phase = entry.phase ? ` ${code(entry.phase)}` : '';
       const chunk = entry.chunkIndex !== null ? ` chunk ${entry.chunkIndex}` : '';
-      return `- \`+${entry.offsetMs}ms\` ${inline(entry.title)}${rule}${phase}${chunk}`;
+      const mutation = entry.mutationIndex !== null ? ` (mutation ${entry.mutationIndex})` : '';
+      return `- \`+${entry.offsetMs}ms\` ${inline(entry.title)}${rule}${phase}${chunk}${mutation}`;
     })
     .join('\n');
 }
@@ -125,7 +126,8 @@ function connectionLine(c: ConnectionSummary): string {
       .map((e) => {
         const phase = e.phase ? ` ${code(e.phase)}` : '';
         const chunk = e.chunkIndex !== null ? ` chunk ${e.chunkIndex}` : '';
-        return `- \`+${e.offsetMs}ms\` ${inline(e.title)}${phase}${chunk}`;
+        const mutation = e.mutationIndex !== null ? ` (mutation ${e.mutationIndex})` : '';
+        return `- \`+${e.offsetMs}ms\` ${inline(e.title)}${phase}${chunk}${mutation}`;
       })
       .join('\n'),
   ].join('\n');

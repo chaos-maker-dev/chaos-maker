@@ -86,6 +86,9 @@ export interface TimelineEntry {
   chunkIndex: number | null;
   /** Stable per-connection identifier, when present. */
   connectionId: string | null;
+  /** Index into the replay `mutations` array that caused this event, when the
+   *  event came from a replayed stream mutation. */
+  mutationIndex: number | null;
   title: string;
 }
 
@@ -106,6 +109,8 @@ export interface ConnectionLifecycleEntry {
   applied: boolean;
   phase: string | null;
   chunkIndex: number | null;
+  /** Replay mutation attribution, when present on the event. */
+  mutationIndex: number | null;
   title: string;
 }
 

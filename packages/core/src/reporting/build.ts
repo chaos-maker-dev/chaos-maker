@@ -232,6 +232,7 @@ export function buildChaosReport(
     phase: streamingPhaseOf(event),
     chunkIndex: typeof event.detail?.chunkIndex === 'number' ? event.detail.chunkIndex : null,
     connectionId: typeof event.detail?.connectionId === 'string' ? event.detail.connectionId : null,
+    mutationIndex: typeof event.detail?.mutationIndex === 'number' ? event.detail.mutationIndex : null,
     title: formatStepTitle(event),
   }));
 
@@ -315,6 +316,7 @@ export function buildChaosReport(
       applied: event.applied,
       phase,
       chunkIndex: typeof event.detail?.chunkIndex === 'number' ? event.detail.chunkIndex : null,
+      mutationIndex: typeof event.detail?.mutationIndex === 'number' ? event.detail.mutationIndex : null,
       title: formatStepTitle(event),
     });
   }
