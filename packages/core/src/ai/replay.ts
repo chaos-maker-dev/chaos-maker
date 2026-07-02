@@ -65,7 +65,10 @@ export interface ReplayPiece {
    *  Drivers surface it on emitted events so reports can link a mutated chunk
    *  back to the mutation list entry that caused it. */
   mutationIndex?: number;
-  /** Mutation index of the `delay` that produced `pauseBeforeMs`, when set. */
+  /** Mutation index of the `delay` that produced `pauseBeforeMs`, when set.
+   *  When several `delay` mutations stack on the same chunk boundary the
+   *  duration sums all of them and this attributes the largest contributor
+   *  (earliest in the mutations array on ties). */
   pauseMutationIndex?: number;
 }
 
@@ -316,7 +319,15 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
 
     const shift = delays.reduce((acc, d) => acc + (idx > d.after ? d.ms : 0), 0);
     const pauseBeforeMs = delays.reduce((acc, d) => acc + (d.after === idx - 1 ? d.ms : 0), 0);
-    const pauseSource = delays.find((d) => d.after === idx - 1);
+    // The pause duration sums every delay mutation targeting this boundary,
+    // but events carry a single mutationIndex: attribute to the largest
+    // contributor (earliest in the mutations array on ties).
+    const pauseSource = delays
+      .filter((d) => d.after === idx - 1)
+      .reduce<(typeof delays)[number] | undefined>(
+        (best, d) => (best === undefined || d.ms > best.ms ? d : best),
+        undefined,
+      );
     const emitAt = seg.baseOffsetMs + shift;
 
     let firstOfChunk = true;

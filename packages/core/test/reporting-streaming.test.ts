@@ -86,6 +86,29 @@ describe('buildChaosReport.connections', () => {
     expect(b.truncated).toBe(false);
   });
 
+  it('does not let a resume settle a pause that has not happened yet', () => {
+    const events: ChaosEvent[] = [
+      ev('fetch-stream:lifecycle', true, { url: '/chat', connectionId: CONN_A, chunkIndex: 0, phase: 'ai:stream-resumed' }, 1000),
+      ev('fetch-stream:chunk-delayed', true, { url: '/chat', connectionId: CONN_A, chunkIndex: 1, delayMs: 400, phase: 'ai:stream-paused' }, 1100),
+    ];
+    const report = buildChaosReport(events, { now: FIXED_NOW });
+    const a = report.connections[0]!;
+    expect(a.pauses).toBe(1);
+    expect(a.unresolvedPauses).toBe(1);
+  });
+
+  it('resolves interleaved pause and resume pairs in order', () => {
+    const events: ChaosEvent[] = [
+      ev('fetch-stream:chunk-delayed', true, { url: '/chat', connectionId: CONN_A, chunkIndex: 0, delayMs: 400, phase: 'ai:stream-paused' }, 1000),
+      ev('fetch-stream:lifecycle', true, { url: '/chat', connectionId: CONN_A, chunkIndex: 0, phase: 'ai:stream-resumed' }, 1100),
+      ev('fetch-stream:chunk-delayed', true, { url: '/chat', connectionId: CONN_A, chunkIndex: 2, delayMs: 400, phase: 'ai:stream-paused' }, 1200),
+    ];
+    const report = buildChaosReport(events, { now: FIXED_NOW });
+    const a = report.connections[0]!;
+    expect(a.pauses).toBe(2);
+    expect(a.unresolvedPauses).toBe(1);
+  });
+
   it('flags replayed connections', () => {
     const events = [
       ev('fetch-stream:lifecycle', true, { connectionId: CONN_A, chunkIndex: 0, phase: 'ai:stream-replayed' }, 1000),

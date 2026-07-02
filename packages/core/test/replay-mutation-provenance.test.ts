@@ -52,6 +52,27 @@ describe('applyMutations mutation provenance', () => {
     expect(plan.truncatedBy).toBe(1);
   });
 
+  it('attributes a stacked pause to the largest contributing delay', () => {
+    const plan = applyMutations(FIXTURE, [
+      { type: 'delay', afterChunk: 0, ms: 200 },
+      { type: 'delay', afterChunk: 0, ms: 700 },
+      { type: 'delay', afterChunk: 0, ms: 300 },
+    ]);
+    const paused = plan.pieces.find((p) => p.pauseBeforeMs !== undefined)!;
+    expect(paused.pauseBeforeMs).toBe(1200);
+    expect(paused.pauseMutationIndex).toBe(1);
+  });
+
+  it('breaks pause attribution ties toward the earlier mutation', () => {
+    const plan = applyMutations(FIXTURE, [
+      { type: 'delay', afterChunk: 1, ms: 500 },
+      { type: 'delay', afterChunk: 1, ms: 500 },
+    ]);
+    const paused = plan.pieces.find((p) => p.pauseBeforeMs !== undefined)!;
+    expect(paused.pauseBeforeMs).toBe(1000);
+    expect(paused.pauseMutationIndex).toBe(0);
+  });
+
   it('leaves untouched original pieces unstamped', () => {
     const plan = applyMutations(FIXTURE, [{ type: 'duplicate', chunkIndex: 1 }]);
     const originals = plan.pieces.filter((p) => p.kind === 'original');

@@ -270,7 +270,10 @@ export function buildChaosReport(
     firstOffsetMs: number;
     firstChunkOffsetMs: number | null;
     pauses: number;
-    resumes: number;
+    // Order-aware open-pause counter: a resume only settles a pause that is
+    // currently open, so a resume arriving before any pause never masks a
+    // later pause that stays unresolved (a count diff would).
+    openPauses: number;
     truncated: boolean;
     replayed: boolean;
     entries: ConnectionLifecycleEntry[];
@@ -291,7 +294,7 @@ export function buildChaosReport(
         firstOffsetMs: offsetMs,
         firstChunkOffsetMs: null,
         pauses: 0,
-        resumes: 0,
+        openPauses: 0,
         truncated: false,
         replayed: false,
         entries: [],
@@ -303,8 +306,9 @@ export function buildChaosReport(
       agg.firstChunkOffsetMs = offsetMs;
     } else if (phase === 'ai:stream-paused') {
       agg.pauses++;
+      agg.openPauses++;
     } else if (phase === 'ai:stream-resumed') {
-      agg.resumes++;
+      if (agg.openPauses > 0) agg.openPauses--;
     } else if (phase === 'ai:stream-truncated') {
       agg.truncated = true;
     } else if (phase === 'ai:stream-replayed') {
@@ -328,7 +332,7 @@ export function buildChaosReport(
       events: agg.entries.length,
       firstChunkOffsetMs: agg.firstChunkOffsetMs,
       pauses: agg.pauses,
-      unresolvedPauses: Math.max(0, agg.pauses - agg.resumes),
+      unresolvedPauses: agg.openPauses,
       truncated: agg.truncated,
       replayed: agg.replayed,
       entries: agg.entries,

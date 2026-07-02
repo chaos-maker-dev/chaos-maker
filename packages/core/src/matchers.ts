@@ -299,9 +299,12 @@ export function matcherDetail(rule: object): { matcherName?: string } {
 }
 
 const NETWORK_RULE_CATEGORIES = ['failures', 'latencies', 'aborts', 'corruptions', 'cors'] as const;
-const WEBSOCKET_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
-const SSE_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
-const FETCH_STREAM_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
+// WS, SSE, and fetch-stream share one rule-array shape today; keep distinct
+// names at the use sites so a future divergence is a one-line change.
+const TRANSPORT_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
+const WEBSOCKET_RULE_CATEGORIES = TRANSPORT_RULE_CATEGORIES;
+const SSE_RULE_CATEGORIES = TRANSPORT_RULE_CATEGORIES;
+const FETCH_STREAM_RULE_CATEGORIES = TRANSPORT_RULE_CATEGORIES;
 
 function resolveRulesIn(
   group: Record<string, unknown> | undefined,

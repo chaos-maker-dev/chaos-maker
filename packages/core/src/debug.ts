@@ -15,7 +15,7 @@
 
 import type { ChaosConfig } from './config';
 import type { ChaosDebugStage, ChaosEvent } from './events';
-import { ruleMatcherOrigin } from './matchers';
+import { matcherDetail } from './matchers';
 
 export type { ChaosDebugStage } from './events';
 
@@ -77,13 +77,7 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
     if (!arr) continue;
     arr.forEach((rule, index) => {
       const entry: RuleIdEntry = { ruleType, ruleId: `${ruleType}#${index}` };
-      // Serializable stamp first (survives the page boundary), WeakMap
-      // fallback for node-side rule objects that never crossed one.
-      const stamped = (rule as { matcherName?: unknown }).matcherName;
-      const matcherName =
-        typeof stamped === 'string' && stamped.length > 0
-          ? stamped
-          : ruleMatcherOrigin.get(rule as object);
+      const { matcherName } = matcherDetail(rule as object);
       if (matcherName !== undefined) entry.matcherName = matcherName;
       map.set(rule as object, entry);
     });
