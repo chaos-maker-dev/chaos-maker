@@ -63,6 +63,7 @@ import {
   type ParsedRequestUrl,
 } from '../matchers';
 import type { RuleGroupRegistry } from '../groups';
+import type { CancelableStreamConnection, StreamCancelRegistry } from './streamCancelRegistry';
 
 const RESPONSE_META = new WeakMap<Response, ResponseChaosMeta>();
 const BODY_GETTER_PATCH_MARKER = Symbol.for('chaos-maker.fetch-stream.body-getter');
@@ -782,6 +783,12 @@ export function patchFetchStream(
    *  the target realm's constructor when patching an iframe / shadow realm
    *  so `stop()` restores the getter on the correct prototype. */
   targetResponse?: ResponseCtorLike,
+  /** Present when the user-interaction cancel trigger is armed. Every request
+   *  gets a chaos-owned AbortController merged with the caller's signal and
+   *  registered here, so `cancelAll()` aborts whatever is still in flight.
+   *  Aborting an already-consumed response is a spec-level no-op, which keeps
+   *  registration free of completion tracking. */
+  cancelRegistry?: StreamCancelRegistry,
 ): FetchStreamPatchHandle {
   let running = true;
   const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
@@ -867,6 +874,39 @@ export function patchFetchStream(
         : (input as Request).url;
     const parsedUrl = parseRequestUrl(url);
 
+    // User-interaction cancel support: swap in a chaos-owned AbortController
+    // whose signal mirrors the caller's, register it, and let `cancelAll()`
+    // abort whatever is still streaming at trigger time. The manual merge
+    // (instead of AbortSignal.any) keeps older engines working.
+    let effectiveInit = init;
+    let cancelConnection: CancelableStreamConnection | undefined;
+    if (running && cancelRegistry) {
+      const controller = new AbortController();
+      const callerSignal =
+        init?.signal ??
+        (input && typeof input === 'object' && 'signal' in input
+          ? (input as Request).signal
+          : undefined);
+      if (callerSignal) {
+        if (callerSignal.aborted) {
+          controller.abort();
+        } else {
+          callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+        }
+      }
+      effectiveInit = { ...init, signal: controller.signal };
+      cancelConnection = {
+        transport: 'fetch-stream',
+        url,
+        cancel: () => {
+          if (controller.signal.aborted) return false;
+          controller.abort();
+          return true;
+        },
+      };
+      cancelRegistry.register(cancelConnection);
+    }
+
     // Replay: when a request matches the replay directive, the consumer is
     // driven from the fixture rather than the network. Takes precedence over
     // the per-chunk rules for that request.
@@ -874,8 +914,11 @@ export function patchFetchStream(
       const gate = gateTransportRule(config.replay, url, () => parsedUrl);
       if (gate.proceed) {
         const meta: ResponseChaosMeta = { url, parsedUrl, connectionId: mintConnectionId() };
+        if (cancelConnection) cancelConnection.connectionId = meta.connectionId;
         if (config.replay.blockUpstream ?? true) {
           // Block mode: never touch the network; own the whole Response.
+          // Fixture-driven streams are timer-based and not cancellable via
+          // the abort path, so the cancel registration stays a no-op here.
           return buildReplayResponse(
             config.replay,
             replayPlan,
@@ -886,7 +929,7 @@ export function patchFetchStream(
           );
         }
         // Substitute mode: let the request fire, replace the body on `.body`.
-        const substituteResponse = await originalFetch(input as RequestInfo, init);
+        const substituteResponse = await originalFetch(input as RequestInfo, effectiveInit);
         if (!running) return substituteResponse;
         meta.replayPlan = replayPlan;
         RESPONSE_META.set(substituteResponse, meta);
@@ -894,15 +937,17 @@ export function patchFetchStream(
       }
     }
 
-    const response = await originalFetch(input as RequestInfo, init);
+    const response = await originalFetch(input as RequestInfo, effectiveInit);
     if (!running) return response;
     const matches = urlMatchesAnyRule(config, url, parsedUrl);
     if (!matches.matched) return response;
-    RESPONSE_META.set(response, {
+    const meta: ResponseChaosMeta = {
       url,
       parsedUrl,
       connectionId: mintConnectionId(),
-    });
+    };
+    if (cancelConnection) cancelConnection.connectionId = meta.connectionId;
+    RESPONSE_META.set(response, meta);
     return response;
   };
 

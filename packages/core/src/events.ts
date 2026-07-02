@@ -217,6 +217,11 @@ export interface ChaosEvent {
      *  events so reports can link a mutated chunk back to the exact mutation
      *  list entry. Absent on live (non-replay) chaos events. */
     mutationIndex?: number;
+    /** Transport of the streaming connection a user-interaction trigger acted
+     *  on. Set on `ui:user-cancel` events (whose own `type` classifies as the
+     *  `ui` transport) so reports can attribute the cancel to the connection's
+     *  transport without joining on `connectionId`. */
+    targetTransport?: 'fetch-stream' | 'sse' | 'websocket';
   };
 }
 

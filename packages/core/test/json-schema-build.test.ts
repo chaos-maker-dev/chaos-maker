@@ -33,6 +33,7 @@ describe.skipIf(!existsSync(schemaPath))('JSON schema build artifact', () => {
       'sse',
       'seed',
       'ui',
+      'userInteraction',
       'websocket',
     ].sort();
     expect(props).toEqual(expected);
