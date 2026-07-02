@@ -33,6 +33,7 @@ const countingFields = {
   onNth: positiveInt.optional(),
   everyNth: positiveInt.optional(),
   afterN: z.number().int().min(0).optional(),
+  firstN: positiveInt.optional(),
 };
 
 /** Optional `group` field shared by every rule type. */
@@ -40,12 +41,12 @@ const groupField = {
   group: z.string().trim().min(1, 'group must not be empty').optional(),
 };
 
-const mutuallyExclusiveCounting = (data: { onNth?: number; everyNth?: number; afterN?: number }) =>
-  [data.onNth, data.everyNth, data.afterN].filter((v) => v !== undefined).length <= 1;
+const mutuallyExclusiveCounting = (data: { onNth?: number; everyNth?: number; afterN?: number; firstN?: number }) =>
+  [data.onNth, data.everyNth, data.afterN, data.firstN].filter((v) => v !== undefined).length <= 1;
 
 const countingRefinement = [
   mutuallyExclusiveCounting,
-  { message: 'Only one of onNth, everyNth, or afterN may be set on a single rule' },
+  { message: 'Only one of onNth, everyNth, afterN, or firstN may be set on a single rule' },
 ] as const;
 
 const graphqlOperationMatcher = z.union([
