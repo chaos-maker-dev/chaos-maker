@@ -23,6 +23,11 @@ function streamChat(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const n = Math.max(1, Math.min(50, Number(url.searchParams.get('n') || 5)));
   const intervalMs = Math.max(0, Math.min(2000, Number(url.searchParams.get('intervalMs') || 60)));
+  // `toolcall=1` swaps the third message for a tool-call payload line, the
+  // wire marker chat backends emit when the model requests a function call.
+  // Lets streaming tests target content-matched chaos at the structured
+  // payload while prose lines stream through untouched.
+  const toolcall = url.searchParams.get('toolcall') === '1';
 
   // No Content-Length: Node streams the body with chunked framing, matching
   // how a real chat backend delivers tokens. Consumers must not assert on raw
@@ -43,7 +48,11 @@ function streamChat(req, res) {
       return;
     }
     try {
-      res.write(`chunk-${i}\n`);
+      if (toolcall && i === 2) {
+        res.write('{"tool_calls":[{"id":"call_1","name":"lookup"}]}\n');
+      } else {
+        res.write(`chunk-${i}\n`);
+      }
     } catch {
       return;
     }

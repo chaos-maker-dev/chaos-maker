@@ -142,12 +142,12 @@ const AI_TOOL_CALL_FAILS: PresetConfigSlice = {
 
 // 429 on the first two matching requests, success from the third onward.
 // Exercises client backoff/retry paths the way provider rate limiting does.
+// A single firstN rule, NOT two onNth rules: failure evaluation stops at the
+// first applied rule per request, so a second onNth rule's counter would not
+// advance on requests the first rule already failed.
 const AI_RETRY_LOOP: PresetConfigSlice = {
   network: {
-    failures: [
-      { urlPattern: MATCH_ALL_URLS, statusCode: 429, probability: 1.0, onNth: 1 },
-      { urlPattern: MATCH_ALL_URLS, statusCode: 429, probability: 1.0, onNth: 2 },
-    ],
+    failures: [{ urlPattern: MATCH_ALL_URLS, statusCode: 429, probability: 1.0, firstN: 2 }],
   },
 };
 

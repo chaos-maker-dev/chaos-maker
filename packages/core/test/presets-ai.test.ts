@@ -56,12 +56,11 @@ describe('AI streaming presets: full pipeline expansion', () => {
     expect((rule.chunkPattern as RegExp).test('{"tool_use":{}}')).toBe(true);
   });
 
-  it('expands aiRetryLoop into two counted 429 failure rules', () => {
+  it('expands aiRetryLoop into a single firstN 429 failure rule', () => {
     const config = prepareChaosConfig({ presets: ['aiRetryLoop'] } as ChaosConfig);
     const failures = config.network!.failures!;
-    expect(failures).toHaveLength(2);
-    expect(failures.map((f) => f.onNth)).toEqual([1, 2]);
-    expect(failures.every((f) => f.statusCode === 429 && f.probability === 1)).toBe(true);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ statusCode: 429, probability: 1, firstN: 2 });
   });
 
   it('expands aiReconnectAfterDrop into fetch-stream and sse close rules', () => {
