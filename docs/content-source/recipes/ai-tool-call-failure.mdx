@@ -1,0 +1,96 @@
+---
+title: Break Tool-Call Rendering Mid-Stream
+description: Corrupt only the streamed chunks that carry tool or function-call payloads and assert the chat UI degrades gracefully.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+When a model requests a tool call, the structured payload rides the same stream as prose chunks. A malformed tool-call payload is a classic production incident: the prose renders fine, then the tool-call card throws or renders raw JSON. The `ai-tool-call-fails` preset reproduces exactly that.
+
+## What the preset does
+
+`ai-tool-call-fails` adds one fetch-stream corruption rule that matches chunk CONTENT: any chunk whose decoded text contains a tool-call wire marker (`"tool_calls"` for OpenAI, `"tool_use"` for Anthropic, `"function_call"` for legacy clients) is mutated with the `malformed-json` strategy. Prose chunks stream through untouched. The corruption event is tagged `phase: 'ai:tool-call-failed'` so it stands out in the chaos log and report output.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { injectChaos, getChaosLog } from '@chaos-maker/playwright';
+
+test('tool-call card falls back when the payload breaks mid-stream', async ({ page }) => {
+  await injectChaos(page, { presets: ['ai-tool-call-fails'], seed: 42 });
+
+  await page.goto('/chat');
+  await page.getByRole('textbox').fill('What is the weather in Kochi?');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  // Prose still streams in.
+  await expect(page.locator('[data-testid="assistant-message"]')).toContainText('weather');
+  // The tool-call card must degrade, not crash the message list.
+  await expect(page.locator('[data-testid="tool-call-error"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  const toolCallFailures = log.filter(
+    (e) => e.type === 'fetch-stream:chunk-corrupted' && e.detail.phase === 'ai:tool-call-failed',
+  );
+  expect(toolCallFailures.length).toBeGreaterThan(0);
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+import { injectChaos, getChaosLog } from '@chaos-maker/cypress';
+
+it('tool-call card falls back when the payload breaks mid-stream', () => {
+  injectChaos({ presets: ['ai-tool-call-fails'], seed: 42 });
+
+  cy.visit('/chat');
+  cy.get('[data-testid="prompt-input"]').type('What is the weather in Kochi?');
+  cy.contains('button', 'Send').click();
+
+  cy.get('[data-testid="assistant-message"]').should('contain.text', 'weather');
+  cy.get('[data-testid="tool-call-error"]').should('be.visible');
+
+  getChaosLog().then((log) => {
+    const toolCallFailures = log.filter(
+      (e) => e.type === 'fetch-stream:chunk-corrupted' && e.detail.phase === 'ai:tool-call-failed',
+    );
+    expect(toolCallFailures.length).to.be.greaterThan(0);
+  });
+});
+```
+
+  </TabItem>
+</Tabs>
+
+## Targeting your own markers
+
+The preset covers the common provider wire formats. If your backend uses a custom envelope, write the rule directly with `chunkPattern`:
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  fetchStream: {
+    corruptions: [
+      {
+        urlPattern: '/api/chat',
+        chunkPattern: /"kind":"tool-invocation"/,
+        strategy: 'malformed-json',
+        probability: 1,
+        phase: 'ai:tool-call-failed',
+      },
+    ],
+  },
+});
+```
+
+`chunkPattern` accepts a string (case-sensitive substring containment) or a RegExp (`g` and `y` flags are rejected at validation time). It matches the decoded UTF-8 text of each chunk and combines with `chunkIndex` when both are set. Binary chunks never match; the first binary skip per connection emits a diagnostic event with `applied: false` and `reason: 'binary-chunk'`.
+
+## What to assert
+
+- The message list survives: prose before and after the broken payload still renders.
+- The tool-call UI degrades explicitly (error card, retry affordance), not silently.
+- The chaos log carries at least one `fetch-stream:chunk-corrupted` event with `phase: 'ai:tool-call-failed'`, proving the corruption hit the structured payload and not a prose chunk.

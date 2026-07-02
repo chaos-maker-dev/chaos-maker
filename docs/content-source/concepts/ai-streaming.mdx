@@ -90,6 +90,25 @@ await injectChaos(page, {
 
 Rule arrays support per-chunk `chunkIndex` targeting and the same `matcher` / counting / group fields as every other transport rule.
 
+Corruption rules additionally accept two content-level fields:
+
+- `chunkPattern` matches the decoded UTF-8 text of each chunk: a string matches by case-sensitive substring containment, a RegExp via `.test()` (`g`/`y` flags rejected at validation time). Combines with `chunkIndex` when both are set. Binary chunks never match; the first binary skip per connection emits an `applied: false` diagnostic with `reason: 'binary-chunk'`.
+- `phase` stamps a lifecycle tag (`ai:` or `user:` namespace, kebab-case) onto the emitted corruption event, e.g. `phase: 'ai:tool-call-failed'`. The `duplicate` strategy keeps its canonical `ai:chunk-duplicated` phase and ignores the tag.
+
+```typescript
+corruptions: [
+  {
+    urlPattern: '/chat',
+    chunkPattern: /"(tool_calls|tool_use)"/,
+    strategy: 'malformed-json',
+    probability: 1,
+    phase: 'ai:tool-call-failed',
+  },
+],
+```
+
+The [`ai-tool-call-fails` preset](/concepts/presets/#ai-streaming-presets) packages this rule with the common provider markers.
+
 ## Cypress note
 
 Cypress fetch-stream chaos installs the page-injected `fetch` wrapper at `cy.visit` → `onBeforeLoad`, not via `cy.intercept`, because `cy.intercept` cannot stream chunks back to the consumer individually. This matches the existing core install path; no adapter API changes apply.

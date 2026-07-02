@@ -44,6 +44,27 @@ Pick presets the way engineers describe scenarios - flaky backend, bad mobile ne
 | `degradedUi`            |                                     | ui                | Disable buttons (20%) and hide links (10%).                             |
 | `unreliableWebSocket`   | `websocket-instability`             | websocket         | 10% drops, 500ms inbound delays, 5% truncations.                        |
 | `unreliableEventStream` | `realtime-lag`                      | sse               | 5% drops, 200ms delays, 2% close-after-2s on every stream.              |
+| `aiSlowFirstChunk`      | `ai-slow-first-chunk`               | fetch-stream, sse, websocket | First streamed chunk held for 3000ms. Smoke-test typing indicators and skeleton states. |
+| `aiStreamPaused`        | `ai-stream-paused`                  | fetch-stream, sse, websocket | Stream stalls for 5000ms after chunk 10, then resumes.                  |
+| `aiStreamTruncated`     | `ai-stream-truncated`               | fetch-stream, sse, websocket | Stream cut after chunk 20. Assert partial-response handling.            |
+| `aiToolCallFails`       | `ai-tool-call-fails`                | fetch-stream      | Chunks carrying tool/function-call wire markers (`tool_calls`, `tool_use`, `function_call`) arrive as malformed JSON, tagged `ai:tool-call-failed`. |
+| `aiRetryLoop`           | `ai-retry-loop`                     | network           | 429 on the first two matching requests, success from the third. Exercises backoff and retry UI. |
+| `aiReconnectAfterDrop`  | `ai-reconnect-after-drop`           | fetch-stream, sse | Stream closes early (after chunk 5, or 3s for SSE). Assert the app reconnects or resumes. |
+
+### AI streaming presets
+
+The `ai*` presets reproduce the failure modes chat and assistant interfaces hit in production. The delay, pause, and truncate presets are generated from the same compiler the [`ai` shorthand](./ai-streaming) uses, so `presets: ['ai-slow-first-chunk']` and `ai: { firstChunkDelayMs: 3000 }` produce identical rules; the preset form composes with other presets and needs no extra config. All of them apply to every URL, so scope your test to the chat call or pair the preset with app-side assertions that tolerate chaos on secondary requests.
+
+```typescript
+await injectChaos(page, {
+  presets: ['ai-slow-first-chunk'],
+  seed: 42,
+});
+```
+
+- `aiToolCallFails` targets chunk CONTENT: only chunks whose decoded text matches the tool-call marker pattern are corrupted, so prose renders normally while the structured payload breaks mid-stream. The corruption event carries `phase: 'ai:tool-call-failed'` for report tooling.
+- `aiRetryLoop` uses `firstN: 2` counting, so exactly the first two matching requests fail regardless of how many retries the app makes.
+- For markdown/code-fence breakage, use a [stream replay fixture with a split mutation](../recipes/replay-broken-markdown) instead of a preset; splitting needs a captured fixture.
 
 ### Suggested assertions
 
@@ -53,8 +74,11 @@ The presets fire deterministically given a fixed `seed`. Existence-check, not ra
 - `checkout-degraded` - every rule on `/checkout` and `/api/payments` is probabilistic (30% latency, 5% / 10% failure), so a single request is not enough to assert against. Issue a small fixed batch (e.g. 20 sequential requests across `/checkout` and `/api/payments`) under a fixed `seed`, then call `getChaosLog()` and assert at least one event whose `detail.url` matches `/checkout` or `/api/payments` (any of `network:latency`, `network:failure`).
 - `unreliableWebSocket` - chaos log should contain at least one `websocket:delay` event with `applied: true`.
 - `unreliableEventStream` - chaos log should contain at least one `sse:delay` or `sse:close` event.
+- `aiSlowFirstChunk` - first-chunk latency measured from before the fetch call should exceed 3000ms, and the log should contain an applied `fetch-stream:chunk-delayed` event.
+- `aiToolCallFails` - the log should contain an applied `fetch-stream:chunk-corrupted` event with `detail.phase === 'ai:tool-call-failed'`.
+- `aiRetryLoop` - exactly two applied `network:failure` events with `statusCode: 429`, then a clean response.
 
-Kebab-case aliases (`slow-api`, `flaky-api`, `api-flaky`, `offline-mode`, `high-latency`, `mobile-3g`, `checkout-degraded`, `websocket-instability`, `realtime-lag`) are registry-only. They resolve via `presets: ['mobile-3g']` and `new PresetRegistry().get('mobile-3g')`. They are NOT keys on the legacy `presets` record export - `presets['mobile-3g']` is `undefined` by design. Use the camelCase key (`presets.mobileThreeG`) when reading from the record.
+Kebab-case aliases (`slow-api`, `flaky-api`, `api-flaky`, `offline-mode`, `high-latency`, `mobile-3g`, `checkout-degraded`, `websocket-instability`, `realtime-lag`, and the `ai-*` names) are registry-only. They resolve via `presets: ['mobile-3g']` and `new PresetRegistry().get('mobile-3g')`. They are NOT keys on the legacy `presets` record export - `presets['mobile-3g']` is `undefined` by design. Use the camelCase key (`presets.mobileThreeG`) when reading from the record.
 
 ## Custom presets
 
