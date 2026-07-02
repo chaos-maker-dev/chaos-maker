@@ -25,6 +25,12 @@ const RULE_TYPE_BY_CATEGORY_KEY: Record<string, Partial<Record<string, RuleType>
     corruptions: 'sse.corrupt',
     closes: 'sse.close',
   },
+  fetchStream: {
+    drops: 'fetch-stream.drop',
+    delays: 'fetch-stream.delay',
+    corruptions: 'fetch-stream.corrupt',
+    closes: 'fetch-stream.close',
+  },
 };
 
 const PROFILE_PATH_PREFIXES = new Set(['profile', 'profileOverrides', 'customProfiles']);

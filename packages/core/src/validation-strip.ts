@@ -13,10 +13,34 @@ const SHARED_RULE_FIELDS = [
   'urlPattern',
   'methods',
   'graphqlOperation',
+  'hostname',
+  'queryParams',
+  'requestHeaders',
+  'resourceTypes',
+  'matcher',
+  'matcherName',
   'probability',
   'onNth',
   'everyNth',
   'afterN',
+  'firstN',
+  'group',
+];
+
+/** Matcher + counting fields shared by every WebSocket / SSE / fetch-stream
+ *  rule. Mirrors `TransportRuleMatchers` (incl. the engine-stamped
+ *  `matcherName`) plus the four counting options. */
+const TRANSPORT_RULE_FIELDS = [
+  'urlPattern',
+  'hostname',
+  'queryParams',
+  'matcher',
+  'matcherName',
+  'probability',
+  'onNth',
+  'everyNth',
+  'afterN',
+  'firstN',
   'group',
 ];
 
@@ -28,21 +52,20 @@ const NETWORK_CORS_KEYS = new Set(SHARED_RULE_FIELDS);
 
 const UI_ASSAULT_KEYS = new Set(['selector', 'action', 'probability', 'group']);
 
-const WS_DROP_KEYS = new Set(['urlPattern', 'direction', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const WS_DELAY_KEYS = new Set(['urlPattern', 'direction', 'delayMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const WS_CORRUPT_KEYS = new Set(['urlPattern', 'direction', 'strategy', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const WS_CLOSE_KEYS = new Set(['urlPattern', 'code', 'reason', 'afterMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const WS_DROP_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'direction']);
+const WS_DELAY_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'direction', 'delayMs']);
+const WS_CORRUPT_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'direction', 'strategy']);
+const WS_CLOSE_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'code', 'reason', 'afterMs']);
 
-const SSE_DROP_KEYS = new Set(['urlPattern', 'eventType', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const SSE_DELAY_KEYS = new Set(['urlPattern', 'eventType', 'delayMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const SSE_CORRUPT_KEYS = new Set(['urlPattern', 'eventType', 'strategy', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const SSE_CLOSE_KEYS = new Set(['urlPattern', 'afterMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const SSE_DROP_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'eventType']);
+const SSE_DELAY_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'eventType', 'delayMs']);
+const SSE_CORRUPT_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'eventType', 'strategy']);
+const SSE_CLOSE_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'afterMs']);
 
-const FS_TRANSPORT_MATCHERS = ['urlPattern', 'hostname', 'queryParams', 'matcher'];
-const FS_DROP_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const FS_DELAY_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'delayMs', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const FS_CORRUPT_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'chunkIndex', 'strategy', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
-const FS_CLOSE_KEYS = new Set([...FS_TRANSPORT_MATCHERS, 'afterMs', 'afterChunk', 'probability', 'onNth', 'everyNth', 'afterN', 'group']);
+const FS_DROP_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'chunkIndex']);
+const FS_DELAY_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'chunkIndex', 'delayMs']);
+const FS_CORRUPT_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'chunkIndex', 'chunkPattern', 'strategy', 'phase']);
+const FS_CLOSE_KEYS = new Set([...TRANSPORT_RULE_FIELDS, 'afterMs', 'afterChunk']);
 
 /** `replay` is a single directive object, not a rule array; strip preserves it
  *  as-is (the strict pass validates its internals). Listed so the category
