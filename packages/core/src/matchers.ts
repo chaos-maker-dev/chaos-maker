@@ -285,9 +285,15 @@ export const ruleMatcherOrigin = new WeakMap<object, string>();
 /** Pull the matcher-origin name for a rule (if any) into a spreadable detail
  *  fragment. Interceptor emit sites use this to enrich chaos events with
  *  `matcherName` without adding a rule-aware `emit()` overload to the
- *  emitter. Returns an empty object when the rule did not come from a named
- *  matcher; the spread is then a no-op. */
+ *  emitter. Reads the serializable `matcherName` stamp first (survives the
+ *  JSON page boundary and `cloneValue`), then falls back to the node-side
+ *  WeakMap for rule objects that never crossed a boundary. Returns an empty
+ *  object when the rule did not come from a named matcher. */
 export function matcherDetail(rule: object): { matcherName?: string } {
+  const stamped = (rule as { matcherName?: unknown }).matcherName;
+  if (typeof stamped === 'string' && stamped.length > 0) {
+    return { matcherName: stamped };
+  }
   const name = ruleMatcherOrigin.get(rule);
   return name !== undefined ? { matcherName: name } : {};
 }
@@ -295,6 +301,7 @@ export function matcherDetail(rule: object): { matcherName?: string } {
 const NETWORK_RULE_CATEGORIES = ['failures', 'latencies', 'aborts', 'corruptions', 'cors'] as const;
 const WEBSOCKET_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
 const SSE_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
+const FETCH_STREAM_RULE_CATEGORIES = ['drops', 'delays', 'corruptions', 'closes'] as const;
 
 function resolveRulesIn(
   group: Record<string, unknown> | undefined,
@@ -322,6 +329,11 @@ function resolveRulesIn(
       }
       delete rule.matcher;
       ruleMatcherOrigin.set(rule, ref);
+      // Serializable twin of the WeakMap entry: survives JSON transport into
+      // the page realm and `cloneValue`, so in-page debug attribution keeps
+      // the matcher name. The WeakMap stays for rule objects consumed
+      // node-side without a boundary crossing.
+      rule.matcherName = ref;
     }
   }
 }
@@ -347,6 +359,7 @@ export function resolveNamedMatchers(
   resolveRulesIn(out.network as Record<string, unknown> | undefined, NETWORK_RULE_CATEGORIES, registry);
   resolveRulesIn(out.websocket as Record<string, unknown> | undefined, WEBSOCKET_RULE_CATEGORIES, registry);
   resolveRulesIn(out.sse as Record<string, unknown> | undefined, SSE_RULE_CATEGORIES, registry);
+  resolveRulesIn(out.fetchStream as Record<string, unknown> | undefined, FETCH_STREAM_RULE_CATEGORIES, registry);
   return out;
 }
 

@@ -104,6 +104,11 @@ const matcherInlineFieldNames = [
   'resourceTypes',
 ] as const;
 
+/** Engine-stamped attribution recorded at matcher resolution. Accepted on
+ *  input so a resolved config re-validates cleanly in the page realm; it is
+ *  metadata, never a matcher field (excluded from the inline-field tallies). */
+const matcherNameStamp = z.string().trim().min(1, 'matcherName must not be empty').optional();
+
 const networkMatcherFields = {
   urlPattern: z.string().min(1, 'urlPattern must not be empty').optional(),
   methods: z.array(z.string()).optional(),
@@ -113,6 +118,7 @@ const networkMatcherFields = {
   requestHeaders: requestHeaderMap.optional(),
   resourceTypes: resourceTypesField.optional(),
   matcher: matcherReference.optional(),
+  matcherName: matcherNameStamp,
 };
 
 const transportMatcherInlineFieldNames = ['urlPattern', 'hostname', 'queryParams'] as const;
@@ -122,6 +128,7 @@ const transportMatcherFields = {
   hostname: hostnameMatcher.optional(),
   queryParams: queryParamMap.optional(),
   matcher: matcherReference.optional(),
+  matcherName: matcherNameStamp,
 };
 
 /** Enforce: rule has EITHER `matcher: 'name'` (and zero inline matcher fields)

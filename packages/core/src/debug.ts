@@ -58,6 +58,10 @@ const RULE_TYPE_BY_ARRAY: ReadonlyArray<{
   { pick: (c) => c.sse?.delays, ruleType: 'sse-delay' },
   { pick: (c) => c.sse?.corruptions, ruleType: 'sse-corrupt' },
   { pick: (c) => c.sse?.closes, ruleType: 'sse-close' },
+  { pick: (c) => c.fetchStream?.drops, ruleType: 'fetch-stream-drop' },
+  { pick: (c) => c.fetchStream?.delays, ruleType: 'fetch-stream-delay' },
+  { pick: (c) => c.fetchStream?.corruptions, ruleType: 'fetch-stream-corrupt' },
+  { pick: (c) => c.fetchStream?.closes, ruleType: 'fetch-stream-close' },
 ];
 
 /**
@@ -73,7 +77,13 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
     if (!arr) continue;
     arr.forEach((rule, index) => {
       const entry: RuleIdEntry = { ruleType, ruleId: `${ruleType}#${index}` };
-      const matcherName = ruleMatcherOrigin.get(rule as object);
+      // Serializable stamp first (survives the page boundary), WeakMap
+      // fallback for node-side rule objects that never crossed one.
+      const stamped = (rule as { matcherName?: unknown }).matcherName;
+      const matcherName =
+        typeof stamped === 'string' && stamped.length > 0
+          ? stamped
+          : ruleMatcherOrigin.get(rule as object);
       if (matcherName !== undefined) entry.matcherName = matcherName;
       map.set(rule as object, entry);
     });
