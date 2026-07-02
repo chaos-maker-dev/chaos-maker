@@ -6,9 +6,14 @@ import { classifyTransport } from './transport';
 import type {
   BuildChaosReportOptions,
   ChaosReport,
+  ConnectionLifecycleEntry,
+  ConnectionSummary,
   FailureSummary,
+  PhaseSummary,
   RuleHitSummary,
   SkipReasonSummary,
+  StreamingReadinessSummary,
+  StreamingTransportReadiness,
   TimelineEntry,
   TransportKind,
   TransportSummary,
@@ -34,8 +39,18 @@ function isOutcomeEvent(event: ChaosEvent): boolean {
     t.startsWith('network:') ||
     t.startsWith('websocket:') ||
     t.startsWith('sse:') ||
+    t.startsWith('fetch-stream:') ||
     t.startsWith('ui:')
   );
+}
+
+/** Streaming phase tags live in the `ai:` / `user:` namespaces. Engine
+ *  lifecycle markers (`engine:start`, `sw:install`, ...) share the `phase`
+ *  detail slot but are not streaming phases. */
+function streamingPhaseOf(event: ChaosEvent): string | null {
+  const phase = event.detail?.phase;
+  if (typeof phase !== 'string') return null;
+  return phase.startsWith('ai:') || phase.startsWith('user:') ? phase : null;
 }
 
 function isSkipDebugEvent(event: ChaosEvent): event is ChaosEvent & {
@@ -214,8 +229,153 @@ export function buildChaosReport(
     ruleId: event.detail?.ruleId ?? null,
     ruleType: event.detail?.ruleType ?? null,
     matcherName: event.detail?.matcherName ?? null,
+    phase: streamingPhaseOf(event),
+    chunkIndex: typeof event.detail?.chunkIndex === 'number' ? event.detail.chunkIndex : null,
+    connectionId: typeof event.detail?.connectionId === 'string' ? event.detail.connectionId : null,
     title: formatStepTitle(event),
   }));
+
+  // Streaming phase aggregates, keyed by (phase, transport).
+  const phaseMap = new Map<string, PhaseSummary>();
+  for (const event of events) {
+    const phase = streamingPhaseOf(event);
+    if (!phase) continue;
+    const kind = classifyTransport(event);
+    if (!kind) continue;
+    const key = JSON.stringify([phase, kind]);
+    let agg = phaseMap.get(key);
+    if (!agg) {
+      agg = { phase, transport: kind, count: 0, applied: 0 };
+      phaseMap.set(key, agg);
+    }
+    agg.count++;
+    if (event.applied) agg.applied++;
+  }
+  const phases: PhaseSummary[] = Array.from(phaseMap.values()).sort(
+    (a, b) =>
+      b.count - a.count ||
+      cmpString(a.phase, b.phase) ||
+      cmpString(a.transport, b.transport),
+  );
+
+  // Per-connection lifecycle timelines. Any event carrying a connectionId
+  // joins its connection's ordered entry list; phase markers derive the
+  // summary flags. Pause resolution is per connection: a pause is unresolved
+  // when no later resume event exists on the same connection.
+  type ConnectionAggregate = {
+    connectionId: string;
+    transport: TransportKind;
+    url: string | null;
+    firstOffsetMs: number;
+    firstChunkOffsetMs: number | null;
+    pauses: number;
+    resumes: number;
+    truncated: boolean;
+    replayed: boolean;
+    entries: ConnectionLifecycleEntry[];
+  };
+  const connectionMap = new Map<string, ConnectionAggregate>();
+  for (const event of events) {
+    const connectionId = event.detail?.connectionId;
+    if (typeof connectionId !== 'string') continue;
+    const kind = classifyTransport(event);
+    if (!kind) continue;
+    const offsetMs = event.timestamp - baseTs;
+    let agg = connectionMap.get(connectionId);
+    if (!agg) {
+      agg = {
+        connectionId,
+        transport: kind,
+        url: event.detail?.url ?? null,
+        firstOffsetMs: offsetMs,
+        firstChunkOffsetMs: null,
+        pauses: 0,
+        resumes: 0,
+        truncated: false,
+        replayed: false,
+        entries: [],
+      };
+      connectionMap.set(connectionId, agg);
+    }
+    const phase = streamingPhaseOf(event);
+    if (phase === 'ai:first-chunk' && agg.firstChunkOffsetMs === null) {
+      agg.firstChunkOffsetMs = offsetMs;
+    } else if (phase === 'ai:stream-paused') {
+      agg.pauses++;
+    } else if (phase === 'ai:stream-resumed') {
+      agg.resumes++;
+    } else if (phase === 'ai:stream-truncated') {
+      agg.truncated = true;
+    } else if (phase === 'ai:stream-replayed') {
+      agg.replayed = true;
+    }
+    agg.entries.push({
+      offsetMs,
+      type: event.type,
+      applied: event.applied,
+      phase,
+      chunkIndex: typeof event.detail?.chunkIndex === 'number' ? event.detail.chunkIndex : null,
+      title: formatStepTitle(event),
+    });
+  }
+  const connections: ConnectionSummary[] = Array.from(connectionMap.values())
+    .map((agg) => ({
+      connectionId: agg.connectionId,
+      transport: agg.transport,
+      url: agg.url,
+      events: agg.entries.length,
+      firstChunkOffsetMs: agg.firstChunkOffsetMs,
+      pauses: agg.pauses,
+      unresolvedPauses: Math.max(0, agg.pauses - agg.resumes),
+      truncated: agg.truncated,
+      replayed: agg.replayed,
+      entries: agg.entries,
+    }))
+    .sort((a, b) => {
+      const aFirst = connectionMap.get(a.connectionId)!.firstOffsetMs;
+      const bFirst = connectionMap.get(b.connectionId)!.firstOffsetMs;
+      return aFirst - bFirst || cmpString(a.connectionId, b.connectionId);
+    });
+
+  // Readiness scorecard: pure counts over the connection summaries. `null`
+  // when the run streamed nothing, so non-streaming reports stay compact.
+  let streamingReadiness: StreamingReadinessSummary | null = null;
+  if (connections.length > 0) {
+    const byTransportMap = new Map<TransportKind, StreamingTransportReadiness>();
+    let truncated = 0;
+    let replayed = 0;
+    let unresolvedPauses = 0;
+    let completedWithoutInterruption = 0;
+    for (const conn of connections) {
+      let slice = byTransportMap.get(conn.transport);
+      if (!slice) {
+        slice = { kind: conn.transport, connections: 0, truncated: 0, replayed: 0, unresolvedPauses: 0 };
+        byTransportMap.set(conn.transport, slice);
+      }
+      slice.connections++;
+      if (conn.truncated) {
+        truncated++;
+        slice.truncated++;
+      }
+      if (conn.replayed) {
+        replayed++;
+        slice.replayed++;
+      }
+      unresolvedPauses += conn.unresolvedPauses;
+      slice.unresolvedPauses += conn.unresolvedPauses;
+      if (!conn.truncated && conn.unresolvedPauses === 0) completedWithoutInterruption++;
+    }
+    streamingReadiness = {
+      connections: connections.length,
+      completedWithoutInterruption,
+      truncated,
+      replayed,
+      unresolvedPauses,
+      byTransport: Array.from(byTransportMap.values()).sort(
+        (a, b) => b.connections - a.connections || cmpString(a.kind, b.kind),
+      ),
+    };
+  }
 
   return {
     meta: {
@@ -232,6 +392,9 @@ export function buildChaosReport(
     transports,
     skipReasons,
     failures,
+    phases,
+    connections,
+    streamingReadiness,
     timeline,
   };
 }
