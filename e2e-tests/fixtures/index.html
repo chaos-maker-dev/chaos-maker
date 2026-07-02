@@ -77,12 +77,28 @@
     <button id="chat-start-short">Start /chat?n=3</button>
     <button id="chat-start-toolcall">Start /chat?toolcall=1</button>
     <button id="chat-start-retry">Start /chat (retry on 429)</button>
+    <button id="chat-start-slow">Start /chat (slow, 8x1200ms)</button>
+    <button id="chat-start-long">Start /chat (long, 12x300ms)</button>
     <div id="chat-status">idle</div>
     <div id="chat-chunk-count">0</div>
     <div id="chat-message-count">0</div>
     <div id="chat-attempts">0</div>
     <div id="chat-first-chunk-ms"></div>
     <pre id="chat-text"></pre>
+  </section>
+
+  <!-- Human-interaction chaos observability -->
+  <section>
+    <h2>User interaction</h2>
+    <button id="retry-button" data-chaos-retry>Retry</button>
+    <div id="retry-click-count">0</div>
+    <input id="chat-prompt" data-chaos-prompt value="Tell me a story">
+    <div id="prompt-value">Tell me a story</div>
+    <div id="prompt-edit-count">0</div>
+    <div id="visibility-state">visible</div>
+    <div id="visibility-hidden-count">0</div>
+    <div id="focus-state">focused</div>
+    <div id="window-blur-count">0</div>
   </section>
 
   <!-- Server-Sent Events -->
@@ -330,14 +346,16 @@
             setChatChunkCount(chunkCount);
             appendChatText(decoder.decode(result.value, { stream: true }));
             pump();
-          }).catch(function () {
-            setChatStatus('error');
+          }).catch(function (err) {
+            // A user-cancel (AbortError) is expected cleanup, not a failure:
+            // render a distinct state so tests can assert the UI reacted.
+            setChatStatus(err && err.name === 'AbortError' ? 'stopped' : 'error');
             try { reader.releaseLock(); } catch (e) { /* already released */ }
           });
         }
         pump();
-      }).catch(function () {
-        setChatStatus('error');
+      }).catch(function (err) {
+        setChatStatus(err && err.name === 'AbortError' ? 'stopped' : 'error');
       });
     }
 
@@ -401,6 +419,46 @@
     });
     document.getElementById('chat-start-retry').addEventListener('click', function () {
       startChatWithRetry(CHAT_BASE + '/chat', 3);
+    });
+    document.getElementById('chat-start-slow').addEventListener('click', function () {
+      startChat(CHAT_BASE + '/chat?n=8&intervalMs=1200');
+    });
+    document.getElementById('chat-start-long').addEventListener('click', function () {
+      startChat(CHAT_BASE + '/chat?n=12&intervalMs=300');
+    });
+
+    // --- Human-interaction chaos observability ---
+    var retryClicks = 0;
+    document.getElementById('retry-button').addEventListener('click', function () {
+      retryClicks += 1;
+      document.getElementById('retry-click-count').textContent = String(retryClicks);
+    });
+
+    var promptEdits = 0;
+    var promptInput = document.getElementById('chat-prompt');
+    promptInput.addEventListener('input', function () {
+      promptEdits += 1;
+      document.getElementById('prompt-edit-count').textContent = String(promptEdits);
+      document.getElementById('prompt-value').textContent = promptInput.value;
+    });
+
+    var hiddenCount = 0;
+    document.addEventListener('visibilitychange', function () {
+      document.getElementById('visibility-state').textContent = document.visibilityState;
+      if (document.visibilityState === 'hidden') {
+        hiddenCount += 1;
+        document.getElementById('visibility-hidden-count').textContent = String(hiddenCount);
+      }
+    });
+
+    var blurCount = 0;
+    window.addEventListener('blur', function () {
+      document.getElementById('focus-state').textContent = 'blurred';
+      blurCount += 1;
+      document.getElementById('window-blur-count').textContent = String(blurCount);
+    });
+    window.addEventListener('focus', function () {
+      document.getElementById('focus-state').textContent = 'focused';
     });
 
     // --- Server-Sent Events ---
