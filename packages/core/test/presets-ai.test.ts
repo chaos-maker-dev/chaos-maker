@@ -13,12 +13,16 @@ describe('AI streaming presets: registry wiring', () => {
     expect(registry.get('ai-tool-call-fails')).toBe(registry.get('aiToolCallFails'));
     expect(registry.get('ai-retry-loop')).toBe(registry.get('aiRetryLoop'));
     expect(registry.get('ai-reconnect-after-drop')).toBe(registry.get('aiReconnectAfterDrop'));
+    expect(registry.get('ai-mobile-interrupt')).toBe(registry.get('aiMobileInterrupt'));
   });
 
   it('slices are deep-frozen', () => {
     const slice = presets.aiToolCallFails!;
     expect(Object.isFrozen(slice)).toBe(true);
     expect(Object.isFrozen(slice.fetchStream!.corruptions![0])).toBe(true);
+    const mobile = presets.aiMobileInterrupt!;
+    expect(Object.isFrozen(mobile)).toBe(true);
+    expect(Object.isFrozen(mobile.userInteraction!.tabHidden)).toBe(true);
   });
 });
 
@@ -67,6 +71,22 @@ describe('AI streaming presets: full pipeline expansion', () => {
     const config = prepareChaosConfig({ presets: ['ai-reconnect-after-drop'] } as ChaosConfig);
     expect(config.fetchStream!.closes![0]).toMatchObject({ afterChunk: 5, probability: 1 });
     expect(config.sse!.closes![0]).toMatchObject({ afterMs: 3000, probability: 1 });
+  });
+
+  it('expands aiMobileInterrupt into a tab-hidden trigger plus stream drops', () => {
+    const config = prepareChaosConfig({ presets: ['ai-mobile-interrupt'] } as ChaosConfig);
+    expect(config.userInteraction?.tabHidden).toEqual({ afterMs: 1000, durationMs: 3000 });
+    expect(config.fetchStream!.closes![0]).toMatchObject({ afterChunk: 10, probability: 1 });
+    expect(config.sse!.closes![0]).toMatchObject({ afterMs: 4000, probability: 1 });
+  });
+
+  it('user-set userInteraction triggers override aiMobileInterrupt per trigger', () => {
+    const config = prepareChaosConfig({
+      presets: ['ai-mobile-interrupt'],
+      userInteraction: { tabHidden: { afterMs: 500, durationMs: 1000 }, cancelStreamAfterMs: 6000 },
+    } as ChaosConfig);
+    expect(config.userInteraction?.tabHidden).toEqual({ afterMs: 500, durationMs: 1000 });
+    expect(config.userInteraction?.cancelStreamAfterMs).toBe(6000);
   });
 
   it('mixing an AI preset with a classic preset appends both rule sets', () => {

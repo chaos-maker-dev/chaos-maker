@@ -162,6 +162,22 @@ const AI_RECONNECT_AFTER_DROP: PresetConfigSlice = {
   },
 };
 
+// User backgrounds the app mid-generation: the tab reports hidden for 3s
+// while the connection drops shortly after (fetch streams by chunk count,
+// SSE by wall clock). Tests assert the app pauses on visibilitychange and
+// recovers the interrupted stream when the tab returns.
+const AI_MOBILE_INTERRUPT: PresetConfigSlice = {
+  userInteraction: {
+    tabHidden: { afterMs: 1000, durationMs: 3000 },
+  },
+  fetchStream: {
+    closes: [{ urlPattern: MATCH_ALL_URLS, afterChunk: 10, probability: 1.0 }],
+  },
+  sse: {
+    closes: [{ urlPattern: MATCH_ALL_URLS, afterMs: 4000, probability: 1.0 }],
+  },
+};
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -190,6 +206,7 @@ function deepFreeze<T>(value: T): T {
   AI_TOOL_CALL_FAILS,
   AI_RETRY_LOOP,
   AI_RECONNECT_AFTER_DROP,
+  AI_MOBILE_INTERRUPT,
 ].forEach(deepFreeze);
 
 /** All built-in presets including kebab aliases.
@@ -218,6 +235,7 @@ export const BUILT_IN_PRESETS: ReadonlyArray<Preset> = Object.freeze(
     { name: 'aiToolCallFails',       config: AI_TOOL_CALL_FAILS },
     { name: 'aiRetryLoop',           config: AI_RETRY_LOOP },
     { name: 'aiReconnectAfterDrop',  config: AI_RECONNECT_AFTER_DROP },
+    { name: 'aiMobileInterrupt',     config: AI_MOBILE_INTERRUPT },
     { name: 'slow-api',              config: SLOW_NETWORK },
     { name: 'flaky-api',             config: FLAKY_CONNECTION },
     { name: 'api-flaky',             config: FLAKY_CONNECTION },
@@ -233,6 +251,7 @@ export const BUILT_IN_PRESETS: ReadonlyArray<Preset> = Object.freeze(
     { name: 'ai-tool-call-fails',    config: AI_TOOL_CALL_FAILS },
     { name: 'ai-retry-loop',         config: AI_RETRY_LOOP },
     { name: 'ai-reconnect-after-drop', config: AI_RECONNECT_AFTER_DROP },
+    { name: 'ai-mobile-interrupt',   config: AI_MOBILE_INTERRUPT },
   ] as Preset[]).map((p) => Object.freeze(p)),
 );
 
@@ -422,4 +441,5 @@ export const presets: Readonly<Record<string, PresetConfigSlice>> = Object.freez
   aiToolCallFails:       AI_TOOL_CALL_FAILS,
   aiRetryLoop:           AI_RETRY_LOOP,
   aiReconnectAfterDrop:  AI_RECONNECT_AFTER_DROP,
+  aiMobileInterrupt:     AI_MOBILE_INTERRUPT,
 });
