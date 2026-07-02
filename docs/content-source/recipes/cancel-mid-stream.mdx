@@ -1,0 +1,88 @@
+---
+title: Cancel a Response Mid-Stream
+description: Deterministically abort an in-flight AI response and assert the chat UI cleans up instead of hanging.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Users stop generations constantly: the answer drifts off topic, the first chunk takes too long, or they mistyped the prompt. A chat UI that mishandles the resulting `AbortError` shows spinners forever, leaks half-rendered messages, or crashes the message list. The `cancelStreamAfterMs` trigger reproduces the cancel deterministically, without driver gymnastics.
+
+## How it works
+
+When the trigger is armed, every fetch request carries an engine-owned `AbortController` merged with whatever signal the app already passed. At the scheduled time the engine aborts everything still in flight: pending `reader.read()` calls reject with a real `AbortError`, open `EventSource` connections close and dispatch `error`, and WebSockets close. Your app's cancel-handling path runs exactly as it would when a user hits stop.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { injectChaos, getChaosLog } from '@chaos-maker/playwright';
+
+test('chat UI shows the stopped state when the stream is cancelled', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 42,
+    userInteraction: { cancelStreamAfterMs: 3000 },
+  });
+
+  await page.goto('/chat');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  // The response starts streaming, then the cancel lands at 3000ms.
+  await expect(page.locator('[data-testid="assistant-status"]')).toHaveText('stopped');
+  // No stuck spinner, no orphaned partial message.
+  await expect(page.locator('[data-testid="typing-indicator"]')).toBeHidden();
+
+  const log = await getChaosLog(page);
+  const cancels = log.filter((e) => e.type === 'ui:user-cancel' && e.applied);
+  expect(cancels.length).toBeGreaterThan(0);
+  expect(cancels[0].detail.targetTransport).toBe('fetch-stream');
+});
+```
+
+  </TabItem>
+  <TabItem label="Cypress">
+
+```typescript
+import { injectChaos, getChaosLog } from '@chaos-maker/cypress';
+
+it('chat UI shows the stopped state when the stream is cancelled', () => {
+  injectChaos({
+    seed: 42,
+    userInteraction: { cancelStreamAfterMs: 3000 },
+  });
+
+  cy.visit('/chat');
+  cy.contains('button', 'Send').click();
+
+  cy.get('[data-testid="assistant-status"]').should('have.text', 'stopped');
+  cy.get('[data-testid="typing-indicator"]').should('not.be.visible');
+
+  getChaosLog().then((log) => {
+    const cancels = log.filter((e) => e.type === 'ui:user-cancel' && e.applied);
+    expect(cancels.length).to.be.greaterThan(0);
+  });
+});
+```
+
+  </TabItem>
+</Tabs>
+
+## The classic incident: gave up before the first chunk
+
+Compose the cancel with a slow first chunk to reproduce the most common streaming complaint, a user who cancels because nothing rendered:
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  ai: { firstChunkDelayMs: 3000 },
+  userInteraction: { cancelStreamAfterMs: 1500 },
+});
+```
+
+Assert that the UI returns to its idle state and the send button re-enables. The chaos log records the cancel as `applied: false` with `reason: 'no-active-streams'` only when nothing was in flight, so a passing test proves the cancel actually hit the stream.
+
+## What to assert
+
+1. **A visible stopped state.** The UI distinguishes a user cancel from a network error.
+2. **Cleanup.** Typing indicators disappear, the composer re-enables, no unhandled rejection reaches the console.
+3. **The chaos log.** One `ui:user-cancel` event per cancelled connection with `phase: 'user:cancel'` and the transport in `detail.targetTransport`; the same phases render in the [streaming timeline report](/concepts/timeline-and-reporting/).

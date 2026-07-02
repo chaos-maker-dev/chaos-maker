@@ -1,0 +1,93 @@
+---
+title: Human Interaction Chaos
+description: Simulate the user side of streaming failures with deterministic cancel, retry-storm, tab-visibility, prompt-edit, and navigate-away triggers.
+---
+
+Streaming UIs degrade in two directions. The server side breaks when chunks stall, truncate, or corrupt; the human side breaks when users act mid-generation: cancelling a response, smashing the retry button, backgrounding the tab, editing the prompt while chunks are still arriving, or navigating away. The `userInteraction` namespace covers the human side.
+
+Triggers are scenario events, not rules. They fire on a fixed millisecond schedule measured from chaos start, never consult the PRNG, and carry no matchers, probabilities, or counting options. The same config always produces the same interaction sequence.
+
+## Surface
+
+```typescript
+await injectChaos(page, {
+  seed: 42,
+  userInteraction: {
+    cancelStreamAfterMs: 4000,
+    retryStorm: { count: 5, intervalMs: 200 },
+    tabHidden: { afterMs: 1000, durationMs: 3000 },
+    blurWindow: { afterMs: 2000, durationMs: 500 },
+    promptEditDuringResponse: { afterMs: 1500, simulateTypingMs: 800 },
+    navigateAway: { afterMs: 6000, target: '/' },
+  },
+});
+```
+
+All fields are optional. Every trigger emits `ui:*` events tagged with `user:*` phases, so [timeline reporting](/concepts/timeline-and-reporting/) renders human actions inline with transport chaos.
+
+## Triggers
+
+### `cancelStreamAfterMs`
+
+Cancels every in-flight streaming connection at the scheduled time:
+
+- **fetch streams** abort. The engine threads its own `AbortController` into every request (merged with any signal the app already passed), so the consumer observes a real `AbortError` on `reader.read()`, exactly as if the user hit stop.
+- **SSE** sources close and dispatch a synthetic `error` event so `onerror` handlers engage.
+- **WebSockets** close; the app observes a normal `close` event.
+
+Connections opened after the trigger fires are unaffected. One `ui:user-cancel` event is emitted per cancelled connection with `detail.url`, `detail.targetTransport`, and `detail.connectionId` when the connection carried one; when nothing is in flight, a single `applied: false` event with `reason: 'no-active-streams'` records the miss.
+
+Fixture-driven [stream replay](/concepts/stream-replay/) in block-upstream mode never touches the network, so it is not cancellable through this trigger.
+
+### `retryStorm`
+
+Rapid-fire synthetic clicks against a selector, simulating a user hammering retry while a request fails or a stream stalls. Defaults to `[data-chaos-retry]`; the element is re-queried before every click so re-rendered buttons stay reachable. One `ui:retry-storm` event per click; one `selector-not-found` diagnostic per storm when nothing matches.
+
+```typescript
+retryStorm: { count: 5, intervalMs: 200, afterMs: 1000, selector: '#retry' }
+```
+
+### `tabHidden`
+
+Simulates backgrounding the tab: `document.visibilityState` reports `'hidden'`, `document.hidden` reports `true`, and a synthetic `visibilitychange` event fires at both edges. The tab is never actually backgrounded, so the run stays deterministic and headless-safe. The override restores itself after `durationMs` and on engine stop.
+
+### `blurWindow`
+
+Dispatches synthetic `blur` then `focus` events on the window, `durationMs` apart. Focus-state properties are not overridden; apps that listen for the events see them, apps that poll `document.hasFocus()` do not.
+
+### `promptEditDuringResponse`
+
+Focuses the prompt input (default `[data-chaos-prompt]`) and types `text` (default `' (edited)'`) character by character, spreading keystrokes evenly across `simulateTypingMs`. Each character updates `.value` and dispatches a bubbling `input` event.
+
+### `navigateAway`
+
+Calls `location.assign(target)` after `afterMs`. The navigation tears down the page context, so assert on the destination page or on `beforeunload` side effects; the `ui:navigate` event is emitted immediately before the navigation so log sinks attached earlier in the run still capture it.
+
+## Composing with streaming chaos
+
+Triggers compose with every transport rule and the `ai` shorthand. The classic incident reproductions are one-liners:
+
+```typescript
+// User gives up before the first chunk arrives.
+await injectChaos(page, {
+  ai: { firstChunkDelayMs: 3000 },
+  userInteraction: { cancelStreamAfterMs: 1500 },
+});
+
+// Retry-loop incident: slow first chunk plus a retry storm.
+await injectChaos(page, {
+  ai: { firstChunkDelayMs: 2500 },
+  userInteraction: { retryStorm: { count: 3, intervalMs: 300, afterMs: 500 } },
+});
+```
+
+The `ai-mobile-interrupt` preset packages the mobile flavor: the tab reports hidden for 3 seconds while the stream drops mid-generation. See [presets](/concepts/presets/).
+
+## Presets and profiles
+
+Presets and profiles may carry `userInteraction`. Merging is per trigger: when several sources set the same trigger, the later source wins that trigger (user config beats presets; profile overrides beat everything). Rule arrays append; triggers replace.
+
+## Environment notes
+
+- Selector- and document-based triggers need a DOM. Non-DOM contexts (service workers) skip them with a console warning; `cancelStreamAfterMs` still works wherever fetch is patched.
+- All pending trigger timers clear on `stop()`, and the visibility override restores itself, so nothing leaks across tests.
