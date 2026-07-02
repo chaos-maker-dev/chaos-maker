@@ -131,6 +131,8 @@ test('attach a chaos report on every run', async ({ page }, testInfo) => {
 
 The HTML output is fully self-contained (inline CSS, no `<script>`, no external URLs). For PR comments, swap `formatReportHtml` for `formatReportMarkdown`. See the [Timeline and reporting concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/timeline-and-reporting/) for the full report shape, determinism guarantees, and per-rule attribution requirements.
 
+Streaming runs additionally produce per-connection lifecycle timelines (first-chunk latency, pauses and whether they resolved, truncation and replay markers with mutation attribution) plus a `streamingReadiness` scorecard that counts how many streamed connections completed without interruption. Reports for non-streaming runs are unchanged.
+
 ## 30-second Playwright quickstart
 
 When a preset is too coarse, drop down to explicit rules:

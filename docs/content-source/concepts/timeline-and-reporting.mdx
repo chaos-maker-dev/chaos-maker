@@ -32,9 +32,34 @@ The same surface is re-exported from `@chaos-maker/cypress`, `@chaos-maker/puppe
 | `transports` | Event `type` prefix | Network vs WebSocket vs SSE vs UI vs rule-group volume, with applied counts |
 | `skipReasons` | Debug stream skip stages | Why rules skipped, grouped by `{stage, skippedAt}` so you can see the dominant blocker at a glance |
 | `failures` | Outcome events | Every applied failure-class event (`network:failure`, `network:abort`, `network:cors`, `network:corruption`, or any `statusCode >= 500`), grouped by rule, type, and status |
-| `timeline` | Every event in emission order | Chronological audit trail with relative `+Nms` offsets and `formatStepTitle()` labels |
+| `phases` | Streaming events with `detail.phase` | Counts per lifecycle tag (`ai:first-chunk`, `ai:stream-truncated`, ...) per transport. Empty for non-streaming runs |
+| `connections` | Streaming events with `detail.connectionId` | One ordered lifecycle timeline per streamed connection: first-chunk latency, pauses and whether they resolved, truncation and replay flags |
+| `streamingReadiness` | Derived from `connections` | Deterministic scorecard for chat smoke tests: how many streams completed without interruption, truncation/replay counts, unresolved pauses, sliced per transport. `null` when nothing streamed |
+| `timeline` | Every event in emission order | Chronological audit trail with relative `+Nms` offsets and `formatStepTitle()` labels, plus `phase`, `chunkIndex`, `connectionId`, and replay `mutationIndex` when present |
 
-`meta`, `transports`, `failures`, and `timeline` populate from outcome events alone and work on any run. `ruleHits` and `skipReasons` source from the debug stream, so add `debug: true` to your config when you want per-rule attribution and structured skip reasons in the report.
+`meta`, `transports`, `failures`, `phases`, `connections`, `streamingReadiness`, and `timeline` populate from outcome events alone and work on any run. `ruleHits` and `skipReasons` source from the debug stream, so add `debug: true` to your config when you want per-rule attribution and structured skip reasons in the report.
+
+Rules resolved from a [named matcher](./matchers) keep their `matcherName` attribution in every debug event, including runs where the config was injected through a framework adapter: the resolver stamps the name onto the rule itself, so it survives serialization into the page.
+
+## Streaming timelines
+
+Every streaming event carries a `phase` tag (`<namespace>:<lifecycle>`, e.g. `ai:stream-paused`), a zero-based `chunkIndex`, and a stable `connectionId`. The report groups them into per-connection timelines, so a failed chat scenario reads as a story: stream opened, first chunk at +3000ms, paused at chunk 10, resumed, truncated at chunk 20.
+
+```text
+### Connection conn-7f3a (fetch-stream) truncated
+- URL: /api/chat
+- Events: 4, first chunk at +3000ms, pauses 1
+- +3000ms first chunk ai:first-chunk chunk 0
+- +3400ms chunk delayed ai:stream-paused chunk 10
+- +8400ms stream resumed ai:stream-resumed chunk 10
+- +9100ms stream truncated ai:stream-truncated chunk 20
+```
+
+The `streamingReadiness` block answers the smoke-test question directly: out of N streamed connections, how many completed clean. A pause with no later resume on the same connection counts as unresolved, which is how a stalled-forever stream shows up without any timeout heuristics.
+
+Replayed streams carry `phase: 'ai:stream-replayed'` on their first event. When a [replay mutation](./stream-replay) fires during the run, the resulting pause, duplicate, or truncation event also carries `mutationIndex`, the zero-based position in your `mutations` array, and renders as `(mutation N)` in Markdown and a chip in HTML, so a broken rendering traces back to the exact mutation entry that caused it. Mutation attribution ships for fetch-stream replay; SSE and WebSocket replay events carry phases and chunk indices but not yet mutation indices.
+
+The Markdown and HTML formatters render the streaming sections only when the run actually streamed, so reports for classic network/UI chaos are unchanged.
 
 ## Output formats
 
@@ -76,7 +101,7 @@ import { filterEventsByTransport } from '@chaos-maker/playwright';
 const wsEvents = filterEventsByTransport(events, 'websocket');
 ```
 
-Valid kinds: `'network'`, `'websocket'`, `'sse'`, `'ui'`, `'rule-group'`. The single `'network'` bucket spans fetch and XHR because today's `ChaosEvent.detail` does not distinguish them.
+Valid kinds: `'network'`, `'websocket'`, `'sse'`, `'fetch-stream'`, `'ui'`, `'rule-group'`. The single `'network'` bucket spans fetch and XHR because today's `ChaosEvent.detail` does not distinguish them; `'fetch-stream'` is its own bucket because it reports chunk-level lifecycle rather than request outcomes.
 
 ## CI patterns
 
