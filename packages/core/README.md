@@ -152,6 +152,10 @@ const config = new ChaosConfigBuilder()
 | UI Assault | `ui.assaults` | Disable, hide, or remove DOM elements |
 | WebSocket | `websocket.*` | Drop, delay, corrupt, or close socket messages |
 | SSE | `sse.*` | Drop, delay, corrupt, or close EventSource events |
+| Fetch stream | `fetchStream.*` | Drop, delay, corrupt, duplicate, or truncate `Response.body` chunks |
+| AI shorthand | `ai` | One block compiling into fetch-stream + SSE + WebSocket streaming rules |
+| Stream replay | `ai.replay` / `<transport>.replay` | Replay a captured stream fixture deterministically, with chunk mutations |
+| User interaction | `userInteraction` | Cancel mid-stream, retry storms, tab-hidden, prompt edits, navigate-away |
 | GraphQL | `graphqlOperation` | Target one operation on a shared endpoint |
 
 ## Matchers
@@ -197,6 +201,25 @@ new ChaosMaker({
 `BUILT_IN_MATCHERS` is exported from `@chaos-maker/core` and every adapter. A user `matchers` entry of the same name transparently overrides a built-in. `authRequests` is meaningful on network rules only - WebSocket and SSE rules cannot target request headers, so a stream rule referencing it matches every connection.
 
 See the [Matchers concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/matchers/) for the full surface, validation codes, and debug attribution.
+
+## Streaming and human-interaction chaos
+
+Streaming UIs (AI chat, live captions, tickers) get chunk-level chaos across three transports plus the human side of streaming failures:
+
+```ts
+new ChaosMaker({
+  // One block compiles into fetch-stream + SSE + WebSocket rules.
+  ai: { firstChunkDelayMs: 800, truncateAfterChunk: 12 },
+  // The user acts mid-generation, on a fixed deterministic schedule.
+  userInteraction: {
+    cancelStreamAfterMs: 4000,
+    tabHidden: { afterMs: 1000, durationMs: 3000 },
+    retryStorm: { count: 5, intervalMs: 200 },
+  },
+});
+```
+
+Every streaming event carries `detail.phase` (`ai:first-chunk`, `user:cancel`, ...), a stable `detail.connectionId`, and a zero-based `detail.chunkIndex`; `buildChaosReport` groups them into per-connection timelines with a streaming-readiness scorecard. Captured stream fixtures replay deterministically via `ai.replay` with six chunk mutations. See the [AI streaming](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/), [stream replay](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/), and [human interaction](https://chaos-maker-dev.github.io/chaos-maker/concepts/human-interaction-chaos/) concepts.
 
 ## Configuration Reference
 

@@ -1,6 +1,6 @@
 {
   "name": "@chaos-maker/core",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "description": "A lightweight, framework-agnostic toolkit for injecting chaos into web applications to test frontend resilience",
   "keywords": [
