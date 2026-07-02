@@ -47,7 +47,7 @@ import {
   RequestKvMatcher,
 } from '../config';
 import { resolveReplay, type ReplayPlan } from '../ai/replay';
-import { ChaosEventEmitter } from '../events';
+import { ChaosEventEmitter, type ChaosPhase } from '../events';
 import {
   shouldApplyChaos,
   matchUrl,
@@ -58,6 +58,7 @@ import {
 import {
   parseRequestUrl,
   matchHostname,
+  matchChunkText,
   matchQueryParams,
   type ParsedRequestUrl,
 } from '../matchers';
@@ -138,6 +139,7 @@ function gateTransportRule(
 type ChunkGatedRule = RequestCountingOptions &
   TransportRuleLike & {
     chunkIndex?: number;
+    chunkPattern?: string | RegExp;
     probability: number;
     group?: string;
   };
@@ -150,6 +152,12 @@ function findFiringChunkRule<T extends ChunkGatedRule>(
   counters: Map<object, number>,
   groups: RuleGroupRegistry | undefined,
   emitter: ChaosEventEmitter,
+  /** Lazy decoded UTF-8 text of the current chunk; `null` when the chunk is
+   *  not valid UTF-8. Only consulted for rules that set `chunkPattern`. */
+  getChunkText?: () => string | null,
+  /** Invoked when a rule with `chunkPattern` skips a binary chunk, so the
+   *  caller can surface a once-per-connection diagnostic. */
+  onBinaryPatternSkip?: (rule: object) => void,
 ): T | null {
   if (!rules) return null;
   const getParsedUrl = (): ParsedRequestUrl | null => meta.parsedUrl;
@@ -159,6 +167,18 @@ function findFiringChunkRule<T extends ChunkGatedRule>(
     if (rule.chunkIndex !== undefined && rule.chunkIndex !== chunkIndex) {
       emitter.debug('rule-skip-match', { ...baseDetail, skippedAt: 'chunkIndex' }, rule as object);
       continue;
+    }
+    if (rule.chunkPattern !== undefined) {
+      const text = getChunkText ? getChunkText() : null;
+      if (text === null) {
+        emitter.debug('rule-skip-match', { ...baseDetail, skippedAt: 'chunkPattern-binary' }, rule as object);
+        if (onBinaryPatternSkip) onBinaryPatternSkip(rule as object);
+        continue;
+      }
+      if (!matchChunkText(text, rule.chunkPattern)) {
+        emitter.debug('rule-skip-match', { ...baseDetail, skippedAt: 'chunkPattern' }, rule as object);
+        continue;
+      }
     }
     const gate = gateTransportRule(rule, meta.url, getParsedUrl);
     if (!gate.proceed) {
@@ -256,12 +276,20 @@ function emitCorrupt(
   chunkIndex: number,
   strategy: FetchStreamCorruptionStrategy,
   bytes: number,
+  phase?: ChaosPhase,
 ): void {
   emitter.emit({
     type: 'fetch-stream:chunk-corrupted',
     timestamp: Date.now(),
     applied: true,
-    detail: { url: meta.url, connectionId: meta.connectionId, chunkIndex, strategy, chunkBytes: bytes },
+    detail: {
+      url: meta.url,
+      connectionId: meta.connectionId,
+      chunkIndex,
+      strategy,
+      chunkBytes: bytes,
+      ...(phase !== undefined ? { phase } : {}),
+    },
   });
 }
 
@@ -426,6 +454,10 @@ function wrapChaosBranch(
   },
 ): ReadableStream<Uint8Array> {
   let chunkIndex = -1;
+  // Rules with `chunkPattern` that hit a binary (non-UTF-8) chunk surface one
+  // diagnostic per rule per connection instead of one per chunk, so binary
+  // streams do not flood the event log.
+  const binaryPatternWarned = new WeakSet<object>();
   const closeRule = findFiringCloseRule(config.closes, meta, random, counters, groups, emitter);
   const closeAfterChunkScheduled: number | undefined = closeRule?.afterChunk;
   const closeAfterMsScheduled: number | undefined = closeRule?.afterMs;
@@ -476,7 +508,45 @@ function wrapChaosBranch(
       }
 
       let outChunk = chunk;
-      const corruptRule = findFiringChunkRule<FetchStreamCorruptConfig>(config.corruptions, meta, chunkIndex, random, counters, groups, emitter);
+      let decodedText: string | null | undefined;
+      const getChunkText = (): string | null => {
+        if (decodedText === undefined) {
+          try {
+            decodedText = new TextDecoder('utf-8', { fatal: true }).decode(chunk);
+          } catch {
+            decodedText = null;
+          }
+        }
+        return decodedText;
+      };
+      const onBinaryPatternSkip = (rule: object): void => {
+        if (binaryPatternWarned.has(rule)) return;
+        binaryPatternWarned.add(rule);
+        emitter.emit({
+          type: 'fetch-stream:chunk-corrupted',
+          timestamp: Date.now(),
+          applied: false,
+          detail: {
+            url: meta.url,
+            connectionId: meta.connectionId,
+            chunkIndex,
+            strategy: (rule as FetchStreamCorruptConfig).strategy,
+            chunkBytes: bytes,
+            reason: 'binary-chunk',
+          },
+        });
+      };
+      const corruptRule = findFiringChunkRule<FetchStreamCorruptConfig>(
+        config.corruptions,
+        meta,
+        chunkIndex,
+        random,
+        counters,
+        groups,
+        emitter,
+        getChunkText,
+        onBinaryPatternSkip,
+      );
       let duplicate = false;
       if (corruptRule) {
         if (corruptRule.strategy === 'duplicate') {
@@ -500,7 +570,7 @@ function wrapChaosBranch(
             });
           } else {
             outChunk = out;
-            emitCorrupt(emitter, meta, chunkIndex, corruptRule.strategy, bytes);
+            emitCorrupt(emitter, meta, chunkIndex, corruptRule.strategy, bytes, corruptRule.phase);
           }
         }
       }

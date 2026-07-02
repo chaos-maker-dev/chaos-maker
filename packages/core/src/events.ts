@@ -95,7 +95,8 @@ export type StreamingChaosPhase =
   | 'ai:stream-resumed'
   | 'ai:stream-truncated'
   | 'ai:chunk-duplicated'
-  | 'ai:stream-replayed';
+  | 'ai:stream-replayed'
+  | 'ai:tool-call-failed';
 
 export interface ChaosEvent {
   type: ChaosEventType;

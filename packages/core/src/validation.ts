@@ -64,6 +64,21 @@ const hostnameMatcher = z.union([
   ),
 ]);
 
+const chunkPatternMatcher = z.union([
+  z.string().min(1, 'chunkPattern must not be empty'),
+  z.instanceof(RegExp).refine(
+    (re) => !re.global && !re.sticky,
+    { message: 'chunkPattern RegExp must not use global (g) or sticky (y) flags due to lastIndex mutation' },
+  ),
+]);
+
+const rulePhaseTag = z
+  .string()
+  .regex(
+    /^(ai|user):[a-z0-9]+(-[a-z0-9]+)*$/,
+    'phase must be a kebab-case lifecycle tag in the ai: or user: namespace, e.g. ai:tool-call-failed',
+  );
+
 const requestKvValue = z.union([
   z.string(),
   z.boolean(),
@@ -547,12 +562,14 @@ const buildFetchStreamCorrupt = (p: Policy) =>
       z.object({
         ...transportMatcherFields,
         chunkIndex: chunkIndexField.optional(),
+        chunkPattern: chunkPatternMatcher.optional(),
         // `duplicate` is fetch-stream-specific (emission-level, not text-level).
         // SSE / WebSocket corruption stays at the four text strategies because
         // their interceptors operate on already-decoded message text rather
         // than raw byte chunks.
         strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type', 'duplicate']),
         probability,
+        phase: rulePhaseTag.optional(),
         ...countingFields,
         ...groupField,
       }),

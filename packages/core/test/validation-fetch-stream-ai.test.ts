@@ -93,6 +93,73 @@ describe('Zod schema: fetchStream rule shapes', () => {
   });
 });
 
+describe('Zod schema: fetch-stream corruption chunkPattern + phase', () => {
+  it('accepts a string chunkPattern', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      fetchStream: {
+        corruptions: [{ urlPattern: '/api/chat', chunkPattern: '"tool_calls"', strategy: 'malformed-json', probability: 1 }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('accepts a RegExp chunkPattern without g/y flags', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', chunkPattern: /"(tool_calls|tool_use)"/, strategy: 'malformed-json', probability: 1 }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('rejects an empty string chunkPattern', () => {
+    const issues = parseExpectIssues({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', chunkPattern: '', strategy: 'empty', probability: 1 }],
+      },
+    });
+    expect(issues.some((i) => i.message.includes('chunkPattern must not be empty'))).toBe(true);
+  });
+
+  it('rejects a chunkPattern RegExp with global or sticky flags', () => {
+    for (const re of [/tool/g, /tool/y]) {
+      const issues = parseExpectIssues({
+        fetchStream: {
+          corruptions: [{ urlPattern: '*', chunkPattern: re, strategy: 'empty', probability: 1 }],
+        },
+      });
+      expect(issues.some((i) => i.message.includes('chunkPattern RegExp must not use global'))).toBe(true);
+    }
+  });
+
+  it('accepts a kebab-case phase tag in the ai namespace', () => {
+    const res = chaosConfigSchemaStrict.safeParse({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', strategy: 'malformed-json', probability: 1, phase: 'ai:tool-call-failed' }],
+      },
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it('rejects a phase tag outside the ai/user namespaces', () => {
+    const issues = parseExpectIssues({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', strategy: 'malformed-json', probability: 1, phase: 'engine:start' }],
+      },
+    });
+    expect(issues.some((i) => i.message.includes('phase must be a kebab-case lifecycle tag'))).toBe(true);
+  });
+
+  it('rejects a non-kebab phase tag', () => {
+    const issues = parseExpectIssues({
+      fetchStream: {
+        corruptions: [{ urlPattern: '*', strategy: 'malformed-json', probability: 1, phase: 'ai:ToolCall' }],
+      },
+    });
+    expect(issues.some((i) => i.message.includes('phase must be a kebab-case lifecycle tag'))).toBe(true);
+  });
+});
+
 describe('Zod schema: ai DSL surface', () => {
   it('accepts a minimal ai config with firstChunkDelayMs', () => {
     const res = chaosConfigSchemaStrict.safeParse({

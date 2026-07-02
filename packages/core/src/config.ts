@@ -1,3 +1,4 @@
+import type { ChaosPhase } from './events';
 import type { RuleGroupConfig } from './groups';
 import type { PresetConfigSlice } from './presets';
 import type { ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
@@ -365,8 +366,21 @@ export type FetchStreamDelayConfig =
 
 interface FetchStreamCorruptRule {
   chunkIndex?: number;
+  /** Match against the decoded UTF-8 text of each chunk.
+   *  - `string`  -  case-sensitive substring containment.
+   *  - `RegExp`  -  `.test(chunkText)`; `g`/`y` flags rejected at validation time.
+   *  Binary chunks (invalid UTF-8) never match; the first binary skip per
+   *  connection emits a diagnostic event with `applied: false` and
+   *  `reason: 'binary-chunk'`. Combines with `chunkIndex` when both are set. */
+  chunkPattern?: string | RegExp;
   strategy: FetchStreamCorruptionStrategy;
   probability: number;
+  /** Optional lifecycle tag stamped onto the emitted corruption event's
+   *  `detail.phase`. Lets rule authors (and presets) surface semantic markers
+   *  such as `ai:tool-call-failed` without a bespoke event type. Ignored by
+   *  the `duplicate` strategy, which keeps its canonical
+   *  `ai:chunk-duplicated` phase. */
+  phase?: ChaosPhase;
 }
 export type FetchStreamCorruptConfig =
   TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamCorruptRule;
