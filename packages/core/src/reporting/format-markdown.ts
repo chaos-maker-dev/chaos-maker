@@ -1,8 +1,11 @@
 import type {
   ChaosReport,
+  ConnectionSummary,
   FailureSummary,
+  PhaseSummary,
   RuleHitSummary,
   SkipReasonSummary,
+  StreamingReadinessSummary,
   TimelineEntry,
   TransportSummary,
 } from './types';
@@ -87,9 +90,65 @@ function timelineList(rows: TimelineEntry[]): string {
   return rows
     .map((entry) => {
       const rule = entry.ruleId ? ` (rule ${code(entry.ruleId)})` : '';
-      return `- \`+${entry.offsetMs}ms\` ${inline(entry.title)}${rule}`;
+      const phase = entry.phase ? ` ${code(entry.phase)}` : '';
+      const chunk = entry.chunkIndex !== null ? ` chunk ${entry.chunkIndex}` : '';
+      return `- \`+${entry.offsetMs}ms\` ${inline(entry.title)}${rule}${phase}${chunk}`;
     })
     .join('\n');
+}
+
+function phasesTable(rows: PhaseSummary[]): string {
+  const lines: string[] = [
+    '| Phase | Transport | Count | Applied |',
+    '| --- | --- | ---: | ---: |',
+  ];
+  for (const r of rows) {
+    lines.push(`| ${code(r.phase)} | ${cell(r.transport)} | ${r.count} | ${r.applied} |`);
+  }
+  return lines.join('\n');
+}
+
+function connectionLine(c: ConnectionSummary): string {
+  const flags: string[] = [];
+  if (c.truncated) flags.push('truncated');
+  if (c.replayed) flags.push('replayed');
+  if (c.unresolvedPauses > 0) flags.push(`${c.unresolvedPauses} unresolved pause(s)`);
+  const flagText = flags.length ? ` **${flags.join(', ')}**` : '';
+  const firstChunk = c.firstChunkOffsetMs === null ? '-' : `+${c.firstChunkOffsetMs}ms`;
+  return [
+    `### Connection ${code(c.connectionId)} (${cell(c.transport)})${flagText}`,
+    '',
+    `- URL: ${c.url ? code(c.url) : '-'}`,
+    `- Events: ${c.events}, first chunk at ${firstChunk}, pauses ${c.pauses}`,
+    '',
+    c.entries
+      .map((e) => {
+        const phase = e.phase ? ` ${code(e.phase)}` : '';
+        const chunk = e.chunkIndex !== null ? ` chunk ${e.chunkIndex}` : '';
+        return `- \`+${e.offsetMs}ms\` ${inline(e.title)}${phase}${chunk}`;
+      })
+      .join('\n'),
+  ].join('\n');
+}
+
+function connectionsBlock(rows: ConnectionSummary[]): string {
+  return rows.map(connectionLine).join('\n\n');
+}
+
+function readinessBlock(r: StreamingReadinessSummary): string {
+  const lines: string[] = [
+    `- **Connections**: ${r.connections} (${r.completedWithoutInterruption} completed without interruption)`,
+    `- **Truncated**: ${r.truncated}`,
+    `- **Replayed**: ${r.replayed}`,
+    `- **Unresolved pauses**: ${r.unresolvedPauses}`,
+    '',
+    '| Transport | Connections | Truncated | Replayed | Unresolved pauses |',
+    '| --- | ---: | ---: | ---: | ---: |',
+  ];
+  for (const t of r.byTransport) {
+    lines.push(`| ${cell(t.kind)} | ${t.connections} | ${t.truncated} | ${t.replayed} | ${t.unresolvedPauses} |`);
+  }
+  return lines.join('\n');
 }
 
 /** Serialize a `ChaosReport` to a deterministic Markdown document suitable for
@@ -108,13 +167,24 @@ export function formatReportMarkdown(report: ChaosReport): string {
     '',
   ].join('\n');
 
-  const body = [
+  const sections = [
     section('Rule hits', ruleHitsTable(report.ruleHits)),
     section('Transports', transportsTable(report.transports)),
     section('Skip reasons', skipReasonsTable(report.skipReasons)),
     section('Failures', failuresTable(report.failures)),
-    section('Timeline', timelineList(report.timeline)),
-  ].join('\n');
+  ];
+  // Streaming sections render only when the run streamed something, so
+  // non-streaming reports stay byte-identical to previous releases.
+  if (report.phases.length > 0) {
+    sections.push(section('Streaming phases', phasesTable(report.phases)));
+  }
+  if (report.streamingReadiness) {
+    sections.push(section('Streaming readiness', readinessBlock(report.streamingReadiness)));
+  }
+  if (report.connections.length > 0) {
+    sections.push(section('Connections', connectionsBlock(report.connections)));
+  }
+  sections.push(section('Timeline', timelineList(report.timeline)));
 
-  return `${header}${body}`;
+  return `${header}${sections.join('\n')}`;
 }

@@ -1,8 +1,11 @@
 import type {
   ChaosReport,
+  ConnectionSummary,
   FailureSummary,
+  PhaseSummary,
   RuleHitSummary,
   SkipReasonSummary,
+  StreamingReadinessSummary,
   TimelineEntry,
   TransportSummary,
 } from './types';
@@ -101,6 +104,13 @@ ${body}
 </table>`;
 }
 
+function phaseChip(phase: string | null, chunkIndex: number | null): string {
+  if (!phase && chunkIndex === null) return '';
+  const chunk = chunkIndex !== null ? `<span class="chunk">chunk ${chunkIndex}</span>` : '';
+  const tag = phase ? `<span class="phase">${escapeHtml(phase)}</span>` : '';
+  return `${tag}${chunk}`;
+}
+
 function timelineBlock(rows: TimelineEntry[]): string {
   if (rows.length === 0) return '<p class="empty">No events recorded.</p>';
   const body = rows
@@ -108,6 +118,7 @@ function timelineBlock(rows: TimelineEntry[]): string {
       (entry) => `<li class="${entry.applied ? 'applied' : 'skipped'}">
   <span class="offset">+${entry.offsetMs}ms</span>
   <span class="title">${escapeHtml(entry.title)}</span>
+  ${phaseChip(entry.phase, entry.chunkIndex)}
   ${entry.ruleId ? `<span class="rule">rule <code>${escapeHtml(entry.ruleId)}</code></span>` : ''}
 </li>`,
     )
@@ -115,6 +126,68 @@ function timelineBlock(rows: TimelineEntry[]): string {
   return `<ol class="timeline">
 ${body}
 </ol>`;
+}
+
+function phasesBlock(rows: PhaseSummary[]): string {
+  const body = rows
+    .map(
+      (r) => `<tr><td><code>${escapeHtml(r.phase)}</code></td><td>${escapeHtml(r.transport)}</td><td class="num">${r.count}</td><td class="num">${r.applied}</td></tr>`,
+    )
+    .join('\n');
+  return `<table class="grid">
+<thead><tr><th>Phase</th><th>Transport</th><th>Count</th><th>Applied</th></tr></thead>
+<tbody>
+${body}
+</tbody>
+</table>`;
+}
+
+function readinessBlock(r: StreamingReadinessSummary): string {
+  const body = r.byTransport
+    .map(
+      (t) => `<tr><td>${escapeHtml(t.kind)}</td><td class="num">${t.connections}</td><td class="num">${t.truncated}</td><td class="num">${t.replayed}</td><td class="num">${t.unresolvedPauses}</td></tr>`,
+    )
+    .join('\n');
+  return `<dl class="meta">
+  <dt>Connections</dt><dd>${r.connections} (${r.completedWithoutInterruption} completed without interruption)</dd>
+  <dt>Truncated</dt><dd>${r.truncated}</dd>
+  <dt>Replayed</dt><dd>${r.replayed}</dd>
+  <dt>Unresolved pauses</dt><dd>${r.unresolvedPauses}</dd>
+</dl>
+<table class="grid">
+<thead><tr><th>Transport</th><th>Connections</th><th>Truncated</th><th>Replayed</th><th>Unresolved pauses</th></tr></thead>
+<tbody>
+${body}
+</tbody>
+</table>`;
+}
+
+function connectionsBlock(rows: ConnectionSummary[]): string {
+  return rows
+    .map((c) => {
+      const flags: string[] = [];
+      if (c.truncated) flags.push('truncated');
+      if (c.replayed) flags.push('replayed');
+      if (c.unresolvedPauses > 0) flags.push(`${c.unresolvedPauses} unresolved pause(s)`);
+      const firstChunk = c.firstChunkOffsetMs === null ? '-' : `+${c.firstChunkOffsetMs}ms`;
+      const entries = c.entries
+        .map(
+          (e) => `<li class="${e.applied ? 'applied' : 'skipped'}">
+  <span class="offset">+${e.offsetMs}ms</span>
+  <span class="title">${escapeHtml(e.title)}</span>
+  ${phaseChip(e.phase, e.chunkIndex)}
+</li>`,
+        )
+        .join('\n');
+      return `<div class="connection">
+<h3><code>${escapeHtml(c.connectionId)}</code> <span class="muted">${escapeHtml(c.transport)}</span>${flags.length ? ` <span class="flags">${escapeHtml(flags.join(', '))}</span>` : ''}</h3>
+<p class="muted">${c.url ? escapeHtml(c.url) : '-'} &middot; ${c.events} events &middot; first chunk at ${escapeHtml(firstChunk)} &middot; ${c.pauses} pause(s)</p>
+<ol class="timeline">
+${entries}
+</ol>
+</div>`;
+    })
+    .join('\n');
 }
 
 const STYLE = `body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 24px; color: #1f2328; background: #f6f8fa; }
@@ -137,7 +210,13 @@ ol.timeline li { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px do
 ol.timeline li.skipped { opacity: 0.6; }
 ol.timeline .offset { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #57606a; min-width: 64px; }
 ol.timeline .title { flex: 1; }
-ol.timeline .rule { color: #57606a; font-size: 12px; }`;
+ol.timeline .rule { color: #57606a; font-size: 12px; }
+.phase { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #ddf4ff; color: #0969da; border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
+.chunk { font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #57606a; white-space: nowrap; margin-left: 4px; }
+.flags { font-size: 12px; color: #cf222e; font-weight: 600; }
+.connection { border-top: 1px dotted #d0d7de; padding-top: 8px; margin-top: 8px; }
+.connection h3 { margin: 0 0 4px; font-size: 14px; }
+.connection p { margin: 0 0 4px; font-size: 12px; }`;
 
 /** Serialize a `ChaosReport` to a self-contained HTML document. The output
  *  embeds CSS inline, uses native `<details>` for collapsibles, and contains
@@ -174,7 +253,7 @@ export function formatReportHtml(
 <details open><summary>Transports</summary>${transportsBlock(report.transports)}</details>
 <details open><summary>Skip reasons</summary>${skipReasonsBlock(report.skipReasons)}</details>
 <details open><summary>Failures</summary>${failuresBlock(report.failures)}</details>
-<details open><summary>Timeline</summary>${timelineBlock(report.timeline)}</details>
+${report.phases.length > 0 ? `<details open><summary>Streaming phases</summary>${phasesBlock(report.phases)}</details>\n` : ''}${report.streamingReadiness ? `<details open><summary>Streaming readiness</summary>${readinessBlock(report.streamingReadiness)}</details>\n` : ''}${report.connections.length > 0 ? `<details open><summary>Connections</summary>${connectionsBlock(report.connections)}</details>\n` : ''}<details open><summary>Timeline</summary>${timelineBlock(report.timeline)}</details>
 </main>
 </body>
 </html>
