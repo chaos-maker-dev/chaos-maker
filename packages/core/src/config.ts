@@ -550,6 +550,91 @@ export interface AiConfig {
   transport?: AiTransport;
 }
 
+/** Rapid-fire synthetic retry clicks against a selector, simulating a user
+ *  smashing a retry button while a request is failing or a stream is stalled. */
+export interface UserInteractionRetryStormConfig {
+  /** Number of synthetic clicks to dispatch. */
+  count: number;
+  /** Gap between consecutive clicks, in ms. */
+  intervalMs: number;
+  /** Delay from chaos start before the first click, in ms. Default 0. */
+  afterMs?: number;
+  /** CSS selector for the click target. The first matching element is
+   *  re-queried before every click so re-rendered buttons stay reachable.
+   *  Default `[data-chaos-retry]`. */
+  selector?: string;
+}
+
+/** Simulated tab backgrounding: `document.visibilityState` / `document.hidden`
+ *  report `'hidden'` / `true` for the duration and a synthetic
+ *  `visibilitychange` event fires at both edges. The tab is never actually
+ *  backgrounded  -  no driver-level switching. */
+export interface UserInteractionTabHiddenConfig {
+  /** Delay from chaos start before the tab reports hidden, in ms. */
+  afterMs: number;
+  /** How long the tab reports hidden before flipping back, in ms. */
+  durationMs: number;
+}
+
+/** Simulated window focus loss: synthetic `blur` then `focus` events on the
+ *  window, `durationMs` apart. Focus state properties are not overridden. */
+export interface UserInteractionBlurWindowConfig {
+  /** Delay from chaos start before the `blur` event, in ms. */
+  afterMs: number;
+  /** Gap between the `blur` and the restoring `focus` event, in ms. */
+  durationMs: number;
+}
+
+/** Simulated prompt edit while a response is still streaming: focuses the
+ *  target input and types `text` character by character, spreading the
+ *  keystrokes evenly across `simulateTypingMs`. Each character updates
+ *  `.value` and dispatches an `input` event. */
+export interface UserInteractionPromptEditConfig {
+  /** Delay from chaos start before the edit begins, in ms. */
+  afterMs: number;
+  /** Total duration of the simulated typing, in ms. */
+  simulateTypingMs: number;
+  /** CSS selector for the input or textarea to edit.
+   *  Default `[data-chaos-prompt]`. */
+  selector?: string;
+  /** Text appended to the input's current value. Default `' (edited)'`. */
+  text?: string;
+}
+
+/** Simulated mid-stream navigation: `location.assign(target)` fires after
+ *  `afterMs`. The page context is torn down by the navigation, so assertions
+ *  belong on the destination page or on beforeunload side effects. */
+export interface UserInteractionNavigateAwayConfig {
+  /** Delay from chaos start before navigating, in ms. */
+  afterMs: number;
+  /** Navigation target passed to `location.assign`. */
+  target: string;
+}
+
+/** Human-interaction chaos for streaming UIs. Simulates the user side of
+ *  streaming failures: cancelling a response mid-stream, smashing retry,
+ *  backgrounding the tab, losing window focus, editing the prompt while
+ *  chunks are still arriving, or navigating away.
+ *
+ *  All triggers fire on a fixed schedule measured from chaos start, so runs
+ *  are deterministic without touching the PRNG. Triggers are top-level config
+ *  only in spirit but MAY be carried by presets; when several sources set the
+ *  same trigger, the later source wins per trigger (user config beats
+ *  presets). Requires a DOM for the selector- and document-based triggers;
+ *  non-DOM contexts (service workers) skip them with a console warning. */
+export interface UserInteractionConfig {
+  /** Cancel every in-flight streaming connection after this many ms:
+   *  fetch-stream requests abort (the consumer observes a real `AbortError`),
+   *  SSE sources and WebSockets close. Connections opened after the trigger
+   *  fires are unaffected. */
+  cancelStreamAfterMs?: number;
+  retryStorm?: UserInteractionRetryStormConfig;
+  tabHidden?: UserInteractionTabHiddenConfig;
+  blurWindow?: UserInteractionBlurWindowConfig;
+  promptEditDuringResponse?: UserInteractionPromptEditConfig;
+  navigateAway?: UserInteractionNavigateAwayConfig;
+}
+
 export interface ChaosConfig {
   network?: NetworkConfig;
   ui?: UiConfig;
@@ -570,6 +655,14 @@ export interface ChaosConfig {
    * slices cannot carry `ai`.
    */
   ai?: AiConfig;
+  /**
+   * Human-interaction chaos for streaming UIs: cancel mid-stream, retry
+   * storms, tab-visibility and focus changes, prompt edits during generation,
+   * navigate-away. Triggers fire on a fixed ms schedule from chaos start
+   * (deterministic; the PRNG is not consulted) and emit `ui:*` events tagged
+   * with `user:*` phases.
+   */
+  userInteraction?: UserInteractionConfig;
   /**
    * Pre-register rule groups with an explicit initial enabled state.
    *

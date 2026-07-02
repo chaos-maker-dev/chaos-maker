@@ -22,6 +22,7 @@ export type RuleType =
   | 'fetch-stream.corrupt'
   | 'fetch-stream.close'
   | 'ai'
+  | 'user-interaction'
   | 'group'
   | 'preset'
   | 'profile'

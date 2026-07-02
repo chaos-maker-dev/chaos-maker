@@ -328,6 +328,12 @@ function appendSlice(target: ChaosConfig, slice: PresetConfigSlice): void {
       ((dst[k] ??= []) as unknown[]).push(...arr);
     }
   }
+  // `userInteraction` is a bundle of scenario triggers, not a rule bucket.
+  // Merge per trigger key: the later slice wins each trigger it sets. Presets
+  // append before the user's config, so user-set triggers override presets.
+  if (slice.userInteraction) {
+    target.userInteraction = { ...target.userInteraction, ...slice.userInteraction };
+  }
   if (slice.groups?.length) {
     (target.groups ??= []).push(...slice.groups);
   }

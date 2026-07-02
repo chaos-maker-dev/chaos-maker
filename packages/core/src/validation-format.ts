@@ -35,6 +35,8 @@ function deriveRuleType(path: ReadonlyArray<string | number>): RuleType {
   if (first === 'groups') return 'group';
   if (first === 'presets' || first === 'customPresets') return 'preset';
   if (first === 'matchers') return 'matcher';
+  if (first === 'ai') return 'ai';
+  if (first === 'userInteraction') return 'user-interaction';
 
   // Issues under a profile-related top-level field. Walk past the slice
   // anchor and derive the inner rule type so a `network.failures[0]` under

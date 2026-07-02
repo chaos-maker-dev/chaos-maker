@@ -64,6 +64,25 @@ const AI_KEYS = new Set([
 
 const GROUP_KEYS = new Set(['name', 'enabled']);
 
+/** Human-interaction triggers: `cancelStreamAfterMs` is a scalar; the rest are
+ *  nested objects whose known keys are projected via the map below. */
+const USER_INTERACTION_KEYS = new Set([
+  'cancelStreamAfterMs',
+  'retryStorm',
+  'tabHidden',
+  'blurWindow',
+  'promptEditDuringResponse',
+  'navigateAway',
+]);
+
+const USER_INTERACTION_TRIGGER_KEYS: KnownKeyMap = {
+  retryStorm: new Set(['count', 'intervalMs', 'afterMs', 'selector']),
+  tabHidden: new Set(['afterMs', 'durationMs']),
+  blurWindow: new Set(['afterMs', 'durationMs']),
+  promptEditDuringResponse: new Set(['afterMs', 'simulateTypingMs', 'selector', 'text']),
+  navigateAway: new Set(['afterMs', 'target']),
+};
+
 const NETWORK_KEYS: KnownKeyMap = {
   failures: NETWORK_FAILURE_KEYS,
   latencies: NETWORK_LATENCY_KEYS,
@@ -104,6 +123,7 @@ const TOP_LEVEL_KEYS = new Set([
   'sse',
   'fetchStream',
   'ai',
+  'userInteraction',
   'groups',
   'presets',
   'customPresets',
@@ -171,6 +191,18 @@ function projectGroups(input: unknown): unknown[] {
   return input.map((g) => projectObject(g, GROUP_KEYS));
 }
 
+function projectUserInteraction(input: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!input || typeof input !== 'object') return out;
+  const src = input as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!USER_INTERACTION_KEYS.has(k)) continue;
+    const triggerKeys = USER_INTERACTION_TRIGGER_KEYS[k];
+    out[k] = triggerKeys ? projectObject(src[k], triggerKeys) : src[k];
+  }
+  return out;
+}
+
 function projectPresetSlice(input: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!input || typeof input !== 'object') return out;
@@ -180,6 +212,7 @@ function projectPresetSlice(input: unknown): Record<string, unknown> {
       out[cat] = projectCategory(src[cat], CATEGORY_RULE_KEYS[cat], CATEGORY_KEYS[cat]);
     }
   }
+  if (src.userInteraction !== undefined) out.userInteraction = projectUserInteraction(src.userInteraction);
   if (src.groups !== undefined) out.groups = projectGroups(src.groups);
   return out;
 }
@@ -223,6 +256,8 @@ export function stripUnknownKeys(input: unknown): ChaosConfig {
     } else if (k === 'ai') {
       // Flat shorthand; keep known fields (`replay` preserved as-is).
       out[k] = projectObject(src[k], AI_KEYS);
+    } else if (k === 'userInteraction') {
+      out[k] = projectUserInteraction(src[k]);
     } else if (k === 'groups') {
       out[k] = projectGroups(src[k]);
     } else if (k === 'customPresets') {
@@ -273,6 +308,8 @@ function walk(value: unknown, prefix: string, out: string[]): void {
         walkCategory(src[k], k, CATEGORY_RULE_KEYS[k], CATEGORY_KEYS[k], out);
       } else if (k === 'ai') {
         walkObject(src[k], 'ai', AI_KEYS, out);
+      } else if (k === 'userInteraction') {
+        walkUserInteraction(src[k], 'userInteraction', out);
       } else if (k === 'groups') {
         walkGroups(src[k], 'groups', out);
       } else if (k === 'customPresets') {
@@ -325,6 +362,19 @@ function walkObject(value: unknown, prefix: string, allowed: ReadonlySet<string>
   }
 }
 
+function walkUserInteraction(value: unknown, prefix: string, out: string[]): void {
+  if (!value || typeof value !== 'object') return;
+  const src = value as Record<string, unknown>;
+  for (const k of Object.keys(src)) {
+    if (!USER_INTERACTION_KEYS.has(k)) {
+      out.push(`${prefix}.${k}`);
+      continue;
+    }
+    const triggerKeys = USER_INTERACTION_TRIGGER_KEYS[k];
+    if (triggerKeys) walkObject(src[k], `${prefix}.${k}`, triggerKeys, out);
+  }
+}
+
 function walkGroups(value: unknown, prefix: string, out: string[]): void {
   if (!Array.isArray(value)) return;
   value.forEach((g, idx) => {
@@ -346,6 +396,10 @@ function walkCustomPresets(value: unknown, out: string[]): void {
         walkGroups(src[k], `customPresets.${name}.groups`, out);
         continue;
       }
+      if (k === 'userInteraction') {
+        walkUserInteraction(src[k], `customPresets.${name}.userInteraction`, out);
+        continue;
+      }
       if (!(k in CATEGORY_RULE_KEYS)) {
         out.push(`customPresets.${name}.${k}`);
         continue;
@@ -357,6 +411,7 @@ function walkCustomPresets(value: unknown, out: string[]): void {
 
 const PROFILE_SLICE_ALLOWED_TOP = new Set([
   ...Object.keys(CATEGORY_RULE_KEYS),
+  'userInteraction',
   'groups',
   'presets',
   'seed',
@@ -373,6 +428,10 @@ function walkProfileSlice(value: unknown, prefix: string, out: string[]): void {
     }
     if (k === 'groups') {
       walkGroups(src[k], `${prefix}.groups`, out);
+      continue;
+    }
+    if (k === 'userInteraction') {
+      walkUserInteraction(src[k], `${prefix}.userInteraction`, out);
       continue;
     }
     if (k in CATEGORY_RULE_KEYS) {
