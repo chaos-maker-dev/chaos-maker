@@ -60,6 +60,16 @@ export interface ReplayPiece {
    *  the gap. Timing is already baked into `emitAtMs`; this field only drives
    *  the lifecycle events. */
   pauseBeforeMs?: number;
+  /** Zero-based index into the `mutations` input array of the mutation that
+   *  produced or rewrote this piece. Absent on untouched `original` pieces.
+   *  Drivers surface it on emitted events so reports can link a mutated chunk
+   *  back to the mutation list entry that caused it. */
+  mutationIndex?: number;
+  /** Mutation index of the `delay` that produced `pauseBeforeMs`, when set.
+   *  When several `delay` mutations stack on the same chunk boundary the
+   *  duration sums all of them and this attributes the largest contributor
+   *  (earliest in the mutations array on ties). */
+  pauseMutationIndex?: number;
 }
 
 /** Ordered emission plan produced by {@link applyMutations}. */
@@ -68,6 +78,8 @@ export interface ReplayPlan {
   /** True when a `truncate` mutation dropped the tail of the stream, so the
    *  driver emits `ai:stream-truncated` after the final piece. */
   truncated: boolean;
+  /** Mutation index of the `truncate` that cut the stream, when truncated. */
+  truncatedBy?: number;
 }
 
 /** Build a validation issue for a fixture problem, tagged to the `ai` rule
@@ -181,8 +193,11 @@ function mutationTargetIndex(m: ReplayMutation): number {
 /** A post-content operation on a segment, recorded in the order its mutation
  *  appeared in the input array so same-target mutations compose deterministically
  *  and repeat correctly. `duplicate` re-emits the chunk's content; `inject`
- *  emits a synthetic malformed chunk after it. */
-type SegmentOp = { kind: 'duplicate' } | { kind: 'inject'; payload: string };
+ *  emits a synthetic malformed chunk after it. `mutationIndex` records which
+ *  input-array entry queued the operation, for event attribution. */
+type SegmentOp =
+  | { kind: 'duplicate'; mutationIndex: number }
+  | { kind: 'inject'; payload: string; mutationIndex: number };
 
 /** Working state for one original fixture chunk while mutations fold in.
  *  `content` holds the chunk's own text pieces (rewritten by `split` /
@@ -193,8 +208,8 @@ interface Segment {
   /** Removed because an earlier chunk coalesced this one away. */
   dropped: boolean;
   /** The chunk's own content pieces; a single `original` piece until `split`
-   *  or `coalesce` rewrites it. */
-  content: { text: string; kind: ReplayPieceKind }[];
+   *  or `coalesce` rewrites it. `mutationIndex` tracks the rewriting mutation. */
+  content: { text: string; kind: ReplayPieceKind; mutationIndex?: number }[];
   /** Post-content operations, in the order their mutations appeared. */
   postOps: SegmentOp[];
 }
@@ -206,8 +221,11 @@ function makePiece(
   sourceIndex: number,
   kind: ReplayPieceKind,
   encoder: TextEncoder,
+  mutationIndex?: number,
 ): ReplayPiece {
-  return { bytes: encoder.encode(text), text, emitAtMs, sourceIndex, kind };
+  const piece: ReplayPiece = { bytes: encoder.encode(text), text, emitAtMs, sourceIndex, kind };
+  if (mutationIndex !== undefined) piece.mutationIndex = mutationIndex;
+  return piece;
 }
 
 /**
@@ -230,14 +248,15 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
     .sort((a, b) => mutationTargetIndex(a.m) - mutationTargetIndex(b.m) || a.i - b.i);
 
   // delay: afterChunk N shifts every chunk with index > N by `ms`.
-  const delays: { after: number; ms: number }[] = [];
+  const delays: { after: number; ms: number; mutationIndex: number }[] = [];
   let truncateAfter = Infinity;
+  let truncatedBy: number | undefined;
 
   // Only integer, in-bounds indices are valid; non-integers (e.g. 1.5) are
   // ignored rather than allowed to index `segs` and read `undefined`.
   const inRange = (idx: number): boolean => Number.isInteger(idx) && idx >= 0 && idx < n;
 
-  for (const { m } of ordered) {
+  for (const { m, i: mutationIndex } of ordered) {
     switch (m.type) {
       case 'split': {
         if (!inRange(m.chunkIndex)) break;
@@ -248,8 +267,8 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
         const codePoints = Array.from(seg.content.map((p) => p.text).join(''));
         const at = Math.max(0, Math.min(m.at, codePoints.length));
         seg.content = [
-          { text: codePoints.slice(0, at).join(''), kind: 'split-head' },
-          { text: codePoints.slice(at).join(''), kind: 'split-tail' },
+          { text: codePoints.slice(0, at).join(''), kind: 'split-head', mutationIndex },
+          { text: codePoints.slice(at).join(''), kind: 'split-tail', mutationIndex },
         ];
         break;
       }
@@ -262,23 +281,26 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
           merged += segs[i].content.map((p) => p.text).join('');
           segs[i].dropped = true;
         }
-        target.content = [{ text: merged, kind: 'coalesce' }];
+        target.content = [{ text: merged, kind: 'coalesce', mutationIndex }];
         break;
       }
       case 'duplicate': {
-        if (inRange(m.chunkIndex)) segs[m.chunkIndex].postOps.push({ kind: 'duplicate' });
+        if (inRange(m.chunkIndex)) segs[m.chunkIndex].postOps.push({ kind: 'duplicate', mutationIndex });
         break;
       }
       case 'inject-malformed': {
-        if (inRange(m.afterChunk)) segs[m.afterChunk].postOps.push({ kind: 'inject', payload: m.payload });
+        if (inRange(m.afterChunk)) segs[m.afterChunk].postOps.push({ kind: 'inject', payload: m.payload, mutationIndex });
         break;
       }
       case 'delay': {
-        if (inRange(m.afterChunk)) delays.push({ after: m.afterChunk, ms: m.ms });
+        if (inRange(m.afterChunk)) delays.push({ after: m.afterChunk, ms: m.ms, mutationIndex });
         break;
       }
       case 'truncate': {
-        if (inRange(m.afterChunk)) truncateAfter = Math.min(truncateAfter, m.afterChunk);
+        if (inRange(m.afterChunk) && m.afterChunk < truncateAfter) {
+          truncateAfter = m.afterChunk;
+          truncatedBy = mutationIndex;
+        }
         break;
       }
     }
@@ -297,13 +319,23 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
 
     const shift = delays.reduce((acc, d) => acc + (idx > d.after ? d.ms : 0), 0);
     const pauseBeforeMs = delays.reduce((acc, d) => acc + (d.after === idx - 1 ? d.ms : 0), 0);
+    // The pause duration sums every delay mutation targeting this boundary,
+    // but events carry a single mutationIndex: attribute to the largest
+    // contributor (earliest in the mutations array on ties).
+    const pauseSource = delays
+      .filter((d) => d.after === idx - 1)
+      .reduce<(typeof delays)[number] | undefined>(
+        (best, d) => (best === undefined || d.ms > best.ms ? d : best),
+        undefined,
+      );
     const emitAt = seg.baseOffsetMs + shift;
 
     let firstOfChunk = true;
     for (const p of seg.content) {
-      const piece = makePiece(p.text, emitAt, idx, p.kind, encoder);
+      const piece = makePiece(p.text, emitAt, idx, p.kind, encoder, p.mutationIndex);
       if (firstOfChunk && pauseBeforeMs > 0) {
         piece.pauseBeforeMs = pauseBeforeMs;
+        if (pauseSource) piece.pauseMutationIndex = pauseSource.mutationIndex;
       }
       firstOfChunk = false;
       pieces.push(piece);
@@ -315,15 +347,17 @@ export function applyMutations(fixture: ReplayFixture, mutations: ReplayMutation
     for (const op of seg.postOps) {
       if (op.kind === 'duplicate') {
         for (const p of seg.content) {
-          pieces.push(makePiece(p.text, emitAt, idx, 'duplicate', encoder));
+          pieces.push(makePiece(p.text, emitAt, idx, 'duplicate', encoder, op.mutationIndex));
         }
       } else {
-        pieces.push(makePiece(op.payload, emitAt, -1, 'inject-malformed', encoder));
+        pieces.push(makePiece(op.payload, emitAt, -1, 'inject-malformed', encoder, op.mutationIndex));
       }
     }
   }
 
-  return { pieces, truncated };
+  const plan: ReplayPlan = { pieces, truncated };
+  if (truncated && truncatedBy !== undefined) plan.truncatedBy = truncatedBy;
+  return plan;
 }
 
 /**

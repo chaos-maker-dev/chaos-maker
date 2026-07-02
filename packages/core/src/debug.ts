@@ -15,7 +15,7 @@
 
 import type { ChaosConfig } from './config';
 import type { ChaosDebugStage, ChaosEvent } from './events';
-import { ruleMatcherOrigin } from './matchers';
+import { matcherDetail } from './matchers';
 
 export type { ChaosDebugStage } from './events';
 
@@ -58,6 +58,10 @@ const RULE_TYPE_BY_ARRAY: ReadonlyArray<{
   { pick: (c) => c.sse?.delays, ruleType: 'sse-delay' },
   { pick: (c) => c.sse?.corruptions, ruleType: 'sse-corrupt' },
   { pick: (c) => c.sse?.closes, ruleType: 'sse-close' },
+  { pick: (c) => c.fetchStream?.drops, ruleType: 'fetch-stream-drop' },
+  { pick: (c) => c.fetchStream?.delays, ruleType: 'fetch-stream-delay' },
+  { pick: (c) => c.fetchStream?.corruptions, ruleType: 'fetch-stream-corrupt' },
+  { pick: (c) => c.fetchStream?.closes, ruleType: 'fetch-stream-close' },
 ];
 
 /**
@@ -73,7 +77,7 @@ export function buildRuleIdMap(config: ChaosConfig): WeakMap<object, RuleIdEntry
     if (!arr) continue;
     arr.forEach((rule, index) => {
       const entry: RuleIdEntry = { ruleType, ruleId: `${ruleType}#${index}` };
-      const matcherName = ruleMatcherOrigin.get(rule as object);
+      const { matcherName } = matcherDetail(rule as object);
       if (matcherName !== undefined) entry.matcherName = matcherName;
       map.set(rule as object, entry);
     });

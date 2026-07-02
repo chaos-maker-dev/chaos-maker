@@ -111,6 +111,11 @@ export interface NetworkRuleMatchers {
   requestHeaders?: Record<string, RequestKvMatcher>;
   resourceTypes?: RequestResourceType[];
   matcher?: string;
+  /** Attribution stamp recorded by the engine when a `matcher: 'name'`
+   *  reference resolves. Serializable (unlike the internal WeakMap), so debug
+   *  events keep the origin name after the config crosses the page boundary.
+   *  Setting it by hand only affects debug attribution, never matching. */
+  matcherName?: string;
 }
 
 /** Common matcher fields for every WebSocket and SSE chaos rule.
@@ -147,12 +152,15 @@ export type TransportRuleMatchers =
       hostname?: HostnameMatcher;
       queryParams?: Record<string, RequestKvMatcher>;
       matcher?: never;
+      /** Engine-stamped matcher-origin attribution; see `NetworkRuleMatchers.matcherName`. */
+      matcherName?: string;
     }
   | {
       matcher: string;
       urlPattern?: never;
       hostname?: never;
       queryParams?: never;
+      matcherName?: string;
     };
 
 export interface NetworkFailureConfig extends RequestCountingOptions, NetworkRuleMatchers, RuleGroupAssignment {
