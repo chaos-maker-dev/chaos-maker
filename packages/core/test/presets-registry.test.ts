@@ -2,11 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { BUILT_IN_PRESETS, PresetRegistry, presets } from '../src/presets';
 
 describe('PresetRegistry', () => {
-  it('seeds 18 keys (9 camelCase + 9 kebab) in BUILT_IN_PRESETS order', () => {
+  it('seeds 30 keys (15 camelCase + 15 kebab) in BUILT_IN_PRESETS order', () => {
     const registry = new PresetRegistry();
     const keys = registry.list();
-    expect(keys).toHaveLength(18);
+    expect(keys).toHaveLength(30);
     expect(keys).toEqual(BUILT_IN_PRESETS.map((p) => p.name));
+    expect(keys).toContain('ai-slow-first-chunk');
+    expect(keys).toContain('ai-stream-truncated');
+    expect(keys).toContain('ai-stream-paused');
+    expect(keys).toContain('ai-tool-call-fails');
+    expect(keys).toContain('ai-retry-loop');
+    expect(keys).toContain('ai-reconnect-after-drop');
     expect(keys).toContain('slow-api');
     expect(keys).toContain('flaky-api');
     expect(keys).toContain('api-flaky');
@@ -46,7 +52,7 @@ describe('PresetRegistry', () => {
     expect(presets.checkoutDegraded).toBe(registry.get('checkout-degraded'));
   });
 
-  it('legacy presets record exposes only the 9 camelCase keys', () => {
+  it('legacy presets record exposes only the 15 camelCase keys', () => {
     expect(Object.keys(presets)).toEqual([
       'unstableApi',
       'slowNetwork',
@@ -57,6 +63,12 @@ describe('PresetRegistry', () => {
       'unreliableEventStream',
       'mobileThreeG',
       'checkoutDegraded',
+      'aiSlowFirstChunk',
+      'aiStreamTruncated',
+      'aiStreamPaused',
+      'aiToolCallFails',
+      'aiRetryLoop',
+      'aiReconnectAfterDrop',
     ]);
     expect((presets as Record<string, unknown>)['slow-api']).toBeUndefined();
     expect((presets as Record<string, unknown>)['flaky-api']).toBeUndefined();

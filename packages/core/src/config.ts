@@ -1,19 +1,22 @@
+import type { ChaosPhase } from './events';
 import type { RuleGroupConfig } from './groups';
 import type { PresetConfigSlice } from './presets';
 import type { ProfileConfigSlice, ProfileOverrideSlice } from './profiles';
 
 /** Counting options shared by all network chaos config types.
- *  At most one of `onNth`, `everyNth`, or `afterN` may be set on a single rule.
- *  Counting is per-rule and shared across fetch + XHR (only increments when a
- *  request matches `urlPattern` + `methods`).
+ *  At most one of `onNth`, `everyNth`, `afterN`, or `firstN` may be set on a
+ *  single rule. Counting is per-rule and shared across fetch + XHR (only
+ *  increments when a request matches `urlPattern` + `methods`).
  *  - `onNth`    – apply chaos only on the Nth matching request (1-based). e.g. `onNth: 3` fires on the 3rd request only.
  *  - `everyNth` – apply chaos on every Nth matching request. e.g. `everyNth: 3` fires on the 3rd, 6th, 9th, …
  *  - `afterN`   – apply chaos only after the first N matching requests have passed through. e.g. `afterN: 3` fires from the 4th request onward.
+ *  - `firstN`   – apply chaos on the first N matching requests only. e.g. `firstN: 2` fires on the 1st and 2nd requests, then never again. Complements `afterN`; use for rate-limit style failures that clear after retries.
  */
 export interface RequestCountingOptions {
   onNth?: number;
   everyNth?: number;
   afterN?: number;
+  firstN?: number;
 }
 
 /** Optional group membership shared by every rule type.
@@ -365,8 +368,21 @@ export type FetchStreamDelayConfig =
 
 interface FetchStreamCorruptRule {
   chunkIndex?: number;
+  /** Match against the decoded UTF-8 text of each chunk.
+   *  - `string`  -  case-sensitive substring containment.
+   *  - `RegExp`  -  `.test(chunkText)`; `g`/`y` flags rejected at validation time.
+   *  Binary chunks (invalid UTF-8) never match; the first binary skip per
+   *  connection emits a diagnostic event with `applied: false` and
+   *  `reason: 'binary-chunk'`. Combines with `chunkIndex` when both are set. */
+  chunkPattern?: string | RegExp;
   strategy: FetchStreamCorruptionStrategy;
   probability: number;
+  /** Optional lifecycle tag stamped onto the emitted corruption event's
+   *  `detail.phase`. Lets rule authors (and presets) surface semantic markers
+   *  such as `ai:tool-call-failed` without a bespoke event type. Rejected at
+   *  validation time when combined with the `duplicate` strategy, which keeps
+   *  its canonical `ai:chunk-duplicated` phase. */
+  phase?: ChaosPhase;
 }
 export type FetchStreamCorruptConfig =
   TransportRuleMatchers & RequestCountingOptions & RuleGroupAssignment & FetchStreamCorruptRule;

@@ -40,6 +40,18 @@ export function matchHostname(hostname: string, matcher: HostnameMatcher): boole
   return matcher.test(hostname);
 }
 
+/** Match decoded chunk text against a rule's `chunkPattern`.
+ *  - `string`  -  case-sensitive substring containment (chunk CONTAINS the marker).
+ *  - `RegExp`  -  `.test(text)`.
+ *  Callers are responsible for decoding; binary chunks never reach this. */
+export function matchChunkText(text: string, matcher: string | RegExp): boolean {
+  if (typeof matcher === 'string') {
+    return text.includes(matcher);
+  }
+  resetRegexState(matcher);
+  return matcher.test(text);
+}
+
 export function matchKvEntry(value: string | undefined, matcher: RequestKvMatcher): boolean {
   if (matcher === true) return value !== undefined;
   if (matcher === false) return value === undefined;

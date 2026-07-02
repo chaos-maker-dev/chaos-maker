@@ -33,6 +33,7 @@ const countingFields = {
   onNth: positiveInt.optional(),
   everyNth: positiveInt.optional(),
   afterN: z.number().int().min(0).optional(),
+  firstN: positiveInt.optional(),
 };
 
 /** Optional `group` field shared by every rule type. */
@@ -40,12 +41,12 @@ const groupField = {
   group: z.string().trim().min(1, 'group must not be empty').optional(),
 };
 
-const mutuallyExclusiveCounting = (data: { onNth?: number; everyNth?: number; afterN?: number }) =>
-  [data.onNth, data.everyNth, data.afterN].filter((v) => v !== undefined).length <= 1;
+const mutuallyExclusiveCounting = (data: { onNth?: number; everyNth?: number; afterN?: number; firstN?: number }) =>
+  [data.onNth, data.everyNth, data.afterN, data.firstN].filter((v) => v !== undefined).length <= 1;
 
 const countingRefinement = [
   mutuallyExclusiveCounting,
-  { message: 'Only one of onNth, everyNth, or afterN may be set on a single rule' },
+  { message: 'Only one of onNth, everyNth, afterN, or firstN may be set on a single rule' },
 ] as const;
 
 const graphqlOperationMatcher = z.union([
@@ -63,6 +64,21 @@ const hostnameMatcher = z.union([
     { message: 'hostname RegExp must not use global (g) or sticky (y) flags due to lastIndex mutation' },
   ),
 ]);
+
+const chunkPatternMatcher = z.union([
+  z.string().min(1, 'chunkPattern must not be empty'),
+  z.instanceof(RegExp).refine(
+    (re) => !re.global && !re.sticky,
+    { message: 'chunkPattern RegExp must not use global (g) or sticky (y) flags due to lastIndex mutation' },
+  ),
+]);
+
+const rulePhaseTag = z
+  .string()
+  .regex(
+    /^(ai|user):[a-z0-9]+(-[a-z0-9]+)*$/,
+    'phase must be a kebab-case lifecycle tag in the ai: or user: namespace, e.g. ai:tool-call-failed',
+  );
 
 const requestKvValue = z.union([
   z.string(),
@@ -547,17 +563,27 @@ const buildFetchStreamCorrupt = (p: Policy) =>
       z.object({
         ...transportMatcherFields,
         chunkIndex: chunkIndexField.optional(),
+        chunkPattern: chunkPatternMatcher.optional(),
         // `duplicate` is fetch-stream-specific (emission-level, not text-level).
         // SSE / WebSocket corruption stays at the four text strategies because
         // their interceptors operate on already-decoded message text rather
         // than raw byte chunks.
         strategy: z.enum(['truncate', 'malformed-json', 'empty', 'wrong-type', 'duplicate']),
         probability,
+        phase: rulePhaseTag.optional(),
         ...countingFields,
         ...groupField,
       }),
       p,
-    ).refine(...countingRefinement),
+    )
+      .refine(...countingRefinement)
+      .refine(
+        (data) => !(data.strategy === 'duplicate' && data.phase !== undefined),
+        {
+          message: "phase is not supported with strategy 'duplicate'; duplicated chunks always emit the canonical ai:chunk-duplicated phase",
+          path: ['phase'],
+        },
+      ),
   );
 
 const buildFetchStreamClose = (p: Policy) =>

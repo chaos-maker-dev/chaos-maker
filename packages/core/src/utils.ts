@@ -45,6 +45,7 @@ export function checkCountingCondition(rule: RequestCountingOptions, count: numb
   if (rule.onNth !== undefined) return count === rule.onNth;
   if (rule.everyNth !== undefined) return count % rule.everyNth === 0;
   if (rule.afterN !== undefined) return count > rule.afterN;
+  if (rule.firstN !== undefined) return count <= rule.firstN;
   return true;
 }
 

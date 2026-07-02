@@ -1,0 +1,90 @@
+---
+title: Live Provider Smoke Tests with Local Chaos
+description: Keep most AI chat coverage deterministic and offline, then layer chaos onto a small set of live provider smoke tests.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Most AI interface coverage should run against deterministic fixtures: [replayed stream captures](./replay-broken-markdown) and the [AI presets](../concepts/presets#ai-streaming-presets) need no API key, no network, and produce identical results on every run. Keep live provider calls for a thin smoke layer that proves the real wire format still matches what your fixtures assume.
+
+Chaos Maker ships no provider SDK integration on purpose. The pattern below works with OpenAI, Anthropic, Vercel AI SDK, or any custom stack, because chaos is injected in the browser where the stream is consumed, not at the provider.
+
+## The split
+
+| Layer | Backend | Chaos | Frequency |
+| --- | --- | --- | --- |
+| Deterministic suite | replay fixtures or a local mock | presets + `ai` shorthand + replay mutations | every CI run |
+| Live smoke | real provider endpoint | light chaos only (first-chunk delay, one truncation) | nightly or pre-release |
+
+## Live smoke with chaos layered on
+
+The test talks to your real backend, which talks to the real provider. Chaos still applies in-page, so a truncation exercises YOUR reconnect and partial-render paths against a genuine provider stream.
+
+<Tabs>
+  <TabItem label="Playwright">
+
+```typescript
+import { test, expect } from '@playwright/test';
+import { injectChaos, getChaosLog } from '@chaos-maker/playwright';
+
+// Skip unless the pipeline provides live credentials.
+test.skip(!process.env.LIVE_SMOKE, 'live smoke runs nightly with real provider credentials');
+
+test('live stream survives a mid-response truncation', async ({ page }) => {
+  await injectChaos(page, {
+    seed: 7,
+    ai: { truncateAfterChunk: 6, transport: 'fetch-stream' },
+  });
+
+  await page.goto('/chat');
+  await page.getByRole('textbox').fill('Reply with a short paragraph.');
+  await page.getByRole('button', { name: 'Send' }).click();
+
+  // Partial content rendered, truncation surfaced, no crash.
+  await expect(page.locator('[data-testid="assistant-message"]')).not.toBeEmpty();
+  await expect(page.locator('[data-testid="truncated-banner"]')).toBeVisible();
+
+  const log = await getChaosLog(page);
+  expect(log.some((e) => e.detail.phase === 'ai:stream-truncated')).toBe(true);
+});
+```
+
+  </TabItem>
+  <TabItem label="WebdriverIO">
+
+```typescript
+import { browser, expect } from '@wdio/globals';
+import { injectChaos } from '@chaos-maker/webdriverio';
+
+describe('live provider smoke', () => {
+  before(function () {
+    if (!process.env.LIVE_SMOKE) this.skip();
+  });
+
+  it('live stream survives a mid-response truncation', async () => {
+    await browser.url('/chat');
+    await injectChaos(browser, {
+      seed: 7,
+      ai: { truncateAfterChunk: 6, transport: 'fetch-stream' },
+    });
+
+    await $('[data-testid="prompt-input"]').setValue('Reply with a short paragraph.');
+    await $('button=Send').click();
+
+    await expect($('[data-testid="truncated-banner"]')).toBeDisplayed();
+
+    const log = await browser.getChaosLog();
+    expect(log.some((e) => e.detail.phase === 'ai:stream-truncated')).toBe(true);
+  });
+});
+```
+
+  </TabItem>
+</Tabs>
+
+## Ground rules for the live layer
+
+- Gate on an environment flag (`LIVE_SMOKE`) so the suite stays green without credentials.
+- Keep prompts short and deterministic in intent; assert on UI behavior, never on model wording.
+- Use existence assertions on chaos log events, not counts: live streams have variable chunk counts, so `truncateAfterChunk: 6` may or may not fire on a short reply. If it did not fire, the test still proves clean streaming.
+- Capture a fresh replay fixture from the live smoke run whenever a provider changes wire format, then feed it back into the deterministic suite. See the capture utility in the [stream replay concept](../concepts/stream-replay).

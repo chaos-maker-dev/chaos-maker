@@ -1,6 +1,6 @@
 ---
 title: Nth Counting
-description: Target exact matching requests with onNth, everyNth, and afterN.
+description: Target exact matching requests with onNth, everyNth, afterN, and firstN.
 ---
 
 Network and WebSocket rules can include one counting selector.
@@ -10,6 +10,7 @@ Network and WebSocket rules can include one counting selector.
 | `onNth` | Apply only on the Nth matching request or message. |
 | `everyNth` | Apply on every Nth matching request or message. |
 | `afterN` | Apply after the first N matches have passed. |
+| `firstN` | Apply on the first N matches only, then never again. |
 
 ```typescript
 network: {
@@ -19,4 +20,14 @@ network: {
 }
 ```
 
-Counting is per rule object and shared across fetch and XHR for the same config entry. Set at most one of `onNth`, `everyNth`, or `afterN` on a rule.
+`firstN` is the rate-limit shape: fail the first attempts, then let retries through. The `ai-retry-loop` preset uses `firstN: 2` to return 429 twice before a clean response.
+
+```typescript
+network: {
+  failures: [
+    { urlPattern: '/api/chat', statusCode: 429, probability: 1, firstN: 2 },
+  ],
+}
+```
+
+Counting is per rule object and shared across fetch and XHR for the same config entry. Set at most one of `onNth`, `everyNth`, `afterN`, or `firstN` on a rule.

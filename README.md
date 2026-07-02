@@ -40,6 +40,12 @@ test('checkout works under degraded mobile network', async ({ page }) => {
 });
 ```
 
+For AI chat and assistant interfaces, six streaming presets reproduce the incidents those UIs hit in production: `ai-slow-first-chunk`, `ai-stream-paused`, `ai-stream-truncated`, `ai-tool-call-fails`, `ai-retry-loop`, and `ai-reconnect-after-drop`.
+
+```typescript
+await injectChaos(page, { presets: ['ai-slow-first-chunk'], seed: 42 });
+```
+
 See the full catalog in the [Presets docs](https://chaos-maker-dev.github.io/chaos-maker/concepts/presets/). When a failure only appears under a generated seed, follow the [replay recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/reproduce-flaky-failure/).
 
 ## Scenario profiles

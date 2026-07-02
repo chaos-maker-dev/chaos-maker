@@ -71,6 +71,22 @@ describe('checkCountingCondition', () => {
       expect(checkCountingCondition(rule, 5)).toBe(true);
     });
   });
+
+  describe('firstN', () => {
+    it('returns true for the first N requests and false thereafter', () => {
+      const rule = { firstN: 2 };
+      expect(checkCountingCondition(rule, 1)).toBe(true);
+      expect(checkCountingCondition(rule, 2)).toBe(true);
+      expect(checkCountingCondition(rule, 3)).toBe(false);
+      expect(checkCountingCondition(rule, 10)).toBe(false);
+    });
+
+    it('fires only once with firstN 1', () => {
+      const rule = { firstN: 1 };
+      expect(checkCountingCondition(rule, 1)).toBe(true);
+      expect(checkCountingCondition(rule, 2)).toBe(false);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

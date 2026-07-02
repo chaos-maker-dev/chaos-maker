@@ -1,4 +1,5 @@
-import type { ChaosConfig } from './config';
+import type { AiConfig, ChaosConfig } from './config';
+import { compileAiToRules } from './ai';
 import { cloneValue } from './utils';
 
 /** ChaosConfig slice a preset is allowed to carry. Auto-includes any new
@@ -104,6 +105,63 @@ const CHECKOUT_DEGRADED: PresetConfigSlice = {
   },
 };
 
+/** Derive a preset slice by running an `ai` shorthand through the SAME
+ *  compiler `prepareChaosConfig` uses. The returned slice carries the
+ *  compiled transport rules (fetchStream + sse + websocket for the default
+ *  `'auto'` transport), so a preset built here can never drift from what the
+ *  equivalent top-level `ai: {...}` config produces at runtime. */
+function sliceFromAiDsl(ai: AiConfig): PresetConfigSlice {
+  return compileAiToRules({ ai: { ...ai } }) as PresetConfigSlice;
+}
+
+// AI streaming presets. Names read like the production incident they
+// reproduce. Derived slices go through `sliceFromAiDsl`; hand-authored slices
+// use primitives the `ai` shorthand cannot express yet.
+const AI_SLOW_FIRST_CHUNK = sliceFromAiDsl({ firstChunkDelayMs: 3000 });
+
+const AI_STREAM_TRUNCATED = sliceFromAiDsl({ truncateAfterChunk: 20 });
+
+const AI_STREAM_PAUSED = sliceFromAiDsl({ pauseAfterChunk: 10, pauseDurationMs: 5000 });
+
+// Corrupts only chunks that carry a tool/function-call wire marker (OpenAI
+// `tool_calls` / legacy `function_call`, Anthropic `tool_use`), so prose
+// chunks render normally while the structured payload breaks mid-stream.
+const AI_TOOL_CALL_FAILS: PresetConfigSlice = {
+  fetchStream: {
+    corruptions: [
+      {
+        urlPattern: MATCH_ALL_URLS,
+        chunkPattern: /"(tool_calls|tool_use|function_call)"/,
+        strategy: 'malformed-json',
+        probability: 1.0,
+        phase: 'ai:tool-call-failed',
+      },
+    ],
+  },
+};
+
+// 429 on the first two matching requests, success from the third onward.
+// Exercises client backoff/retry paths the way provider rate limiting does.
+// A single firstN rule, NOT two onNth rules: failure evaluation stops at the
+// first applied rule per request, so a second onNth rule's counter would not
+// advance on requests the first rule already failed.
+const AI_RETRY_LOOP: PresetConfigSlice = {
+  network: {
+    failures: [{ urlPattern: MATCH_ALL_URLS, statusCode: 429, probability: 1.0, firstN: 2 }],
+  },
+};
+
+// Cuts the stream shortly after it starts (fetch streams by chunk count, SSE
+// by wall clock) so tests can assert the app reconnects or resumes cleanly.
+const AI_RECONNECT_AFTER_DROP: PresetConfigSlice = {
+  fetchStream: {
+    closes: [{ urlPattern: MATCH_ALL_URLS, afterChunk: 5, probability: 1.0 }],
+  },
+  sse: {
+    closes: [{ urlPattern: MATCH_ALL_URLS, afterMs: 3000, probability: 1.0 }],
+  },
+};
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -116,7 +174,23 @@ function deepFreeze<T>(value: T): T {
 // .latencies![0].delayMs = 1` is a no-op in sloppy mode and throws in strict
 // mode. Custom presets passed via `customPresets` are NOT frozen  -  users keep
 // ownership of their literals; the engine deep-clones them at expansion time.
-[SLOW_NETWORK, FLAKY_CONNECTION, OFFLINE_MODE, UNSTABLE_API, DEGRADED_UI, UNRELIABLE_WEBSOCKET, UNRELIABLE_EVENT_STREAM, MOBILE_3G, CHECKOUT_DEGRADED].forEach(deepFreeze);
+[
+  SLOW_NETWORK,
+  FLAKY_CONNECTION,
+  OFFLINE_MODE,
+  UNSTABLE_API,
+  DEGRADED_UI,
+  UNRELIABLE_WEBSOCKET,
+  UNRELIABLE_EVENT_STREAM,
+  MOBILE_3G,
+  CHECKOUT_DEGRADED,
+  AI_SLOW_FIRST_CHUNK,
+  AI_STREAM_TRUNCATED,
+  AI_STREAM_PAUSED,
+  AI_TOOL_CALL_FAILS,
+  AI_RETRY_LOOP,
+  AI_RECONNECT_AFTER_DROP,
+].forEach(deepFreeze);
 
 /** All built-in presets including kebab aliases.
  *  Aliases are EXTRA registry entries pointing at the SAME config object
@@ -138,6 +212,12 @@ export const BUILT_IN_PRESETS: ReadonlyArray<Preset> = Object.freeze(
     { name: 'unreliableEventStream', config: UNRELIABLE_EVENT_STREAM },
     { name: 'mobileThreeG',          config: MOBILE_3G },
     { name: 'checkoutDegraded',      config: CHECKOUT_DEGRADED },
+    { name: 'aiSlowFirstChunk',      config: AI_SLOW_FIRST_CHUNK },
+    { name: 'aiStreamTruncated',     config: AI_STREAM_TRUNCATED },
+    { name: 'aiStreamPaused',        config: AI_STREAM_PAUSED },
+    { name: 'aiToolCallFails',       config: AI_TOOL_CALL_FAILS },
+    { name: 'aiRetryLoop',           config: AI_RETRY_LOOP },
+    { name: 'aiReconnectAfterDrop',  config: AI_RECONNECT_AFTER_DROP },
     { name: 'slow-api',              config: SLOW_NETWORK },
     { name: 'flaky-api',             config: FLAKY_CONNECTION },
     { name: 'api-flaky',             config: FLAKY_CONNECTION },
@@ -147,6 +227,12 @@ export const BUILT_IN_PRESETS: ReadonlyArray<Preset> = Object.freeze(
     { name: 'realtime-lag',          config: UNRELIABLE_EVENT_STREAM },
     { name: 'mobile-3g',             config: MOBILE_3G },
     { name: 'checkout-degraded',     config: CHECKOUT_DEGRADED },
+    { name: 'ai-slow-first-chunk',   config: AI_SLOW_FIRST_CHUNK },
+    { name: 'ai-stream-truncated',   config: AI_STREAM_TRUNCATED },
+    { name: 'ai-stream-paused',      config: AI_STREAM_PAUSED },
+    { name: 'ai-tool-call-fails',    config: AI_TOOL_CALL_FAILS },
+    { name: 'ai-retry-loop',         config: AI_RETRY_LOOP },
+    { name: 'ai-reconnect-after-drop', config: AI_RECONNECT_AFTER_DROP },
   ] as Preset[]).map((p) => Object.freeze(p)),
 );
 
@@ -324,4 +410,10 @@ export const presets: Readonly<Record<string, PresetConfigSlice>> = Object.freez
   unreliableEventStream: UNRELIABLE_EVENT_STREAM,
   mobileThreeG:          MOBILE_3G,
   checkoutDegraded:      CHECKOUT_DEGRADED,
+  aiSlowFirstChunk:      AI_SLOW_FIRST_CHUNK,
+  aiStreamTruncated:     AI_STREAM_TRUNCATED,
+  aiStreamPaused:        AI_STREAM_PAUSED,
+  aiToolCallFails:       AI_TOOL_CALL_FAILS,
+  aiRetryLoop:           AI_RETRY_LOOP,
+  aiReconnectAfterDrop:  AI_RECONNECT_AFTER_DROP,
 });

@@ -75,9 +75,12 @@
     <h2>Fetch stream (chat)</h2>
     <button id="chat-start">Start /chat</button>
     <button id="chat-start-short">Start /chat?n=3</button>
+    <button id="chat-start-toolcall">Start /chat?toolcall=1</button>
+    <button id="chat-start-retry">Start /chat (retry on 429)</button>
     <div id="chat-status">idle</div>
     <div id="chat-chunk-count">0</div>
     <div id="chat-message-count">0</div>
+    <div id="chat-attempts">0</div>
     <div id="chat-first-chunk-ms"></div>
     <pre id="chat-text"></pre>
   </section>
@@ -338,11 +341,66 @@
       });
     }
 
+    function setChatAttempts(n) {
+      document.getElementById('chat-attempts').textContent = String(n);
+    }
+
+    // Retry wrapper mirroring how chat clients back off on provider rate
+    // limits: a 429 response triggers a fresh attempt (up to maxAttempts)
+    // with a short delay; any other response streams normally.
+    function startChatWithRetry(url, maxAttempts) {
+      resetChatUi();
+      setChatAttempts(0);
+      var attempt = 0;
+      function tryOnce() {
+        attempt += 1;
+        setChatAttempts(attempt);
+        fetch(url).then(function (response) {
+          if (response.status === 429 && attempt < maxAttempts) {
+            setChatStatus('retrying');
+            setTimeout(tryOnce, 100);
+            return;
+          }
+          if (!response.ok || !response.body) {
+            setChatStatus('error');
+            return;
+          }
+          setChatStatus('open');
+          var reader = response.body.getReader();
+          var decoder = new TextDecoder();
+          function pump() {
+            reader.read().then(function (result) {
+              if (result.done) {
+                setChatStatus('done');
+                reader.releaseLock();
+                return;
+              }
+              appendChatText(decoder.decode(result.value, { stream: true }));
+              pump();
+            }).catch(function () {
+              setChatStatus('error');
+              try { reader.releaseLock(); } catch (e) { /* already released */ }
+            });
+          }
+          pump();
+        }).catch(function () {
+          setChatStatus('error');
+        });
+      }
+      tryOnce();
+    }
+
     document.getElementById('chat-start').addEventListener('click', function () {
       startChat(CHAT_BASE + '/chat');
     });
     document.getElementById('chat-start-short').addEventListener('click', function () {
       startChat(CHAT_BASE + '/chat?n=3');
+    });
+    document.getElementById('chat-start-toolcall').addEventListener('click', function () {
+      startChat(CHAT_BASE + '/chat?toolcall=1');
+    });
+    document.getElementById('chat-start-retry').addEventListener('click', function () {
+      startChatWithRetry(CHAT_BASE + '/chat', 3);
     });
 
     // --- Server-Sent Events ---
