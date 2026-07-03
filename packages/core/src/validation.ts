@@ -625,6 +625,59 @@ const buildFetchStreamConfig = (p: Policy) =>
     p,
   );
 
+const selectorField = (label: string) =>
+  z.string().min(1, `${label} selector must not be empty`);
+
+/** Human-interaction triggers. Fixed-schedule scenario events, not rules:
+ *  no matchers, no counting, no probability, no groups. Every duration is
+ *  whole-ms (fractional rejection consistent with the streaming surface). */
+const buildUserInteractionConfig = (p: Policy) =>
+  withPolicy(
+    z.object({
+      cancelStreamAfterMs: wholeMs('cancelStreamAfterMs').optional(),
+      retryStorm: withPolicy(
+        z.object({
+          count: z.number().int('count must be a whole number').min(1, 'count must be >= 1'),
+          intervalMs: wholeMs('intervalMs'),
+          afterMs: wholeMs('afterMs').optional(),
+          selector: selectorField('retryStorm').optional(),
+        }),
+        p,
+      ).optional(),
+      tabHidden: withPolicy(
+        z.object({
+          afterMs: wholeMs('afterMs'),
+          durationMs: wholeMs('durationMs'),
+        }),
+        p,
+      ).optional(),
+      blurWindow: withPolicy(
+        z.object({
+          afterMs: wholeMs('afterMs'),
+          durationMs: wholeMs('durationMs'),
+        }),
+        p,
+      ).optional(),
+      promptEditDuringResponse: withPolicy(
+        z.object({
+          afterMs: wholeMs('afterMs'),
+          simulateTypingMs: wholeMs('simulateTypingMs'),
+          selector: selectorField('promptEditDuringResponse').optional(),
+          text: z.string().min(1, 'promptEditDuringResponse text must not be empty').optional(),
+        }),
+        p,
+      ).optional(),
+      navigateAway: withPolicy(
+        z.object({
+          afterMs: wholeMs('afterMs'),
+          target: z.string().min(1, 'navigateAway target must not be empty'),
+        }),
+        p,
+      ).optional(),
+    }),
+    p,
+  );
+
 const aiTransport = z.enum(['auto', 'fetch-stream', 'sse', 'websocket']);
 
 const buildAiConfig = (p: Policy) =>
@@ -697,6 +750,7 @@ const buildSliceSchema = (p: Policy) =>
       websocket: buildWebSocketConfig(p).optional(),
       sse: buildSseConfig(p).optional(),
       fetchStream: buildFetchStreamConfig(p).optional(),
+      userInteraction: buildUserInteractionConfig(p).optional(),
       groups: buildGroupConfigList(p).optional(),
     }),
     p,
@@ -909,6 +963,7 @@ const RULE_TYPE_TO_SCHEMA = {
   'fetch-stream.corrupt': buildFetchStreamCorrupt('strict'),
   'fetch-stream.close': buildFetchStreamClose('strict'),
   ai: buildAiConfig('strict'),
+  'user-interaction': buildUserInteractionConfig('strict'),
   group: buildGroupConfig('strict'),
   preset: chaosConfigSliceSchema,
   profile: chaosProfileSliceSchema,
@@ -1191,6 +1246,12 @@ function runCustomValidators(
 
   if (preCompileAi !== undefined) {
     callValidator('ai', preCompileAi, 'ai');
+  }
+
+  // Unlike `ai`, `userInteraction` survives preparation uncompiled, so the
+  // post-preparation config carries it directly.
+  if (config.userInteraction !== undefined) {
+    callValidator('user-interaction', config.userInteraction, 'userInteraction');
   }
 
   if (validators['top-level']) {

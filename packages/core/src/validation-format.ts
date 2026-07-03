@@ -25,6 +25,12 @@ const RULE_TYPE_BY_CATEGORY_KEY: Record<string, Partial<Record<string, RuleType>
     corruptions: 'sse.corrupt',
     closes: 'sse.close',
   },
+  fetchStream: {
+    drops: 'fetch-stream.drop',
+    delays: 'fetch-stream.delay',
+    corruptions: 'fetch-stream.corrupt',
+    closes: 'fetch-stream.close',
+  },
 };
 
 const PROFILE_PATH_PREFIXES = new Set(['profile', 'profileOverrides', 'customProfiles']);
@@ -35,6 +41,8 @@ function deriveRuleType(path: ReadonlyArray<string | number>): RuleType {
   if (first === 'groups') return 'group';
   if (first === 'presets' || first === 'customPresets') return 'preset';
   if (first === 'matchers') return 'matcher';
+  if (first === 'ai') return 'ai';
+  if (first === 'userInteraction') return 'user-interaction';
 
   // Issues under a profile-related top-level field. Walk past the slice
   // anchor and derive the inner rule type so a `network.failures[0]` under

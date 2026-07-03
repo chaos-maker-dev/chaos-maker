@@ -1,6 +1,6 @@
 {
   "name": "@chaos-maker/puppeteer",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "description": "Puppeteer adapter for @chaos-maker/core - one-line chaos injection in Puppeteer tests",
   "keywords": [

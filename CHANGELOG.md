@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.9.0] - 2026-07-03
 
 ### Added
 
@@ -26,11 +26,17 @@ All notable changes to this project will be documented in this file.
 
 - **Replay mutation attribution**: events produced by replayed-stream mutations (pause, duplicate, truncate) now carry `detail.mutationIndex`, the zero-based position of the causing entry in the replay `mutations` array. The replay engine records provenance on every plan piece (`ReplayPiece.mutationIndex`, `pauseMutationIndex`, `ReplayPlan.truncatedBy`), the fetch-stream replay driver surfaces it on emitted events, and the report renderers annotate matching timeline entries with `(mutation N)` in Markdown and a chip in HTML. SSE and WebSocket replay events carry phases and chunk indices but not yet mutation indices.
 
+- **Human interaction chaos**: new top-level `userInteraction` config namespace simulating the user side of streaming failures on a fixed millisecond schedule measured from chaos start (deterministic, no PRNG involvement). Triggers: `cancelStreamAfterMs` cancels every in-flight streaming connection (fetch streams abort through an engine-owned `AbortController` merged with any caller signal, so consumers observe a real `AbortError`; SSE sources close and dispatch `error`; WebSockets close), `retryStorm` dispatches rapid synthetic clicks against a selector (default `[data-chaos-retry]`, re-queried per click), `tabHidden` overrides `document.visibilityState` / `document.hidden` and fires `visibilitychange` at both edges (restored after `durationMs` and on stop), `blurWindow` dispatches synthetic window `blur` / `focus`, `promptEditDuringResponse` focuses an input (default `[data-chaos-prompt]`) and types text character by character across `simulateTypingMs`, and `navigateAway` calls `location.assign` after a delay. Six new event types (`ui:user-cancel`, `ui:retry-storm`, `ui:visibility`, `ui:focus`, `ui:prompt-edit`, `ui:navigate`) tagged with eight new canonical `user:*` phases (`user:cancel`, `user:retry`, `user:tab-hidden`, `user:tab-visible`, `user:window-blurred`, `user:window-focused`, `user:prompt-edited`, `user:navigated-away`) that render in the streaming timeline report; cancel events carry `detail.targetTransport` and, for rule-matched fetch streams, the cancelled `connectionId`. Presets and profiles may carry `userInteraction`; merging is per trigger with the later source winning (user config over presets, overrides over everything). Non-DOM contexts skip DOM-dependent triggers with a console warning. New public types `UserInteractionConfig`, `UserInteractionRetryStormConfig`, `UserInteractionTabHiddenConfig`, `UserInteractionBlurWindowConfig`, `UserInteractionPromptEditConfig`, `UserInteractionNavigateAwayConfig` re-exported from `@chaos-maker/core` and every framework adapter. New docs: human interaction concept page and a cancel-mid-stream recipe. Known limits: block-upstream stream replay is fixture-driven and not cancellable; `navigateAway` E2E coverage runs on Playwright and Puppeteer (the navigation tears down the page context the shared parity harness needs).
+
+- **`aiMobileInterrupt` preset**: `aiMobileInterrupt` / `ai-mobile-interrupt` reproduces a user backgrounding the app mid-generation: the tab reports hidden for 3s (starting at 1s) via the `tabHidden` trigger while the stream drops (fetch streams truncate after chunk 10; SSE closes after 4s). First preset to combine transport rules with a human-interaction trigger.
+
 ### Fixed
 
 - **Named matcher attribution across the page boundary**: rules resolved from `matcher: 'name'` references now keep their `matcherName` in debug events when the config is injected through a framework adapter. The resolver previously recorded the origin name only in a node-side WeakMap keyed by rule object reference, which JSON serialization into the page strips; every adapter-injected run therefore lost `detail.matcherName`. The resolver now also stamps a serializable `matcherName` field onto the resolved rule (accepted by the schema, ignored by matching), and both `matcherDetail` and `buildRuleIdMap` read the stamp first with the WeakMap as node-side fallback. Carried since v0.7.0.
 
 - **Fetch-stream named matcher resolution**: `resolveNamedMatchers` now walks fetch-stream rule arrays (`drops`, `delays`, `corruptions`, `closes`). Previously a fetch-stream rule referencing `matcher: 'name'` was left unresolved, so its matcher fields never inlined and the rule silently matched nothing it was supposed to target.
+
+- **Rule fields preserved under `unknownFields: 'warn' | 'ignore'`**: the known-key projection that runs for relaxed validation policies had drifted behind the schema and silently stripped valid rule fields: `firstN` on every counting surface, `hostname` / `queryParams` / `requestHeaders` / `resourceTypes` / `matcher` / `matcherName` on network rules, `hostname` / `queryParams` / `matcher` / `matcherName` on WebSocket and SSE rules, and `chunkPattern` / `phase` on fetch-stream corruptions. All rule projections now share the schema's matcher and counting field lists. Validation issues under `fetchStream` and `ai` paths also report their proper rule types instead of `top-level`.
 
 ### Changed
 

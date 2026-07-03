@@ -41,6 +41,7 @@ import {
   type ParsedRequestUrl,
 } from '../matchers';
 import type { RuleGroupRegistry } from '../groups';
+import type { StreamCancelRegistry } from './streamCancelRegistry';
 
 type Direction = 'inbound' | 'outbound';
 type PayloadType = 'text' | 'binary';
@@ -381,6 +382,10 @@ export function patchWebSocket(
   random: () => number,
   counters: Map<object, number>,
   groups?: RuleGroupRegistry,
+  /** Present when the user-interaction cancel trigger is armed. Every wrapped
+   *  socket registers a cancel hook that closes it (the app observes a normal
+   *  `close` event, as if the user tore the connection down). */
+  cancelRegistry?: StreamCancelRegistry,
 ): WebSocketPatchHandle {
   const pendingTimersBySocket = new Map<WebSocket, Set<PendingTimer>>();
   const inboundContextBySocket = new WeakMap<
@@ -774,7 +779,28 @@ export function patchWebSocket(
   function ChaosWebSocket(this: unknown, url: string | URL, protocols?: string | string[]): WebSocket {
     const socket = new OriginalWebSocket(url, protocols);
     const urlStr = typeof url === 'string' ? url : url.toString();
-    inboundContextBySocket.set(socket, { connectionId: mintConnectionId(), chunkIndex: -1 });
+    const ctx = { connectionId: mintConnectionId(), chunkIndex: -1 };
+    inboundContextBySocket.set(socket, ctx);
+
+    if (cancelRegistry) {
+      cancelRegistry.register({
+        transport: 'websocket',
+        url: urlStr,
+        connectionId: ctx.connectionId,
+        cancel: () => {
+          if (socket.readyState === socket.CLOSING || socket.readyState === socket.CLOSED) {
+            return false;
+          }
+          clearSocketTimers(socket, 'user-cancel');
+          try {
+            socket.close();
+          } catch {
+            return false;
+          }
+          return true;
+        },
+      });
+    }
 
     const boundOriginalSend = socket.send.bind(socket) as (
       d: string | ArrayBuffer | ArrayBufferView | Blob,

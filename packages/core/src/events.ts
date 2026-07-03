@@ -34,6 +34,28 @@ export type ChaosEventType =
   /** Streaming lifecycle marker for inbound WebSocket traffic.
    *  `detail.phase` carries the canonical phase string. */
   | 'websocket:lifecycle'
+  /** An in-flight streaming connection was cancelled by the user-interaction
+   *  cancel trigger. One event per cancelled connection (`detail.url`,
+   *  `detail.connectionId` when known); a single `applied: false` event with
+   *  `reason: 'no-active-streams'` when nothing was in flight. */
+  | 'ui:user-cancel'
+  /** One synthetic retry click dispatched by the retry-storm trigger.
+   *  `applied: false` with `reason: 'selector-not-found'` when the configured
+   *  selector matches nothing at click time. */
+  | 'ui:retry-storm'
+  /** Synthetic tab-visibility flip. `detail.phase` distinguishes the edges:
+   *  `user:tab-hidden` on entry, `user:tab-visible` on restore. */
+  | 'ui:visibility'
+  /** Synthetic window focus flip. `detail.phase` distinguishes the edges:
+   *  `user:window-blurred` on blur, `user:window-focused` on restore. */
+  | 'ui:focus'
+  /** Simulated prompt edit during an in-flight response. Emitted once when
+   *  the edit begins; `applied: false` with `reason: 'selector-not-found'`
+   *  when the configured selector matches nothing. */
+  | 'ui:prompt-edit'
+  /** `location.assign` fired by the navigate-away trigger. Emitted
+   *  immediately before navigation tears the page down. */
+  | 'ui:navigate'
   /** Emitted once per `enableGroup()` call. `applied: true`. */
   | 'rule-group:enabled'
   /** Emitted once per `disableGroup()` call. `applied: true`. */
@@ -75,8 +97,8 @@ export type ChaosLifecyclePhase =
  *
  *  Format: `<namespace>:<lifecycle>` in kebab-case. Namespaces:
  *    - `ai:`  - streaming chaos (first-chunk, pause, resume, truncate, ...)
- *    - `user:` - human-interaction chaos (reserved for the human-interaction
- *      release; not emitted by the current build).
+ *    - `user:` - human-interaction chaos (cancel, tab-hidden, retry, ...)
+ *      emitted by the `userInteraction` triggers.
  *
  *  This type is OPTIONAL and ADDITIVE on every event detail. Consumers that
  *  ignore it stay backward compatible. Reporting / replay layers read it
@@ -96,7 +118,15 @@ export type StreamingChaosPhase =
   | 'ai:stream-truncated'
   | 'ai:chunk-duplicated'
   | 'ai:stream-replayed'
-  | 'ai:tool-call-failed';
+  | 'ai:tool-call-failed'
+  | 'user:cancel'
+  | 'user:retry'
+  | 'user:tab-hidden'
+  | 'user:tab-visible'
+  | 'user:window-blurred'
+  | 'user:window-focused'
+  | 'user:prompt-edited'
+  | 'user:navigated-away';
 
 export interface ChaosEvent {
   type: ChaosEventType;
@@ -187,6 +217,11 @@ export interface ChaosEvent {
      *  events so reports can link a mutated chunk back to the exact mutation
      *  list entry. Absent on live (non-replay) chaos events. */
     mutationIndex?: number;
+    /** Transport of the streaming connection a user-interaction trigger acted
+     *  on. Set on `ui:user-cancel` events (whose own `type` classifies as the
+     *  `ui` transport) so reports can attribute the cancel to the connection's
+     *  transport without joining on `connectionId`. */
+    targetTransport?: 'fetch-stream' | 'sse' | 'websocket';
   };
 }
 

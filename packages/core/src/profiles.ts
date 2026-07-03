@@ -178,6 +178,12 @@ function appendProfileSlice(target: ChaosConfig, slice: ProfileConfigSlice): voi
       ((dst[k] ??= []) as unknown[]).push(...arr);
     }
   }
+  // `userInteraction` is a bundle of scenario triggers, not a rule bucket.
+  // Merge per trigger key: the later slice wins each trigger it sets. Append
+  // order is profile, then top-level, then overrides, so overrides win.
+  if (slice.userInteraction) {
+    target.userInteraction = { ...target.userInteraction, ...slice.userInteraction };
+  }
   if (slice.groups?.length) {
     (target.groups ??= []).push(...slice.groups);
   }

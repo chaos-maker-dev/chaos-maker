@@ -6,6 +6,7 @@ import { sseScenarios } from './sse';
 import { fetchStreamScenarios } from './fetch-stream';
 import { replayScenarios } from './replay';
 import { aiPresetScenarios } from './presets-ai';
+import { userInteractionScenarios } from './user-interaction';
 
 /** The single source of truth for cross-adapter matcher parity. Every
  *  adapter's E2E suite runs this exact catalog through its own thin
@@ -19,4 +20,5 @@ export const catalog: Scenario[] = [
   ...fetchStreamScenarios,
   ...replayScenarios,
   ...aiPresetScenarios,
+  ...userInteractionScenarios,
 ];

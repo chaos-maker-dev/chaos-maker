@@ -8,6 +8,8 @@ import { attachDomAssailant } from './interceptors/domAssailant';
 import { patchWebSocket, WebSocketPatchHandle } from './interceptors/websocket';
 import { patchEventSource, EventSourceLikeStatic, EventSourcePatchHandle } from './interceptors/eventSource';
 import { patchFetchStream, FetchStreamPatchHandle } from './interceptors/networkFetchStream';
+import { installUserInteraction, UserInteractionHandle, UserInteractionTarget } from './interceptors/userInteraction';
+import { StreamCancelRegistry } from './interceptors/streamCancelRegistry';
 import { DEFAULT_GROUP_NAME, RuleGroup, RuleGroupRegistry } from './groups';
 import { forEachRule } from './utils';
 import { Logger, buildRuleIdMap, normalizeDebugOption, RuleIdEntry } from './debug';
@@ -77,6 +79,11 @@ export class ChaosMaker {
   private originalEventSource?: typeof EventSource;
   private eventSourceHandle?: EventSourcePatchHandle;
   private fetchStreamHandle?: FetchStreamPatchHandle;
+  private userInteractionHandle?: UserInteractionHandle;
+  /** Live-connection registry for the user-interaction cancel trigger.
+   *  Created per start() only when `userInteraction.cancelStreamAfterMs` is
+   *  armed; threaded into the streaming transport patches. */
+  private cancelRegistry?: StreamCancelRegistry;
   /** Shared counters keyed by config rule object reference. Shared across fetch + XHR + WS. */
   private requestCounters: Map<object, number> = new Map();
   /** Rule-group registry. Default-on; default group always exists. */
@@ -329,6 +336,12 @@ export class ChaosMaker {
     console.log('🛠️ Chaos Maker ENGAGED 🛠️');
     this.emitter.debug('lifecycle', { phase: 'engine:start' });
 
+    // When the cancel trigger is armed, the streaming transport patches must
+    // install even without their own rule config so every connection is
+    // registered as cancellable. An empty rule config applies zero chaos.
+    const cancelArmed = this.config.userInteraction?.cancelStreamAfterMs !== undefined;
+    this.cancelRegistry = cancelArmed ? new StreamCancelRegistry() : undefined;
+
     try {
       if (this.config.network) {
         if (typeof target.fetch === 'function') {
@@ -373,28 +386,30 @@ export class ChaosMaker {
         }
       }
 
-      if (this.config.websocket && typeof target.WebSocket !== 'undefined') {
+      if ((this.config.websocket || cancelArmed) && typeof target.WebSocket !== 'undefined') {
         this.originalWebSocket = target.WebSocket;
         this.webSocketHandle = patchWebSocket(
           this.originalWebSocket,
-          this.config.websocket,
+          this.config.websocket ?? {},
           this.emitter,
           this.random,
           this.requestCounters,
           this.groups,
+          this.cancelRegistry,
         );
         target.WebSocket = markRuntimePatch(this.webSocketHandle.Wrapped, 'websocket');
       }
 
-      if (this.config.sse && typeof target.EventSource !== 'undefined') {
+      if ((this.config.sse || cancelArmed) && typeof target.EventSource !== 'undefined') {
         this.originalEventSource = target.EventSource;
         this.eventSourceHandle = patchEventSource(
           this.originalEventSource as unknown as EventSourceLikeStatic,
-          this.config.sse,
+          this.config.sse ?? {},
           this.emitter,
           this.random,
           this.requestCounters,
           this.groups,
+          this.cancelRegistry,
         );
         target.EventSource = markRuntimePatch(this.eventSourceHandle.Wrapped, 'eventsource');
       }
@@ -403,7 +418,7 @@ export class ChaosMaker {
       // (iframe / shadow realm) patch the right prototype. Falls back to the
       // ambient `Response` when the target inherits the same realm.
       const targetResponse = (target as typeof globalThis & { Response?: typeof Response }).Response;
-      if (this.config.fetchStream && typeof target.fetch === 'function' && typeof targetResponse !== 'undefined') {
+      if ((this.config.fetchStream || cancelArmed) && typeof target.fetch === 'function' && typeof targetResponse !== 'undefined') {
         // Layer fetch-stream chaos on top of whatever fetch is currently
         // installed: the network interceptor (if `config.network` is set)
         // already wrapped the original; otherwise we capture the original
@@ -417,14 +432,23 @@ export class ChaosMaker {
         }
         this.fetchStreamHandle = patchFetchStream(
           baseFetch,
-          this.config.fetchStream,
+          this.config.fetchStream ?? {},
           this.random,
           this.emitter,
           this.requestCounters,
           this.groups,
           targetResponse,
+          this.cancelRegistry,
         );
         target.fetch = markRuntimePatch(this.fetchStreamHandle.fetch, 'fetch');
+      }
+
+      if (this.config.userInteraction) {
+        this.userInteractionHandle = installUserInteraction(this.config.userInteraction, {
+          target: target as unknown as UserInteractionTarget,
+          emitter: this.emitter,
+          cancelRegistry: this.cancelRegistry,
+        });
       }
 
       setActiveRuntimeInstance(target, this);
@@ -451,7 +475,11 @@ export class ChaosMaker {
     const originalEventSource = this.originalEventSource;
     const eventSourceHandle = this.eventSourceHandle;
     const fetchStreamHandle = this.fetchStreamHandle;
+    const userInteractionHandle = this.userInteractionHandle;
+    const cancelRegistry = this.cancelRegistry;
 
+    this.userInteractionHandle = undefined;
+    this.cancelRegistry = undefined;
     this.originalFetch = undefined;
     this.originalXhrOpen = undefined;
     this.originalXhrSend = undefined;
@@ -463,6 +491,16 @@ export class ChaosMaker {
     this.eventSourceHandle = undefined;
     this.fetchStreamHandle = undefined;
 
+    // Uninstall the trigger scheduler FIRST so no timer fires into a
+    // half-restored target while the transport patches unwind below.
+    if (userInteractionHandle) {
+      this.runCleanupStep('uninstall-user-interaction', () => {
+        userInteractionHandle.uninstall();
+      });
+    }
+    if (cancelRegistry) {
+      cancelRegistry.clear();
+    }
     if (fetchStreamHandle) {
       this.runCleanupStep('uninstall-fetch-stream', () => {
         fetchStreamHandle.uninstall();

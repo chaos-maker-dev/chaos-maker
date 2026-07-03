@@ -50,6 +50,7 @@ Pick presets the way engineers describe scenarios - flaky backend, bad mobile ne
 | `aiToolCallFails`       | `ai-tool-call-fails`                | fetch-stream      | Chunks carrying tool/function-call wire markers (`tool_calls`, `tool_use`, `function_call`) arrive as malformed JSON, tagged `ai:tool-call-failed`. |
 | `aiRetryLoop`           | `ai-retry-loop`                     | network           | 429 on the first two matching requests, success from the third. Exercises backoff and retry UI. |
 | `aiReconnectAfterDrop`  | `ai-reconnect-after-drop`           | fetch-stream, sse | Stream closes early (after chunk 5, or 3s for SSE). Assert the app reconnects or resumes. |
+| `aiMobileInterrupt`     | `ai-mobile-interrupt`               | fetch-stream, sse, ui | User backgrounds the app mid-generation: tab reports hidden for 3s (from 1s) while the stream drops (after chunk 10, or 4s for SSE). Assert visibility pause logic plus stream recovery. |
 
 ### AI streaming presets
 
@@ -64,6 +65,7 @@ await injectChaos(page, {
 
 - `aiToolCallFails` targets chunk CONTENT: only chunks whose decoded text matches the tool-call marker pattern are corrupted, so prose renders normally while the structured payload breaks mid-stream. The corruption event carries `phase: 'ai:tool-call-failed'` for report tooling.
 - `aiRetryLoop` uses `firstN: 2` counting, so exactly the first two matching requests fail regardless of how many retries the app makes.
+- `aiMobileInterrupt` is the first preset to combine transport rules with a [human-interaction trigger](./human-interaction-chaos): the `tabHidden` trigger flips `document.visibilityState` while close rules drop the stream. Trigger merging is per trigger, so setting your own `userInteraction.tabHidden` alongside the preset overrides the preset's timing.
 - For markdown/code-fence breakage, use a [stream replay fixture with a split mutation](../recipes/replay-broken-markdown) instead of a preset; splitting needs a captured fixture.
 
 ### Suggested assertions
@@ -77,6 +79,7 @@ The presets fire deterministically given a fixed `seed`. Existence-check, not ra
 - `aiSlowFirstChunk` - first-chunk latency measured from before the fetch call should exceed 3000ms, and the log should contain an applied `fetch-stream:chunk-delayed` event.
 - `aiToolCallFails` - the log should contain an applied `fetch-stream:chunk-corrupted` event with `detail.phase === 'ai:tool-call-failed'`.
 - `aiRetryLoop` - exactly two applied `network:failure` events with `statusCode: 429`, then a clean response.
+- `aiMobileInterrupt` - the log should contain an applied `ui:visibility` event with `detail.phase === 'user:tab-hidden'` plus an applied `fetch-stream:truncated` (or `sse:close`) event.
 
 Kebab-case aliases (`slow-api`, `flaky-api`, `api-flaky`, `offline-mode`, `high-latency`, `mobile-3g`, `checkout-degraded`, `websocket-instability`, `realtime-lag`, and the `ai-*` names) are registry-only. They resolve via `presets: ['mobile-3g']` and `new PresetRegistry().get('mobile-3g')`. They are NOT keys on the legacy `presets` record export - `presets['mobile-3g']` is `undefined` by design. Use the camelCase key (`presets.mobileThreeG`) when reading from the record.
 

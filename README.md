@@ -13,6 +13,7 @@ Inject controlled chaos into web applications to test frontend resilience. Works
 - **`ai` config shorthand**: a single `ai: { firstChunkDelayMs, pauseAfterChunk, truncateAfterChunk, duplicateChunkProbability, transport }` block compiles into transport rule arrays at engine init so the same scenario fires across fetch-stream, SSE, and WebSocket without per-transport duplication. See the [AI chat fetch-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-fetch-stream/) and [AI chat SSE recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/ai-chat-streaming-sse/).
 - **`'duplicate'` corruption strategy on fetch-stream**: emission-level chunk duplication; consumers see the same chunk one additional time. Use for testing client-side idempotency under retry storms or replayed deltas.
 - **Stream replay and mutation**: capture a stream to a versioned JSON fixture and replay it deterministically with no live backend, across fetch-stream, SSE, and WebSocket. Six chunk mutations (`delay`, `truncate`, `duplicate`, `split`, `coalesce`, `inject-malformed`) rewrite the stream by original chunk index with no RNG. New `loadStreamFixture` / `recordStreamFixture` adapter helpers. See the [stream replay concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/).
+- **Human interaction chaos**: a `userInteraction` config namespace simulates the user side of streaming failures on a fixed, seed-independent schedule: `cancelStreamAfterMs` aborts in-flight streams (real `AbortError` on fetch streams, close on SSE/WS), `retryStorm` hammers a retry button, `tabHidden`/`blurWindow` flip visibility and focus, `promptEditDuringResponse` types into the prompt mid-generation, `navigateAway` leaves the page. Triggers emit `ui:*` events tagged with `user:*` phases that render in the streaming timeline. See the [human interaction concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/human-interaction-chaos/).
 
 Full release notes in [CHANGELOG.md](CHANGELOG.md).
 
@@ -40,7 +41,7 @@ test('checkout works under degraded mobile network', async ({ page }) => {
 });
 ```
 
-For AI chat and assistant interfaces, six streaming presets reproduce the incidents those UIs hit in production: `ai-slow-first-chunk`, `ai-stream-paused`, `ai-stream-truncated`, `ai-tool-call-fails`, `ai-retry-loop`, and `ai-reconnect-after-drop`.
+For AI chat and assistant interfaces, seven streaming presets reproduce the incidents those UIs hit in production: `ai-slow-first-chunk`, `ai-stream-paused`, `ai-stream-truncated`, `ai-tool-call-fails`, `ai-retry-loop`, `ai-reconnect-after-drop`, and `ai-mobile-interrupt`.
 
 ```typescript
 await injectChaos(page, { presets: ['ai-slow-first-chunk'], seed: 42 });
@@ -326,6 +327,30 @@ Replay works across fetch-stream (block or substitute mode), SSE, and
 WebSocket, and is fully deterministic (no RNG). See the [stream replay
 concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/)
 and the [broken-markdown recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/replay-broken-markdown/).
+
+### Human interaction chaos
+
+Streams also break when the HUMAN acts mid-generation. The `userInteraction`
+namespace fires deterministic triggers on a fixed schedule: cancel the
+in-flight stream, storm the retry button, background the tab, edit the prompt
+while chunks arrive, or navigate away.
+
+```typescript
+await injectChaos(page, {
+  userInteraction: {
+    cancelStreamAfterMs: 4000,
+    tabHidden: { afterMs: 1000, durationMs: 3000 },
+    retryStorm: { count: 5, intervalMs: 200 },
+  },
+});
+```
+
+Cancelled fetch streams reject with a real `AbortError`; SSE sources close and
+dispatch `error`; WebSockets close. Every trigger emits `ui:*` events tagged
+with `user:*` phases (`user:cancel`, `user:tab-hidden`, ...) that render in the
+timeline report alongside transport chaos. See the [human interaction
+concept](https://chaos-maker-dev.github.io/chaos-maker/concepts/human-interaction-chaos/)
+and the [cancel-mid-stream recipe](https://chaos-maker-dev.github.io/chaos-maker/recipes/cancel-mid-stream/).
 
 ## Full docs
 

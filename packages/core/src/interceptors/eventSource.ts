@@ -45,6 +45,7 @@ import {
   type ParsedRequestUrl,
 } from '../matchers';
 import type { RuleGroupRegistry } from '../groups';
+import type { StreamCancelRegistry } from './streamCancelRegistry';
 
 const INTERCEPT_MARKER = Symbol.for('chaos-maker.eventsource.intercepted');
 
@@ -321,6 +322,10 @@ export function patchEventSource(
   random: () => number,
   counters: Map<object, number>,
   groups?: RuleGroupRegistry,
+  /** Present when the user-interaction cancel trigger is armed. Every wrapped
+   *  source registers a cancel hook that closes it and dispatches `error`,
+   *  mirroring the close-chaos teardown so app error handlers engage. */
+  cancelRegistry?: StreamCancelRegistry,
 ): EventSourcePatchHandle {
   const pendingTimersBySource = new Map<EventSource, Set<PendingTimer>>();
   const contextBySource = new WeakMap<EventSource, ConnectionContext>();
@@ -607,7 +612,31 @@ export function patchEventSource(
   function ChaosEventSource(this: unknown, url: string | URL, init?: EventSourceInit): EventSource {
     const source = new OriginalEventSource(url, init);
     const urlStr = typeof url === 'string' ? url : url.toString();
-    contextBySource.set(source, { url: urlStr, connectionId: mintConnectionId(), chunkIndex: -1 });
+    const ctx: ConnectionContext = { url: urlStr, connectionId: mintConnectionId(), chunkIndex: -1 };
+    contextBySource.set(source, ctx);
+
+    if (cancelRegistry) {
+      cancelRegistry.register({
+        transport: 'sse',
+        url: urlStr,
+        connectionId: ctx.connectionId,
+        cancel: () => {
+          if (source.readyState === source.CLOSED) return false;
+          clearSourceTimers(source, 'user-cancel');
+          try {
+            source.close();
+          } catch {
+            // already closed
+          }
+          try {
+            source.dispatchEvent(new Event('error'));
+          } catch {
+            // never thrown by EventTarget.dispatchEvent in practice
+          }
+          return true;
+        },
+      });
+    }
 
     // Capture-phase listener so we run before any user-attached message
     // handler; `stopImmediatePropagation` then prevents the raw event from

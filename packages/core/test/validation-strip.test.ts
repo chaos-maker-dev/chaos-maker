@@ -50,6 +50,67 @@ describe('stripUnknownKeys', () => {
     });
   });
 
+  it('preserves matcher and counting fields on network rules', () => {
+    const out = stripUnknownKeys({
+      network: {
+        failures: [{
+          hostname: 'api.example.com',
+          queryParams: { tenant: 'a' },
+          requestHeaders: { 'x-env': 'ci' },
+          resourceTypes: ['fetch'],
+          statusCode: 429,
+          probability: 1,
+          firstN: 2,
+        }],
+        latencies: [{ matcher: 'apiRequests', matcherName: 'apiRequests', delayMs: 100, probability: 1 }],
+      },
+    });
+    expect(out.network!.failures![0]).toMatchObject({
+      hostname: 'api.example.com',
+      queryParams: { tenant: 'a' },
+      requestHeaders: { 'x-env': 'ci' },
+      resourceTypes: ['fetch'],
+      firstN: 2,
+    });
+    expect(out.network!.latencies![0]).toMatchObject({ matcher: 'apiRequests', matcherName: 'apiRequests' });
+  });
+
+  it('preserves transport matcher fields and firstN on ws, sse, and fetch-stream rules', () => {
+    const out = stripUnknownKeys({
+      websocket: {
+        drops: [{ hostname: 'ws.example.com', direction: 'both', probability: 1, firstN: 1 }],
+      },
+      sse: {
+        delays: [{ queryParams: { stream: true }, delayMs: 50, probability: 1 }],
+      },
+      fetchStream: {
+        drops: [{ matcher: 'apiRequests', chunkIndex: 0, probability: 1, firstN: 3 }],
+      },
+    });
+    expect(out.websocket!.drops![0]).toMatchObject({ hostname: 'ws.example.com', firstN: 1 });
+    expect(out.sse!.delays![0]).toMatchObject({ queryParams: { stream: true } });
+    expect(out.fetchStream!.drops![0]).toMatchObject({ matcher: 'apiRequests', firstN: 3 });
+  });
+
+  it('preserves chunkPattern and phase on fetch-stream corruptions', () => {
+    const pattern = /"tool_calls"/;
+    const out = stripUnknownKeys({
+      fetchStream: {
+        corruptions: [{
+          urlPattern: '*',
+          chunkPattern: pattern,
+          strategy: 'malformed-json',
+          probability: 1,
+          phase: 'ai:tool-call-failed',
+        }],
+      },
+    });
+    expect(out.fetchStream!.corruptions![0]).toMatchObject({
+      chunkPattern: pattern,
+      phase: 'ai:tool-call-failed',
+    });
+  });
+
   it('does not mutate input', () => {
     const input = { network: { failures: [{ urlPattern: '/a', statusCode: 500, probability: 1, foo: 1 }] }, weirdTop: 'y' };
     const inputCopy = JSON.parse(JSON.stringify(input));

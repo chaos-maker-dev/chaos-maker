@@ -59,6 +59,8 @@ The `streamingReadiness` block answers the smoke-test question directly: out of 
 
 Replayed streams carry `phase: 'ai:stream-replayed'` on their first event. When a [replay mutation](./stream-replay) fires during the run, the resulting pause, duplicate, or truncation event also carries `mutationIndex`, the zero-based position in your `mutations` array, and renders as `(mutation N)` in Markdown and a chip in HTML, so a broken rendering traces back to the exact mutation entry that caused it. Mutation attribution ships for fetch-stream replay; SSE and WebSocket replay events carry phases and chunk indices but not yet mutation indices.
 
+[Human-interaction triggers](./human-interaction-chaos) emit into the same stream under the `user:` namespace (`user:cancel`, `user:tab-hidden`, `user:retry`, ...), so a cancelled generation renders next to the transport events it interrupted. Cancel events additionally carry `detail.targetTransport` and, for rule-matched fetch streams, the `connectionId` of the connection they aborted, which joins them into that connection's timeline.
+
 The Markdown and HTML formatters render the streaming sections only when the run actually streamed, so reports for classic network/UI chaos are unchanged.
 
 ## Output formats
