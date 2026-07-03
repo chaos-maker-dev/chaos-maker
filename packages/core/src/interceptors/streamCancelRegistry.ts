@@ -32,6 +32,13 @@ export class StreamCancelRegistry {
     this.active.add(connection);
   }
 
+  /** Drop a connection that turned out not to be cancellable after all (for
+   *  example a fixture-driven replay whose stream never sees the injected
+   *  AbortController), so `cancelAll()` cannot report a false positive for it. */
+  unregister(connection: CancelableStreamConnection): void {
+    this.active.delete(connection);
+  }
+
   /** Cancel every registered connection and clear the registry. Returns the
    *  connections whose `cancel()` reported actually applying, in registration
    *  order, so the caller can emit one event per cancelled connection. */

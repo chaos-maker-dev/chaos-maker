@@ -916,9 +916,12 @@ export function patchFetchStream(
         const meta: ResponseChaosMeta = { url, parsedUrl, connectionId: mintConnectionId() };
         if (cancelConnection) cancelConnection.connectionId = meta.connectionId;
         if (config.replay.blockUpstream ?? true) {
-          // Block mode: never touch the network; own the whole Response.
-          // Fixture-driven streams are timer-based and not cancellable via
-          // the abort path, so the cancel registration stays a no-op here.
+          // Block mode: never touch the network; own the whole Response. The
+          // fixture stream is timer-based and never sees the injected
+          // AbortController, so unregister the cancel hook here: leaving it
+          // would let `cancelAll()` report an applied cancel for a connection
+          // that keeps streaming.
+          if (cancelConnection) cancelRegistry?.unregister(cancelConnection);
           return buildReplayResponse(
             config.replay,
             replayPlan,

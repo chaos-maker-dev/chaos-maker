@@ -22,7 +22,12 @@ describe('User interaction: navigateAway', () => {
       userInteraction: { navigateAway: { afterMs: 1000, target: '/api/data.json' } },
     });
     await page.goto(BASE_URL);
-    await page.waitForNavigation({ timeout: 10_000 });
+    // Poll the final URL rather than waitForNavigation: the event-based wait can
+    // attach after the redirect fires and miss it, making the test flaky.
+    await page.waitForFunction(
+      () => location.href.includes('/api/data.json'),
+      { timeout: 10_000 },
+    );
     expect(page.url()).toContain('/api/data.json');
   });
 });

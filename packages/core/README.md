@@ -219,7 +219,7 @@ new ChaosMaker({
 });
 ```
 
-Every streaming event carries `detail.phase` (`ai:first-chunk`, `user:cancel`, ...), a stable `detail.connectionId`, and a zero-based `detail.chunkIndex`; `buildChaosReport` groups them into per-connection timelines with a streaming-readiness scorecard. Captured stream fixtures replay deterministically via `ai.replay` with six chunk mutations. See the [AI streaming](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/), [stream replay](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/), and [human interaction](https://chaos-maker-dev.github.io/chaos-maker/concepts/human-interaction-chaos/) concepts.
+Streaming transport events carry `detail.phase` (`ai:first-chunk`, ...), a stable `detail.connectionId`, and a zero-based `detail.chunkIndex`. Human-interaction events (`ui:user-cancel`, `ui:retry-storm`, ...) carry `detail.phase` (`user:cancel`, ...), an optional `detail.connectionId`, and `detail.targetTransport`; they have no chunk index because they act on the connection, not a chunk. `buildChaosReport` groups both into per-connection timelines with a streaming-readiness scorecard. Captured stream fixtures replay deterministically via `ai.replay` with six chunk mutations. See the [AI streaming](https://chaos-maker-dev.github.io/chaos-maker/concepts/ai-streaming/), [stream replay](https://chaos-maker-dev.github.io/chaos-maker/concepts/stream-replay/), and [human interaction](https://chaos-maker-dev.github.io/chaos-maker/concepts/human-interaction-chaos/) concepts.
 
 ## Configuration Reference
 

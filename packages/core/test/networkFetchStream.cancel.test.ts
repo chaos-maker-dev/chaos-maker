@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChaosEventEmitter } from '../src/events';
 import { patchFetchStream, type FetchStreamPatchHandle } from '../src/interceptors/networkFetchStream';
 import { StreamCancelRegistry } from '../src/interceptors/streamCancelRegistry';
-import type { FetchStreamConfig } from '../src/config';
+import type { FetchStreamConfig, ReplayFixture } from '../src/config';
+
+function replayFixture(): ReplayFixture {
+  return {
+    version: 1,
+    transport: 'fetch-stream',
+    chunks: [{ offsetMs: 0, data: 'R1' }],
+  };
+}
 
 // Same minimal Response replacement the main fetch-stream suite uses: a real
 // `body` getter so the interceptor's descriptor lookup finds something to wrap.
@@ -105,6 +113,31 @@ describe('patchFetchStream: cancel registry integration', () => {
 
     const [connection] = registry.cancelAll();
     expect(connection.cancel()).toBe(false);
+  });
+
+  it('does not report a block-mode replay connection as cancelled', async () => {
+    const registry = new StreamCancelRegistry();
+    const { handle } = setup(
+      { replay: { urlPattern: '/chat', data: replayFixture() } },
+      registry,
+    );
+    await handle.fetch('http://api/chat');
+    // Block-mode replay owns a fixture stream the injected AbortController never
+    // reaches, so the connection is unregistered rather than falsely reported as
+    // an applied cancel.
+    expect(registry.cancelAll()).toHaveLength(0);
+  });
+
+  it('still registers a substitute-mode replay connection', async () => {
+    const registry = new StreamCancelRegistry();
+    const { handle } = setup(
+      { replay: { urlPattern: '/chat', blockUpstream: false, data: replayFixture() } },
+      registry,
+    );
+    await handle.fetch('http://api/chat');
+    // Substitute mode fires the real request, so its abort signal is live and
+    // the connection stays cancellable.
+    expect(registry.cancelAll()).toHaveLength(1);
   });
 
   it('attaches the connectionId for rule-matched requests', async () => {
